@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}Settings{% endblock %}
+{% set page_heading = 'Assessment settings' %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <strong>Threshold settings</strong>
+    <span class="badge text-bg-secondary">Ready for editable forms in Phase 2</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Year</th>
+          <th>Subject</th>
+          <th>Term</th>
+          <th>Paper 1</th>
+          <th>Paper 2</th>
+          <th>Combined max</th>
+          <th>Thresholds</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for setting in settings %}
+          <tr>
+            <td>{{ setting.year_group }}</td>
+            <td>{{ setting.subject|capitalize }}</td>
+            <td>{{ setting.term|capitalize }}</td>
+            <td>{{ setting.paper_1_name }} ({{ setting.paper_1_max }})</td>
+            <td>{{ setting.paper_2_name }} ({{ setting.paper_2_max }})</td>
+            <td>{{ setting.combined_max }}</td>
+            <td class="small text-muted">
+              Below: {{ setting.below_are_threshold_percent }}%<br>
+              On track: {{ setting.on_track_threshold_percent }}%<br>
+              Exceeding: {{ setting.exceeding_threshold_percent }}%
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="text-center py-4 text-muted">No settings defined yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

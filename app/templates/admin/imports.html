@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}Imports{% endblock %}
+{% set page_heading = 'Imports and exports' %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>CSV import/export placeholder</strong>
+      </div>
+      <div class="card-body">
+        <p class="mb-3">This area is intentionally kept as a placeholder in Phase 1. In Phase 2 it can become the home for upload templates, preview tables, validation, and export downloads.</p>
+        <div class="border rounded bg-light p-4 text-center text-muted">Future drag-and-drop or file picker area</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>Current data snapshot</strong>
+      </div>
+      <div class="list-group list-group-flush">
+        <div class="list-group-item d-flex justify-content-between"><span>Teachers</span><strong>{{ overview.teachers }}</strong></div>
+        <div class="list-group-item d-flex justify-content-between"><span>Classes</span><strong>{{ overview.classes }}</strong></div>
+        <div class="list-group-item d-flex justify-content-between"><span>Pupils</span><strong>{{ overview.pupils }}</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block title %}Teacher dashboard{% endblock %}
+{% set page_heading = 'Teacher dashboard' %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <p class="text-muted mb-2">Assigned class</p>
+        <h3 class="h4">{{ school_class.name if school_class else 'No class assigned' }}</h3>
+        <p class="mb-0">Pupil count: <strong>{{ pupil_count }}</strong></p>
+      </div>
+    </div>
+  </div>
+  {% for subject in ['Maths', 'Reading', 'SPaG', 'Writing'] %}
+    <div class="col-sm-6 col-lg-2">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <p class="text-muted small mb-2">{{ subject }}</p>
+          <h3 class="h5">Ready for Phase 2</h3>
+          <a href="{{ url_for('teacher.' ~ subject.lower().replace('+', '')) if subject != 'SPaG' else url_for('teacher.spag') }}" class="stretched-link text-decoration-none">Open page</a>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>Most recent overview</strong>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center chart-placeholder">
+        <div class="text-center text-muted">
+          <div class="display-6">📊</div>
+          <p class="mb-0">Placeholder area for future chart widgets.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>Summary</strong>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th class="text-end">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for label, value in summary_rows %}
+              <tr>
+                <td>{{ label }}</td>
+                <td class="text-end">{{ value }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
