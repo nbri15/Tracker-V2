@@ -3,11 +3,70 @@
 {% block title %}Classes{% endblock %}
 {% set page_heading = 'Classes' %}
 
+{% macro summary_counts(summary) -%}
+  <div class="small text-muted">{{ summary.term_label }}</div>
+  <div class="small"><strong>WT:</strong> {{ summary.working_towards }} · <strong>OT:</strong> {{ summary.on_track }} · <strong>EX:</strong> {{ summary.exceeding }} · <strong>OT+:</strong> {{ summary.on_track_plus }}</div>
+{%- endmacro %}
+
 {% block content %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
+    <strong>Class overview filters</strong>
+    <span class="text-muted small">Academic year {{ academic_year }}</span>
+  </div>
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-md-2">
+        <label class="form-label">Academic year</label>
+        <input type="text" class="form-control" name="academic_year" value="{{ academic_year }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Year group</label>
+        <select name="year_group" class="form-select">
+          <option value="">All year groups</option>
+          {% for year in range(1, 7) %}
+            <option value="{{ year }}" {% if filter_year_group == year|string %}selected{% endif %}>Year {{ year }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Class</label>
+        <select name="class_id" class="form-select">
+          <option value="">All classes</option>
+          {% for option in class_options %}
+            <option value="{{ option.id }}" {% if filter_class == option.id|string %}selected{% endif %}>{{ option.name }} · Year {{ option.year_group }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Teacher</label>
+        <select name="teacher_id" class="form-select">
+          <option value="">All teachers</option>
+          {% for option in teacher_options %}
+            <option value="{{ option.id }}" {% if filter_teacher == option.id|string %}selected{% endif %}>{{ option.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Sort by</label>
+        <select name="sort" class="form-select">
+          {% for value, label in sort_options.items() %}
+            <option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 d-flex gap-2 justify-content-end">
+        <button class="btn btn-primary">Apply filters</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.classes') }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="card shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <strong>Class structure</strong>
-    <span class="badge text-bg-secondary">Placeholder management page</span>
+    <strong>Classes</strong>
+    <span class="badge text-bg-secondary">Admin overview</span>
   </div>
   <div class="table-responsive">
     <table class="table table-striped align-middle mb-0">
@@ -16,19 +75,27 @@
           <th>Name</th>
           <th>Year group</th>
           <th>Teacher</th>
-          <th>Status</th>
+          <th>Pupil count</th>
+          <th>Maths</th>
+          <th>Reading</th>
+          <th>SPaG</th>
+          <th>Writing</th>
         </tr>
       </thead>
       <tbody>
-        {% for school_class in classes %}
+        {% for row in classes %}
           <tr>
-            <td>{{ school_class.name }}</td>
-            <td>Year {{ school_class.year_group }}</td>
-            <td>{{ school_class.teacher.username if school_class.teacher else 'Unassigned' }}</td>
-            <td>{{ 'Active' if school_class.is_active else 'Inactive' }}</td>
+            <td><a class="text-decoration-none fw-semibold" href="{{ url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">{{ row.class_name }}</a></td>
+            <td>Year {{ row.year_group }}</td>
+            <td>{{ row.teacher_name }}</td>
+            <td>{{ row.pupil_count }}</td>
+            <td>{{ summary_counts(row.subjects.maths) }}</td>
+            <td>{{ summary_counts(row.subjects.reading) }}</td>
+            <td>{{ summary_counts(row.subjects.spag) }}</td>
+            <td>{{ summary_counts(row.subjects.writing) }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="text-center py-4 text-muted">No classes created yet.</td></tr>
+          <tr><td colspan="8" class="text-center py-4 text-muted">No classes created yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
