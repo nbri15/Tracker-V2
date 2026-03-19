@@ -17,7 +17,7 @@
 
     {% if current_user.is_admin %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
-      <a class="nav-link text-white {% if request.endpoint == 'admin.classes' %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
+      <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.pupils' %}active{% endif %}" href="{{ url_for('admin.pupils') }}">Pupils</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports</a>

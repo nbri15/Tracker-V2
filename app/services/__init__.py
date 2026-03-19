@@ -1,7 +1,16 @@
 """Service-layer helpers for assessment workflows."""
 
 from .assessments import (
+    ALL_SUBJECTS,
+    build_class_overview_row,
+    build_subject_overview_cards,
+    compute_class_subject_summary,
+    get_class_detail_context,
+    get_most_recent_term_with_data,
+    recalculate_subject_results_for_scope,
+    update_assessment_setting,
     CORE_SUBJECTS,
+    CLASS_SORT_OPTIONS,
     SORT_OPTIONS,
     SUBJECT_DISPLAY_NAMES,
     TERMS,
@@ -22,6 +31,8 @@ from .assessments import (
 )
 
 __all__ = [
+    'ALL_SUBJECTS',
+    'CLASS_SORT_OPTIONS',
     'CORE_SUBJECTS',
     'SORT_OPTIONS',
     'SUBJECT_DISPLAY_NAMES',
@@ -29,6 +40,13 @@ __all__ = [
     'TERM_SEQUENCE',
     'WRITING_BAND_CHOICES',
     'build_academic_year_options',
+    'build_class_overview_row',
+    'build_subject_overview_cards',
+    'compute_class_subject_summary',
+    'get_class_detail_context',
+    'get_most_recent_term_with_data',
+    'recalculate_subject_results_for_scope',
+    'update_assessment_setting',
     'build_dashboard_summary',
     'compute_subject_result_values',
     'format_subject_name',

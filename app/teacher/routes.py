@@ -17,6 +17,9 @@ from app.services import (
     get_current_academic_year,
     get_current_term,
     get_subject_setting,
+    recalculate_subject_results_for_scope,
+    update_assessment_setting,
+    validate_setting_payload,
 )
 from app.services.assessments import AssessmentValidationError
 from app.utils import get_primary_class_for_user, teacher_required
@@ -69,6 +72,38 @@ def _parse_int(value: str | None) -> int | None:
     return int(value)
 
 
+def _parse_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if value == '':
+        return None
+    return float(value)
+
+
+def _build_setting_payload(subject_key: str) -> dict:
+    paper_1_max = _parse_int(request.form.get('paper_1_max'))
+    paper_2_max = _parse_int(request.form.get('paper_2_max'))
+    combined_max = _parse_int(request.form.get('combined_max'))
+    below_threshold = _parse_float(request.form.get('below_are_threshold_percent'))
+    exceeding_threshold = _parse_float(request.form.get('exceeding_threshold_percent'))
+
+    if paper_1_max is None or paper_2_max is None or below_threshold is None or exceeding_threshold is None:
+        raise AssessmentValidationError('Complete all settings fields before saving.')
+
+    return {
+        'paper_1_name': request.form.get('paper_1_name', '').strip(),
+        'paper_1_max': paper_1_max,
+        'paper_2_name': request.form.get('paper_2_name', '').strip(),
+        'paper_2_max': paper_2_max,
+        'combined_max': combined_max,
+        'below_are_threshold_percent': below_threshold,
+        'on_track_threshold_percent': below_threshold,
+        'exceeding_threshold_percent': exceeding_threshold,
+        'subject': subject_key,
+    }
+
+
 def _sort_subject_rows(rows: list[dict], sort_key: str) -> list[dict]:
     if sort_key == 'name_desc':
         return sorted(rows, key=lambda row: (row['pupil'].last_name.lower(), row['pupil'].first_name.lower()), reverse=True)
@@ -117,6 +152,25 @@ def _base_subject_context(subject_key: str) -> dict:
     }
 
 
+def _build_subject_rows(pupils: list[Pupil], existing_by_pupil: dict[int, SubjectResult]) -> list[dict]:
+    rows = []
+    for pupil in pupils:
+        existing = existing_by_pupil.get(pupil.id)
+        rows.append(
+            {
+                'pupil': pupil,
+                'paper_1_score': '' if not existing or existing.paper_1_score is None else existing.paper_1_score,
+                'paper_2_score': '' if not existing or existing.paper_2_score is None else existing.paper_2_score,
+                'combined_score': existing.combined_score if existing else None,
+                'combined_percent': existing.combined_percent if existing else None,
+                'band_label': existing.band_label if existing else None,
+                'notes': existing.notes if existing else '',
+                'source': existing.source if existing else None,
+            }
+        )
+    return rows
+
+
 def render_subject_page(subject_key: str):
     """Render and save spreadsheet-style subject pages for score-based subjects."""
 
@@ -127,6 +181,40 @@ def render_subject_page(subject_key: str):
         return render_template('teacher/subject_scores.html', rows=[], setting=None, **context)
 
     setting = get_subject_setting(school_class.year_group, subject_key, context['term'])
+
+    if request.method == 'POST' and request.form.get('form_name') == 'settings':
+        try:
+            payload = _build_setting_payload(subject_key)
+            payload.update({'year_group': school_class.year_group, 'term': context['term']})
+            payload = validate_setting_payload(payload)
+            update_assessment_setting(setting, payload)
+            recalculated_count = recalculate_subject_results_for_scope(
+                school_class.year_group,
+                subject_key,
+                context['term'],
+                academic_year=context['academic_year'],
+                class_id=school_class.id,
+            )
+            db.session.commit()
+            flash(
+                f"{format_subject_name(subject_key)} settings saved for Year {school_class.year_group} {context['term'].title()}. "
+                f"Recalculated {recalculated_count} saved result(s).",
+                'success',
+            )
+            return redirect(
+                url_for(
+                    f'teacher.{subject_key}',
+                    academic_year=context['academic_year'],
+                    term=context['term'],
+                    search=context['search'],
+                    sort=context['sort'],
+                )
+            )
+        except (ValueError, AssessmentValidationError) as exc:
+            db.session.rollback()
+            flash(f'Settings could not be saved: {exc}', 'danger')
+            setting = get_subject_setting(school_class.year_group, subject_key, context['term'])
+
     result_rows = (
         SubjectResult.query.join(SubjectResult.pupil)
         .filter(
@@ -140,7 +228,7 @@ def render_subject_page(subject_key: str):
     existing_by_pupil = {result.pupil_id: result for result in result_rows}
     rows = []
 
-    if request.method == 'POST':
+    if request.method == 'POST' and request.form.get('form_name') == 'results':
         errors: list[str] = []
         for pupil in context['pupils']:
             paper_1_raw = request.form.get(f'paper_1_score_{pupil.id}', '')
@@ -211,20 +299,7 @@ def render_subject_page(subject_key: str):
                 )
             )
     else:
-        for pupil in context['pupils']:
-            existing = existing_by_pupil.get(pupil.id)
-            rows.append(
-                {
-                    'pupil': pupil,
-                    'paper_1_score': '' if not existing or existing.paper_1_score is None else existing.paper_1_score,
-                    'paper_2_score': '' if not existing or existing.paper_2_score is None else existing.paper_2_score,
-                    'combined_score': existing.combined_score if existing else None,
-                    'combined_percent': existing.combined_percent if existing else None,
-                    'band_label': existing.band_label if existing else None,
-                    'notes': existing.notes if existing else '',
-                    'source': existing.source if existing else None,
-                }
-            )
+        rows = _build_subject_rows(context['pupils'], existing_by_pupil)
 
     rows = _sort_subject_rows(rows, context['sort'])
     return render_template('teacher/subject_scores.html', rows=rows, setting=setting, **context)

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
+from sqlalchemy.orm import joinedload
+
 from app.extensions import db
-from app.models import AssessmentSetting, SubjectResult, WritingResult
+from app.models import AssessmentSetting, Pupil, SchoolClass, SubjectResult, WritingResult
 
 TERMS = [
     ('autumn', 'Autumn'),
@@ -15,6 +17,7 @@ TERMS = [
 ]
 TERM_SEQUENCE = {term: index for index, (term, _) in enumerate(TERMS, start=1)}
 CORE_SUBJECTS = ('maths', 'reading', 'spag')
+ALL_SUBJECTS = (*CORE_SUBJECTS, 'writing')
 SUBJECT_DISPLAY_NAMES = {
     'maths': 'Maths',
     'reading': 'Reading',
@@ -34,6 +37,12 @@ SORT_OPTIONS = {
     'percent_asc': 'Lowest combined percent',
     'band_asc': 'Band A–Z',
 }
+CLASS_SORT_OPTIONS = {
+    'year_group': 'Year group',
+    'class_name': 'Class name',
+    'pupil_count_desc': 'Pupil count (high to low)',
+    'pupil_count_asc': 'Pupil count (low to high)',
+}
 
 SUBJECT_DEFAULTS = {
     'maths': {
@@ -42,7 +51,7 @@ SUBJECT_DEFAULTS = {
         'paper_2_name': 'Reasoning',
         'paper_2_max': 35,
         'below_are_threshold_percent': 45.0,
-        'on_track_threshold_percent': 60.0,
+        'on_track_threshold_percent': 45.0,
         'exceeding_threshold_percent': 80.0,
     },
     'reading': {
@@ -51,7 +60,7 @@ SUBJECT_DEFAULTS = {
         'paper_2_name': 'Paper 2',
         'paper_2_max': 20,
         'below_are_threshold_percent': 45.0,
-        'on_track_threshold_percent': 60.0,
+        'on_track_threshold_percent': 45.0,
         'exceeding_threshold_percent': 80.0,
     },
     'spag': {
@@ -60,7 +69,7 @@ SUBJECT_DEFAULTS = {
         'paper_2_name': 'Grammar',
         'paper_2_max': 30,
         'below_are_threshold_percent': 45.0,
-        'on_track_threshold_percent': 60.0,
+        'on_track_threshold_percent': 45.0,
         'exceeding_threshold_percent': 80.0,
     },
 }
@@ -105,7 +114,7 @@ def get_current_term(today: datetime | None = None) -> str:
     today = today or datetime.now(UTC)
     if today.month >= 9:
         return 'autumn'
-    if today.month >= 1 and today.month < 4:
+    if 1 <= today.month < 4:
         return 'spring'
     return 'summer'
 
@@ -131,22 +140,29 @@ def get_setting_defaults(subject: str) -> dict:
 def validate_setting_payload(data: dict) -> dict:
     """Validate and normalize assessment setting values."""
 
-    combined_max = data.get('combined_max')
-    calculated_combined = data['paper_1_max'] + data['paper_2_max']
-    data['combined_max'] = combined_max or calculated_combined
+    cleaned = data.copy()
+    cleaned['paper_1_name'] = cleaned['paper_1_name'].strip() or 'Paper 1'
+    cleaned['paper_2_name'] = cleaned['paper_2_name'].strip() or 'Paper 2'
 
-    if data['paper_1_max'] < 0 or data['paper_2_max'] < 0 or data['combined_max'] <= 0:
+    calculated_combined = cleaned['paper_1_max'] + cleaned['paper_2_max']
+    combined_max = cleaned.get('combined_max')
+    cleaned['combined_max'] = combined_max or calculated_combined
+
+    if cleaned['paper_1_max'] < 0 or cleaned['paper_2_max'] < 0 or cleaned['combined_max'] <= 0:
         raise AssessmentValidationError('Max scores must be zero or above, and combined max must be greater than 0.')
 
-    below = float(data['below_are_threshold_percent'])
-    on_track = float(data['on_track_threshold_percent'])
-    exceeding = float(data['exceeding_threshold_percent'])
-    if not 0 <= below <= 100 or not 0 <= on_track <= 100 or not 0 <= exceeding <= 100:
+    below = float(cleaned['below_are_threshold_percent'])
+    exceeding = float(cleaned['exceeding_threshold_percent'])
+    on_track = float(cleaned.get('on_track_threshold_percent', below))
+    if not 0 <= below <= 100 or not 0 <= exceeding <= 100 or not 0 <= on_track <= 100:
         raise AssessmentValidationError('Threshold percentages must be between 0 and 100.')
-    if below > on_track or on_track > exceeding:
-        raise AssessmentValidationError('Thresholds must follow Below ≤ On Track ≤ Exceeding.')
+    if below > exceeding:
+        raise AssessmentValidationError('Working Towards threshold must be less than or equal to the Exceeding threshold.')
 
-    return data
+    cleaned['below_are_threshold_percent'] = below
+    cleaned['on_track_threshold_percent'] = on_track
+    cleaned['exceeding_threshold_percent'] = exceeding
+    return cleaned
 
 
 def get_or_create_assessment_setting(year_group: int, subject: str, term: str) -> AssessmentSetting:
@@ -166,12 +182,16 @@ def get_or_create_assessment_setting(year_group: int, subject: str, term: str) -
 def get_subject_setting(year_group: int, subject: str, term: str) -> AssessmentSetting:
     """Return the saved setting or a generated default row."""
 
-    return get_or_create_assessment_setting(year_group=year_group, subject=subject, term=term)
+    return get_or_create_assessment_setting(year_group, subject, term)
 
 
-def _round_percent(value: float) -> float:
-    decimal_value = Decimal(str(value)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
-    return float(decimal_value)
+def update_assessment_setting(setting: AssessmentSetting, payload: dict) -> AssessmentSetting:
+    """Apply a validated payload to an assessment setting row."""
+
+    for field, value in payload.items():
+        setattr(setting, field, value)
+    db.session.add(setting)
+    return setting
 
 
 def compute_subject_result_values(setting: AssessmentSetting, paper_1_score: int | None, paper_2_score: int | None) -> dict:
@@ -202,6 +222,41 @@ def compute_subject_result_values(setting: AssessmentSetting, paper_1_score: int
     }
 
 
+def recalculate_subject_results_for_scope(
+    year_group: int,
+    subject: str,
+    term: str,
+    *,
+    academic_year: str | None = None,
+    class_id: int | None = None,
+) -> int:
+    """Recalculate derived result fields after a setting change."""
+
+    setting = get_subject_setting(year_group, subject, term)
+    query = (
+        SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)
+        .options(joinedload(SubjectResult.pupil).joinedload(Pupil.school_class))
+        .filter(
+            SubjectResult.subject == subject,
+            SubjectResult.term == term,
+            SchoolClass.year_group == year_group,
+        )
+    )
+    if academic_year:
+        query = query.filter(SubjectResult.academic_year == academic_year)
+    if class_id:
+        query = query.filter(Pupil.class_id == class_id)
+
+    results = query.all()
+    for result in results:
+        computed = compute_subject_result_values(setting, result.paper_1_score, result.paper_2_score)
+        result.combined_score = computed['combined_score']
+        result.combined_percent = computed['combined_percent']
+        result.band_label = computed['band_label']
+        db.session.add(result)
+    return len(results)
+
+
 def _empty_subject_summary(subject: str) -> dict:
     return {
         'subject': subject,
@@ -212,6 +267,97 @@ def _empty_subject_summary(subject: str) -> dict:
         'on_track': 0,
         'exceeding': 0,
         'on_track_plus': 0,
+        'pupil_count': 0,
+    }
+
+
+def _counts_from_band_labels(rows: list[SubjectResult]) -> dict:
+    counts = {'Working Towards': 0, 'On Track': 0, 'Exceeding': 0}
+    for row in rows:
+        if row.band_label in counts:
+            counts[row.band_label] += 1
+    return counts
+
+
+def _counts_from_writing_bands(rows: list[WritingResult]) -> dict:
+    return {
+        'Working Towards': sum(1 for row in rows if row.band == 'working_towards'),
+        'On Track': sum(1 for row in rows if row.band == 'expected'),
+        'Exceeding': sum(1 for row in rows if row.band == 'greater_depth'),
+    }
+
+
+def get_most_recent_term_with_data(class_id: int, subject: str, academic_year: str) -> str | None:
+    """Return the latest term with saved data for a class and subject."""
+
+    if subject in CORE_SUBJECTS:
+        rows = (
+            SubjectResult.query.join(SubjectResult.pupil)
+            .filter(
+                SubjectResult.subject == subject,
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.band_label.isnot(None),
+                Pupil.class_id == class_id,
+            )
+            .all()
+        )
+    else:
+        rows = (
+            WritingResult.query.join(WritingResult.pupil)
+            .filter(
+                WritingResult.academic_year == academic_year,
+                WritingResult.band.isnot(None),
+                Pupil.class_id == class_id,
+            )
+            .all()
+        )
+
+    if not rows:
+        return None
+    return max(rows, key=lambda item: TERM_SEQUENCE.get(item.term, 0)).term
+
+
+def compute_class_subject_summary(class_id: int, subject: str, academic_year: str) -> dict:
+    """Build a subject summary for a single class using the most recent saved term."""
+
+    latest_term = get_most_recent_term_with_data(class_id, subject, academic_year)
+    if not latest_term:
+        return _empty_subject_summary(subject)
+
+    if subject in CORE_SUBJECTS:
+        latest_rows = (
+            SubjectResult.query.join(SubjectResult.pupil)
+            .filter(
+                SubjectResult.subject == subject,
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.term == latest_term,
+                Pupil.class_id == class_id,
+            )
+            .all()
+        )
+        counts = _counts_from_band_labels(latest_rows)
+    else:
+        latest_rows = (
+            WritingResult.query.join(WritingResult.pupil)
+            .filter(
+                WritingResult.academic_year == academic_year,
+                WritingResult.term == latest_term,
+                Pupil.class_id == class_id,
+            )
+            .all()
+        )
+        counts = _counts_from_writing_bands(latest_rows)
+
+    return {
+        'subject': subject,
+        'subject_label': format_subject_name(subject),
+        'term': latest_term,
+        'term_label': get_term_label(latest_term),
+        'working_towards': counts['Working Towards'],
+        'on_track': counts['On Track'],
+        'exceeding': counts['Exceeding'],
+        'on_track_plus': counts['On Track'] + counts['Exceeding'],
+        'pupil_count': len(latest_rows),
     }
 
 
@@ -219,71 +365,128 @@ def build_dashboard_summary(class_id: int | None, academic_year: str) -> list[di
     """Build dashboard counts using the most recent available term per subject."""
 
     if not class_id:
-        return [_empty_subject_summary(subject) for subject in (*CORE_SUBJECTS, 'writing')]
+        return [_empty_subject_summary(subject) for subject in ALL_SUBJECTS]
+    return [compute_class_subject_summary(class_id, subject, academic_year) for subject in ALL_SUBJECTS]
 
-    rows: list[dict] = []
-    for subject in CORE_SUBJECTS:
-        subject_rows = (
-            SubjectResult.query.join(SubjectResult.pupil)
-            .filter(
-                SubjectResult.subject == subject,
-                SubjectResult.academic_year == academic_year,
-                SubjectResult.band_label.isnot(None),
-                SubjectResult.pupil.has(class_id=class_id),
+
+def build_class_overview_row(school_class: SchoolClass, academic_year: str) -> dict:
+    """Build a dashboard row for a class."""
+
+    pupil_count = school_class.pupils.filter_by(is_active=True).count()
+    subject_summaries = {
+        subject: compute_class_subject_summary(school_class.id, subject, academic_year)
+        for subject in ALL_SUBJECTS
+    }
+    return {
+        'class': school_class,
+        'class_id': school_class.id,
+        'class_name': school_class.name,
+        'year_group': school_class.year_group,
+        'teacher_name': school_class.teacher.username if school_class.teacher else 'Unassigned',
+        'pupil_count': pupil_count,
+        'subjects': subject_summaries,
+    }
+
+
+def build_subject_overview_cards(class_rows: list[dict]) -> list[dict]:
+    """Aggregate subject summary counts across class rows."""
+
+    cards = []
+    for subject in ALL_SUBJECTS:
+        card = _empty_subject_summary(subject)
+        term_candidates = []
+        for row in class_rows:
+            summary = row['subjects'][subject]
+            card['working_towards'] += summary['working_towards']
+            card['on_track'] += summary['on_track']
+            card['exceeding'] += summary['exceeding']
+            card['on_track_plus'] += summary['on_track_plus']
+            card['pupil_count'] += row['pupil_count']
+            if summary['term']:
+                term_candidates.append(summary['term'])
+        if term_candidates:
+            latest_term = max(term_candidates, key=lambda item: TERM_SEQUENCE.get(item, 0))
+            card['term'] = latest_term
+            card['term_label'] = get_term_label(latest_term)
+        cards.append(card)
+    return cards
+
+
+def get_class_detail_context(school_class: SchoolClass, academic_year: str) -> dict:
+    """Return summary and recent result context for a single class."""
+
+    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    summary_rows = build_dashboard_summary(school_class.id, academic_year)
+    recent_tables: list[dict] = []
+
+    for subject in ALL_SUBJECTS:
+        latest_term = get_most_recent_term_with_data(school_class.id, subject, academic_year)
+        if not latest_term:
+            recent_tables.append(
+                {
+                    'subject': subject,
+                    'subject_label': format_subject_name(subject),
+                    'term_label': 'No data',
+                    'rows': [],
+                }
             )
-            .all()
-        )
-        if not subject_rows:
-            rows.append(_empty_subject_summary(subject))
             continue
 
-        latest_term = max(subject_rows, key=lambda item: TERM_SEQUENCE.get(item.term, 0)).term
-        latest_rows = [item for item in subject_rows if item.term == latest_term]
-        counts = {'Working Towards': 0, 'On Track': 0, 'Exceeding': 0}
-        for result in latest_rows:
-            if result.band_label in counts:
-                counts[result.band_label] += 1
-        rows.append(
+        if subject in CORE_SUBJECTS:
+            rows = (
+                SubjectResult.query.join(SubjectResult.pupil)
+                .filter(
+                    SubjectResult.subject == subject,
+                    SubjectResult.academic_year == academic_year,
+                    SubjectResult.term == latest_term,
+                    Pupil.class_id == school_class.id,
+                )
+                .order_by(Pupil.last_name, Pupil.first_name)
+                .all()
+            )
+            formatted_rows = [
+                {
+                    'pupil_name': row.pupil.full_name,
+                    'paper_1_score': row.paper_1_score,
+                    'paper_2_score': row.paper_2_score,
+                    'combined_score': row.combined_score,
+                    'combined_percent': row.combined_percent,
+                    'band_label': row.band_label,
+                }
+                for row in rows
+            ]
+        else:
+            rows = (
+                WritingResult.query.join(WritingResult.pupil)
+                .filter(
+                    WritingResult.academic_year == academic_year,
+                    WritingResult.term == latest_term,
+                    Pupil.class_id == school_class.id,
+                )
+                .order_by(Pupil.last_name, Pupil.first_name)
+                .all()
+            )
+            formatted_rows = [
+                {
+                    'pupil_name': row.pupil.full_name,
+                    'band_label': get_writing_band_label(row.band),
+                    'notes': row.notes,
+                }
+                for row in rows
+            ]
+
+        recent_tables.append(
             {
                 'subject': subject,
                 'subject_label': format_subject_name(subject),
-                'term': latest_term,
                 'term_label': get_term_label(latest_term),
-                'working_towards': counts['Working Towards'],
-                'on_track': counts['On Track'],
-                'exceeding': counts['Exceeding'],
-                'on_track_plus': counts['On Track'] + counts['Exceeding'],
+                'rows': formatted_rows,
             }
         )
 
-    writing_rows = (
-        WritingResult.query.join(WritingResult.pupil)
-        .filter(
-            WritingResult.academic_year == academic_year,
-            WritingResult.band.isnot(None),
-            WritingResult.pupil.has(class_id=class_id),
-        )
-        .all()
-    )
-    if not writing_rows:
-        rows.append(_empty_subject_summary('writing'))
-        return rows
-
-    latest_term = max(writing_rows, key=lambda item: TERM_SEQUENCE.get(item.term, 0)).term
-    latest_rows = [item for item in writing_rows if item.term == latest_term]
-    working_towards = sum(1 for item in latest_rows if item.band == 'working_towards')
-    on_track = sum(1 for item in latest_rows if item.band == 'expected')
-    exceeding = sum(1 for item in latest_rows if item.band == 'greater_depth')
-    rows.append(
-        {
-            'subject': 'writing',
-            'subject_label': format_subject_name('writing'),
-            'term': latest_term,
-            'term_label': get_term_label(latest_term),
-            'working_towards': working_towards,
-            'on_track': on_track,
-            'exceeding': exceeding,
-            'on_track_plus': on_track + exceeding,
-        }
-    )
-    return rows
+    return {
+        'school_class': school_class,
+        'pupils': pupils,
+        'summary_rows': summary_rows,
+        'recent_tables': recent_tables,
+    }
