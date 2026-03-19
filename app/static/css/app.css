@@ -1,0 +1,58 @@
+body {
+  background-color: #f5f7fb;
+  color: #243447;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 260px;
+  min-height: 100vh;
+}
+
+.sidebar .nav-link {
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.content-area {
+  min-width: 0;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.chart-placeholder {
+  min-height: 280px;
+  background: linear-gradient(135deg, #f8fafc, #eef2f7);
+}
+
+.subject-table th,
+.subject-table td {
+  white-space: nowrap;
+}
+
+.auth-shell {
+  min-height: 100vh;
+}
+
+@media (max-width: 991.98px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+  }
+}
