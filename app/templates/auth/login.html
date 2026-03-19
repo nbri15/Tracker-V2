@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block title %}Sign in{% endblock %}
+
+{% block auth_content %}
+<div class="min-vh-100 d-flex align-items-center justify-content-center bg-light">
+  <div class="card shadow-sm border-0" style="width: 100%; max-width: 420px;">
+    <div class="card-body p-4 p-md-5">
+      <div class="text-center mb-4">
+        <h1 class="h3 mb-2">Assessment Tracker</h1>
+        <p class="text-muted mb-0">Sign in to access dashboards and assessment areas.</p>
+      </div>
+      <form method="post" novalidate>
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+          {{ form.username.label(class='form-label') }}
+          {{ form.username(class='form-control', placeholder='Enter username') }}
+        </div>
+        <div class="mb-3">
+          {{ form.password.label(class='form-label') }}
+          {{ form.password(class='form-control', placeholder='Enter password') }}
+        </div>
+        <div class="d-grid gap-2">
+          {{ form.submit(class='btn btn-primary') }}
+        </div>
+      </form>
+      <div class="mt-4 small text-muted">
+        Local demo accounts: <strong>admin</strong> / <strong>admin1234</strong> and <strong>teacher1</strong> / <strong>teacher1234</strong>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

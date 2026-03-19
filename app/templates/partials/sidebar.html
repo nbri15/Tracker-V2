@@ -1,0 +1,24 @@
+<aside class="sidebar bg-dark text-white p-3">
+  <div class="sidebar-brand mb-4">
+    <h1 class="h5 mb-1">Assessment Tracker</h1>
+    <p class="small text-white-50 mb-0">assessment-tracker-v2</p>
+  </div>
+
+  <nav class="nav flex-column gap-1">
+    <a class="nav-link text-white {% if request.endpoint == 'dashboards.teacher_dashboard' or request.endpoint == 'dashboards.admin_dashboard' %}active{% endif %}" href="{{ url_for('dashboards.index') }}">Dashboard</a>
+
+    <div class="text-uppercase small text-white-50 mt-3 mb-1">Teacher area</div>
+    <a class="nav-link text-white" href="{{ url_for('teacher.maths') }}">Maths</a>
+    <a class="nav-link text-white" href="{{ url_for('teacher.reading') }}">Reading</a>
+    <a class="nav-link text-white" href="{{ url_for('teacher.spag') }}">SPaG</a>
+    <a class="nav-link text-white" href="{{ url_for('teacher.writing') }}">Writing</a>
+
+    {% if current_user.is_admin %}
+      <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
+      <a class="nav-link text-white" href="{{ url_for('admin.classes') }}">Classes</a>
+      <a class="nav-link text-white" href="{{ url_for('admin.pupils') }}">Pupils</a>
+      <a class="nav-link text-white" href="{{ url_for('admin.settings') }}">Settings</a>
+      <a class="nav-link text-white" href="{{ url_for('admin.imports') }}">Imports</a>
+    {% endif %}
+  </nav>
+</aside>

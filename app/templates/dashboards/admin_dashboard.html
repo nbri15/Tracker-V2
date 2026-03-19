@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin dashboard{% endblock %}
+{% set page_heading = 'Admin dashboard' %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <p class="text-muted mb-2">Total pupils</p>
+        <h3 class="display-6 mb-0">{{ total_pupils }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <p class="text-muted mb-2">Total classes</p>
+        <h3 class="display-6 mb-0">{{ total_classes }}</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <p class="text-muted mb-2">Teacher count</p>
+        <h3 class="display-6 mb-0">{{ teacher_count }}</h3>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>Whole-school overview</strong>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center chart-placeholder">
+        <div class="text-center text-muted">
+          <div class="display-6">🏫</div>
+          <p class="mb-0">Placeholder area for future whole-school chart widgets.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>Filters placeholder</strong>
+      </div>
+      <div class="card-body">
+        <div class="row g-2">
+          {% for filter_name in ['Year group', 'Gender', 'Pupil premium', 'LAPS', 'Service child', 'Class', 'Intervention', 'Writing band', 'Pupil search'] %}
+            <div class="col-sm-6">
+              <div class="border rounded p-2 bg-light small text-muted">{{ filter_name }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
