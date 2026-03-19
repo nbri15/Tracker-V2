@@ -4,41 +4,191 @@
 {% set page_heading = 'Assessment settings' %}
 
 {% block content %}
+<div class="row g-4 mb-4">
+  <div class="col-xl-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>Add or update a setting</strong>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">Create missing rows or overwrite an existing year-group / subject / term combination.</p>
+        <form method="post" class="row g-3">
+          <input type="hidden" name="action" value="create">
+          <div class="col-md-6">
+            {{ form.year_group.label(class_='form-label') }}
+            {{ form.year_group(class_='form-select') }}
+          </div>
+          <div class="col-md-6">
+            {{ form.subject.label(class_='form-label') }}
+            {{ form.subject(class_='form-select') }}
+          </div>
+          <div class="col-md-6">
+            {{ form.term.label(class_='form-label') }}
+            {{ form.term(class_='form-select') }}
+          </div>
+          <div class="col-md-6">
+            {{ form.combined_max.label(class_='form-label') }}
+            {{ form.combined_max(class_='form-control', placeholder='Auto if blank') }}
+          </div>
+          <div class="col-md-6">
+            {{ form.paper_1_name.label(class_='form-label') }}
+            {{ form.paper_1_name(class_='form-control') }}
+          </div>
+          <div class="col-md-6">
+            {{ form.paper_1_max.label(class_='form-label') }}
+            {{ form.paper_1_max(class_='form-control') }}
+          </div>
+          <div class="col-md-6">
+            {{ form.paper_2_name.label(class_='form-label') }}
+            {{ form.paper_2_name(class_='form-control') }}
+          </div>
+          <div class="col-md-6">
+            {{ form.paper_2_max.label(class_='form-label') }}
+            {{ form.paper_2_max(class_='form-control') }}
+          </div>
+          <div class="col-md-4">
+            {{ form.below_are_threshold_percent.label(class_='form-label') }}
+            {{ form.below_are_threshold_percent(class_='form-control') }}
+          </div>
+          <div class="col-md-4">
+            {{ form.on_track_threshold_percent.label(class_='form-label') }}
+            {{ form.on_track_threshold_percent(class_='form-control') }}
+          </div>
+          <div class="col-md-4">
+            {{ form.exceeding_threshold_percent.label(class_='form-label') }}
+            {{ form.exceeding_threshold_percent(class_='form-control') }}
+          </div>
+          <div class="col-12 d-grid">
+            {{ form.submit(class_='btn btn-primary') }}
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-8">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white">
+        <strong>Filter settings</strong>
+      </div>
+      <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label">Year group</label>
+            <select name="year_group" class="form-select">
+              <option value="">All year groups</option>
+              {% for year in range(1, 7) %}
+                <option value="{{ year }}" {% if filter_year_group == year|string %}selected{% endif %}>Year {{ year }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Subject</label>
+            <select name="subject" class="form-select">
+              {% for value, label in filter_subject_choices %}
+                <option value="{{ value }}" {% if filter_subject == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Term</label>
+            <select name="term" class="form-select">
+              {% for value, label in filter_term_choices %}
+                <option value="{{ value }}" {% if filter_term == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3 d-flex gap-2">
+            <button class="btn btn-primary flex-grow-1">Apply</button>
+            <a class="btn btn-outline-secondary" href="{{ url_for('admin.settings') }}">Clear</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card shadow-sm">
-  <div class="card-header bg-white d-flex justify-content-between align-items-center">
-    <strong>Threshold settings</strong>
-    <span class="badge text-bg-secondary">Ready for editable forms in Phase 2</span>
+  <div class="card-header bg-white d-flex justify-content-between align-items-center gap-3">
+    <strong>Editable threshold settings</strong>
+    <span class="text-muted small">Inline edits save straight back to the selected row.</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-sm align-middle mb-0">
-      <thead>
+    <table class="table table-sm align-middle mb-0 settings-table">
+      <thead class="table-light sticky-top">
         <tr>
-          <th>Year</th>
-          <th>Subject</th>
-          <th>Term</th>
+          <th>Scope</th>
           <th>Paper 1</th>
           <th>Paper 2</th>
-          <th>Combined max</th>
+          <th>Combined</th>
           <th>Thresholds</th>
+          <th class="text-end">Action</th>
         </tr>
       </thead>
       <tbody>
         {% for setting in settings %}
           <tr>
-            <td>{{ setting.year_group }}</td>
-            <td>{{ setting.subject|capitalize }}</td>
-            <td>{{ setting.term|capitalize }}</td>
-            <td>{{ setting.paper_1_name }} ({{ setting.paper_1_max }})</td>
-            <td>{{ setting.paper_2_name }} ({{ setting.paper_2_max }})</td>
-            <td>{{ setting.combined_max }}</td>
-            <td class="small text-muted">
-              Below: {{ setting.below_are_threshold_percent }}%<br>
-              On track: {{ setting.on_track_threshold_percent }}%<br>
-              Exceeding: {{ setting.exceeding_threshold_percent }}%
+            <td>
+              <div class="row g-2">
+                <div class="col-12 col-xl-4">
+                  <label class="form-label small">Year group</label>
+                  <select name="year_group_{{ setting.id }}" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
+                    {% for year in range(1, 7) %}
+                      <option value="{{ year }}" {% if setting.year_group == year %}selected{% endif %}>Year {{ year }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <label class="form-label small">Subject</label>
+                  <select name="subject_{{ setting.id }}" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
+                    {% for value, label in filter_subject_choices[1:] %}
+                      <option value="{{ value }}" {% if setting.subject == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <label class="form-label small">Term</label>
+                  <select name="term_{{ setting.id }}" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
+                    {% for value, label in terms %}
+                      <option value="{{ value }}" {% if setting.term == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </td>
+            <td>
+              <label class="form-label small">Name</label>
+              <input type="text" name="paper_1_name_{{ setting.id }}" value="{{ setting.paper_1_name }}" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
+              <label class="form-label small">Max</label>
+              <input type="number" name="paper_1_max_{{ setting.id }}" value="{{ setting.paper_1_max }}" min="0" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+            </td>
+            <td>
+              <label class="form-label small">Name</label>
+              <input type="text" name="paper_2_name_{{ setting.id }}" value="{{ setting.paper_2_name }}" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
+              <label class="form-label small">Max</label>
+              <input type="number" name="paper_2_max_{{ setting.id }}" value="{{ setting.paper_2_max }}" min="0" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+            </td>
+            <td>
+              <label class="form-label small">Combined max</label>
+              <input type="number" name="combined_max_{{ setting.id }}" value="{{ setting.combined_max }}" min="1" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+            </td>
+            <td>
+              <label class="form-label small">Below %</label>
+              <input type="number" step="0.1" name="below_are_threshold_percent_{{ setting.id }}" value="{{ setting.below_are_threshold_percent }}" min="0" max="100" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
+              <label class="form-label small">On Track %</label>
+              <input type="number" step="0.1" name="on_track_threshold_percent_{{ setting.id }}" value="{{ setting.on_track_threshold_percent }}" min="0" max="100" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
+              <label class="form-label small">Exceeding %</label>
+              <input type="number" step="0.1" name="exceeding_threshold_percent_{{ setting.id }}" value="{{ setting.exceeding_threshold_percent }}" min="0" max="100" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+            </td>
+            <td class="text-end align-bottom">
+              <form id="setting-form-{{ setting.id }}" method="post">
+                <input type="hidden" name="action" value="update-row">
+                <input type="hidden" name="setting_id" value="{{ setting.id }}">
+              </form>
+              <button class="btn btn-outline-primary btn-sm" form="setting-form-{{ setting.id }}">Save row</button>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="text-center py-4 text-muted">No settings defined yet.</td></tr>
+          <tr><td colspan="6" class="text-center py-4 text-muted">No settings match the current filters.</td></tr>
         {% endfor %}
       </tbody>
     </table>

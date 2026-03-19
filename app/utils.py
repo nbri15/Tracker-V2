@@ -32,6 +32,12 @@ def admin_required(view_func):
     return role_required('admin')(view_func)
 
 
+def teacher_required(view_func):
+    """Require the current user to be a teacher."""
+
+    return role_required('teacher')(view_func)
+
+
 def teacher_or_admin_required(view_func):
     """Allow teachers and admins to access a route."""
 
