@@ -1,6 +1,6 @@
 """User account model definitions."""
 
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -18,7 +18,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='teacher')
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     classes = db.relationship('SchoolClass', back_populates='teacher', lazy='dynamic')
 

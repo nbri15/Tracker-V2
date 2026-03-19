@@ -1,22 +1,24 @@
 # assessment-tracker-v2
 
-A Phase 2.5 Flask application for a school assessment tracker covering Years 1 to 6. This version keeps the teacher spreadsheet-style pages in place, moves routine score-setting edits onto the teacher subject pages, and upgrades the admin dashboard into a practical class overview area.
+A Phase 3 Flask application for a school assessment tracker covering Years 1 to 6. This build keeps the teacher spreadsheet-style pages, preserves the teacher-side settings strip and existing assessment routes, and adds GAP/QLA, interventions, Year 6 SATs tracking, CSV tooling, and stronger admin management.
 
 ## Project overview
 
 This project now supports:
 
-- sign in as an admin or teacher
+- sign in as an admin or as Year 1 to Year 6 teacher users
 - open role-based dashboards
 - enter Maths, Reading, SPaG, and Writing results for the logged-in teacher's class
-- switch by academic year and term
-- bulk-save and reload spreadsheet-style assessment tables
-- edit score-based assessment settings directly from each teacher subject page
-- auto-calculate combined scores, percentages, and category bands for score-based subjects
-- use an admin dashboard with class overview tables, filters, and subject summary cards
-- open admin class detail pages with pupil lists and recent subject tables
-- keep an admin-only fallback settings page for exceptional edits
-- seed sample users, classes, pupils, settings, and example outcomes
+- keep teacher-editable subject settings directly on each teacher subject page
+- open GAP / question analysis pages for Maths, Reading, and SPaG
+- save question metadata, question-level scores, totals, and simple GAP summaries
+- auto-flag the closest 6 pupils below the pass threshold for interventions
+- manage intervention notes and active / inactive status
+- use a real Year 6 SATs tracker with 4 assessment points plus writing judgements
+- import pupils, subject results, and writing results from CSV
+- download CSV templates and export assessment data back to CSV
+- manage teacher users and class-to-teacher assignments from admin pages
+- use richer admin class overview pages, class detail pages, intervention views, and Year 6 SATs overviews
 
 ## Tech stack
 
@@ -72,36 +74,28 @@ $env:FLASK_ENV = 'development'
 $env:SECRET_KEY = 'change-this-in-production'
 ```
 
-If `SECRET_KEY` is not set, the app falls back to a development-only key for local testing.
-
 ### 4) Run database migrations
 
-This repository includes migration files. For a normal setup run:
+For a normal setup run:
 
 ```bash
 flask db upgrade
 ```
 
-If you already have a local SQLite database from before migration files were added, back it up first. In many local-dev cases the simplest reset path is:
+If you are resetting local development data:
 
 ```bash
 rm -f instance/assessment_tracker.db
 flask db upgrade
 ```
 
-### 5) Seed sample data
+### 5) Seed development data
 
 ```bash
 python seed.py
 ```
 
-The seed script creates:
-
-- default admin and teacher accounts
-- sample Year 3 and Year 6 classes
-- sample pupils
-- editable assessment settings for Years 1 to 6 across Maths, Reading, and SPaG for Autumn, Spring, and Summer
-- sample subject and writing results for the teacher class so the dashboards show live data immediately
+The seed script is safe to rerun in normal local development. It updates or creates the expected default users, classes, settings, and sample rows where possible.
 
 ### 6) Run the application
 
@@ -111,199 +105,158 @@ python run.py
 
 The development server starts on `http://0.0.0.0:8080/`.
 
-## Default test logins
+## Default development logins
 
-- Admin: `admin` / `admin1234`
-- Teacher: `teacher1` / `teacher1234`
+### Admin
 
-## How teacher subject-page settings now work
+- `admin` / `admin123`
 
-Routine setup for score-based subjects now happens on:
+### Teachers
 
-- `/teacher/maths`
-- `/teacher/reading`
-- `/teacher/spag`
+- Year 1: `teacher1` / `teacher1`
+- Year 2: `teacher2` / `teacher2`
+- Year 3: `teacher3` / `teacher3`
+- Year 4: `teacher4` / `teacher4`
+- Year 5: `teacher5` / `teacher5`
+- Year 6: `teacher6` / `teacher6`
 
-Each page has a compact settings strip above the spreadsheet table for the selected:
+Each teacher is linked to the matching `Year 1` to `Year 6` class in the seed data.
 
-- year group
-- subject
-- term
+## GAP / QLA pages
 
-Teachers can edit and save:
+Teacher score pages for Maths, Reading, and SPaG now include a **GAP Analysis** / **Question Analysis** link.
 
-- paper 1 name
-- paper 1 max
-- paper 2 name
-- paper 2 max
-- combined max
-- Working Towards threshold percent
-- Exceeding threshold percent
+Routes:
 
-### Combined max behaviour
+- `/teacher/maths/gap`
+- `/teacher/reading/gap`
+- `/teacher/spag/gap`
 
-- By default, combined max follows `paper_1_max + paper_2_max`.
-- Teachers can manually override the combined max from the subject page when needed.
-- Saving settings updates the `AssessmentSetting` row for that year group, subject, and term.
-- If a setting does not exist yet, the app creates it automatically.
+How GAP works:
 
-### Category logic
-
-For Maths, Reading, and SPaG the saved thresholds use this banding logic:
-
-- if percent is below `below_are_threshold_percent` → `Working Towards`
-- if percent is greater than or equal to `below_are_threshold_percent` and below `exceeding_threshold_percent` → `On Track`
-- if percent is greater than or equal to `exceeding_threshold_percent` → `Exceeding`
-
-`On Track+` is a summary measure only. It is calculated as `On Track + Exceeding` and is not stored as a separate pupil band.
-
-### Recalculation after settings changes
-
-When a teacher saves settings from a subject page, the app:
-
-- keeps the original paper scores unchanged
-- recalculates derived combined scores, percentages, and band labels for saved results in that class, subject, academic year, and term
-- refreshes the page so the spreadsheet table reflects the updated settings immediately
-
-## How teachers enter results
-
-Teachers enter data from these pages:
-
-- `/teacher/maths`
-- `/teacher/reading`
-- `/teacher/spag`
-- `/teacher/writing`
-
-### Maths, Reading, and SPaG
-
-On each page the teacher can:
-
-- select academic year and term
-- search pupils
-- sort by pupil name or combined percent
-- edit settings in the compact strip at the top
-- enter paper scores and optional notes in one table
-- save settings separately from pupil scores
-- save all visible pupil rows in bulk
-
-The app then:
-
-- validates scores against the current max scores
-- saves source as `manual`
-- recalculates combined score and percent
-- rounds percentages to 1 decimal place
-- recalculates the band label from the current setting
-
-### Writing
-
-The Writing page remains intentionally simpler. It supports:
-
-- academic year and term switching
 - one row per pupil
-- a writing band dropdown
-- optional notes
-- bulk save and reload
+- one column per question
+- teachers can edit question labels such as `1`, `2`, `3a`, `3b`
+- teachers can edit question type / topic and max score
+- totals calculate across the row
+- the page shows max total plus simple summary cards for question averages, lowest-performing questions, and weakest topics
 
-No threshold settings are shown on Writing.
+### GAP sync rule
 
-Dashboard summaries map writing bands like this:
+When GAP totals are saved:
 
-- `Working Towards` → Working Towards
-- `Expected` → On Track
-- `Greater Depth` → Exceeding
+- if a pupil has no main subject result yet for that subject / term / year, the combined score is populated from GAP and the source becomes `gap`
+- if a saved manual or CSV result already exists, the app does **not** silently overwrite it
+- if the GAP total differs from an existing manual or CSV result, the page shows a warning flash message
 
-## How admin dashboard summaries are calculated
+## Intervention suggestions
 
-The admin dashboard is now an overview page instead of a setup-first page.
+Teacher subject pages and the teacher interventions page use the current pass threshold from the teacher-editable settings strip.
 
-It includes:
+The app:
 
-- whole-school headline counts
-- class overview filters for academic year, year group, class, and teacher
-- subject summary cards
-- a class overview table
-- links into `/admin/classes/<class_id>` detail pages
+- finds pupils below the pass threshold
+- sorts them by highest score still below the threshold, so the closest pupils are prioritised
+- auto-flags the closest 6 pupils
+- stores intervention records with subject, term, academic year, reason, note, auto/manual state, and active state
 
-### Class overview summary rules
+Routes:
 
-For each class and each subject, the dashboard uses the most recent term with saved data in the selected academic year.
+- `/teacher/interventions`
+- `/admin/interventions`
 
-For Maths, Reading, and SPaG it counts saved pupil bands:
+Teachers can add extra pupils manually and mark interventions inactive when complete.
 
-- `Working Towards`
-- `On Track`
-- `Exceeding`
-- `On Track+ = On Track + Exceeding`
+## Year 6 SATs tracker
 
-For Writing it maps bands like this:
+Routes:
 
-- `Working Towards` → Working Towards
-- `Expected` → On Track
-- `Greater Depth` → Exceeding
-- `On Track+ = Expected + Greater Depth`
+- `/teacher/sats`
+- `/admin/sats`
 
-## Admin settings page
+The Year 6 SATs tracker includes:
 
-`/admin/settings` still exists, but it is now an advanced admin-only fallback editor rather than the main workflow.
+- Reading, Maths, and SPaG
+- 4 assessment points for raw and scaled scores
+- automatic most-recent scaled score display
+- writing judgements stored separately from the raw/scaled subjects
+- spreadsheet-style bulk save
+- admin cohort overview for Year 6
 
-Use it for:
+Only the Year 6 teacher meaningfully uses the teacher-facing SATs page, while admin can always view the cohort.
 
-- reviewing saved settings
-- fixing exceptional rows
-- creating or editing missing settings without using a teacher page
+## CSV import / export
 
-## Rerunning seed data
+Admin import page:
 
-To refresh local sample data after resetting the database:
+- `/admin/imports`
+
+Included tools:
+
+- pupil import template download
+- subject result import template download
+- writing import template download
+- CSV upload for pupils, subject results, and writing results
+- CSV export for subject results and writing results
+
+Import rules:
+
+- rows are validated and reported through flash messages
+- manual subject results are not silently overwritten by CSV imports
+- imported subject result rows use source `csv`
+- the workflow is intentionally simple and admin-friendly rather than heavily automated
+
+## Admin management pages
+
+Routes:
+
+- `/admin/users`
+- `/admin/classes`
+
+Admin users can:
+
+- create teacher users
+- edit usernames
+- reset passwords by entering a new password
+- assign or reassign teachers to classes
+- create new classes
+- view class-to-teacher mapping in the main class table
+
+## Admin overview improvements
+
+The admin dashboard and class pages now include:
+
+- stronger class overview links
+- filters for year group, class, teacher, and pupil subgroup views (`PP`, `LAPS`, `service child`)
+- sortable class overview tables
+- active intervention counts by class
+- class detail pages with pupil lists, subject summaries, intervention summaries, and Year 6 SATs summary blocks
+
+## Typical development commands
+
+### Apply migrations
 
 ```bash
 flask db upgrade
-python seed.py
 ```
 
-If you want a completely clean local reset first:
+### Seed or refresh development data
 
 ```bash
-rm -f instance/assessment_tracker.db
-flask db upgrade
 python seed.py
 ```
 
-## Project structure summary
+### Run the app
 
-```text
-assessment-tracker-v2/
-├── app/
-│   ├── __init__.py
-│   ├── extensions.py
-│   ├── utils.py
-│   ├── admin/
-│   ├── auth/
-│   ├── dashboards/
-│   ├── models/
-│   ├── services/
-│   ├── static/
-│   ├── teacher/
-│   └── templates/
-├── instance/
-├── migrations/
-├── config.py
-├── run.py
-├── seed.py
-├── requirements.txt
-└── README.md
+```bash
+python run.py
 ```
 
-## Notes for shared-school deployment
+## Recommended next Phase 4 ideas
 
-- SQLite keeps the setup simple for a single shared school server PC.
-- The application is desktop-first and optimized for quick spreadsheet-style entry.
-- The codebase uses blueprints, separate model files, and service helpers to support later CSV import and sync work.
-- CSV import, GAP sync, interventions automation, Year 6 SATs workflows, and whole-school analytics remain out of scope for this phase.
-
-## Recommended next phase tasks
-
-1. Add CSV import with downloadable templates, preview validation, and row-level error reporting.
-2. Add lightweight class trend views by term without introducing heavy charting dependencies.
-3. Add richer admin class drill-down pages for pupil groups, notes review, and moderation checks.
-4. Add safe exports for teacher and admin overview pages.
+- add a safe “use GAP total” overwrite action for manual review
+- add CSV preview screens before commit
+- add richer admin export filtering with downloadable subgroup summaries
+- add intervention review dates and impact tracking
+- add printable parent / staff reports for Year 6 SATs and term summaries
+- add automated tests for service-layer logic and route workflows

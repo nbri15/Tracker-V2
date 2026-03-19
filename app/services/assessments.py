@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
-from app.models import AssessmentSetting, Pupil, SchoolClass, SubjectResult, WritingResult
+from app.models import AssessmentSetting, Intervention, Pupil, SatsResult, SatsWritingResult, SchoolClass, SubjectResult, WritingResult
 
 TERMS = [
     ('autumn', 'Autumn'),
@@ -40,9 +39,22 @@ SORT_OPTIONS = {
 CLASS_SORT_OPTIONS = {
     'year_group': 'Year group',
     'class_name': 'Class name',
+    'teacher_name': 'Teacher',
     'pupil_count_desc': 'Pupil count (high to low)',
     'pupil_count_asc': 'Pupil count (low to high)',
+    'maths_ot_plus_desc': 'Maths OT+ (high to low)',
+    'reading_ot_plus_desc': 'Reading OT+ (high to low)',
+    'spag_ot_plus_desc': 'SPaG OT+ (high to low)',
+    'writing_ot_plus_desc': 'Writing OT+ (high to low)',
 }
+SUBGROUP_FILTERS = {
+    'all': 'All pupils',
+    'pp': 'Pupil Premium',
+    'laps': 'LAPS',
+    'service_child': 'Service child',
+}
+SATS_SUBJECTS = ('reading', 'maths', 'spag')
+SATS_ASSESSMENT_POINTS = (1, 2, 3, 4)
 
 SUBJECT_DEFAULTS = {
     'maths': {
@@ -79,39 +91,33 @@ class AssessmentValidationError(ValueError):
     """Raised when assessment inputs are invalid."""
 
 
-def format_subject_name(subject: str) -> str:
-    """Return a user-facing subject label."""
+class CsvImportError(ValueError):
+    """Raised when CSV input is invalid."""
 
+
+def format_subject_name(subject: str) -> str:
     return SUBJECT_DISPLAY_NAMES.get(subject, subject.replace('_', ' ').title())
 
 
 def get_term_label(term: str) -> str:
-    """Return a user-facing term label."""
-
     return dict(TERMS).get(term, term.title())
 
 
 def get_writing_band_label(band: str | None) -> str:
-    """Return a user-facing writing band label."""
-
     if not band:
         return '—'
     return WRITING_BAND_LABELS.get(band, band.replace('_', ' ').title())
 
 
 def get_current_academic_year(today: datetime | None = None) -> str:
-    """Return the current academic year in UK format, e.g. 2025/26."""
-
-    today = today or datetime.now(UTC)
+    today = today or datetime.now(timezone.utc)
     year = today.year
     start_year = year if today.month >= 9 else year - 1
     return f'{start_year}/{str(start_year + 1)[-2:]}'
 
 
 def get_current_term(today: datetime | None = None) -> str:
-    """Return the current school term based on today's month."""
-
-    today = today or datetime.now(UTC)
+    today = today or datetime.now(timezone.utc)
     if today.month >= 9:
         return 'autumn'
     if 1 <= today.month < 4:
@@ -120,8 +126,6 @@ def get_current_term(today: datetime | None = None) -> str:
 
 
 def build_academic_year_options(current_year: str, total_years: int = 4) -> list[str]:
-    """Build a small list of academic year options around the current year."""
-
     start_year = int(current_year.split('/')[0])
     years = [f'{year}/{str(year + 1)[-2:]}' for year in range(start_year - 1, start_year - 1 + total_years)]
     if current_year not in years:
@@ -130,16 +134,12 @@ def build_academic_year_options(current_year: str, total_years: int = 4) -> list
 
 
 def get_setting_defaults(subject: str) -> dict:
-    """Return default editable settings for a subject."""
-
     defaults = SUBJECT_DEFAULTS[subject].copy()
     defaults['combined_max'] = defaults['paper_1_max'] + defaults['paper_2_max']
     return defaults
 
 
 def validate_setting_payload(data: dict) -> dict:
-    """Validate and normalize assessment setting values."""
-
     cleaned = data.copy()
     cleaned['paper_1_name'] = cleaned['paper_1_name'].strip() or 'Paper 1'
     cleaned['paper_2_name'] = cleaned['paper_2_name'].strip() or 'Paper 2'
@@ -166,8 +166,6 @@ def validate_setting_payload(data: dict) -> dict:
 
 
 def get_or_create_assessment_setting(year_group: int, subject: str, term: str) -> AssessmentSetting:
-    """Fetch or create an assessment setting row."""
-
     setting = AssessmentSetting.query.filter_by(year_group=year_group, subject=subject, term=term).first()
     if setting:
         return setting
@@ -180,14 +178,10 @@ def get_or_create_assessment_setting(year_group: int, subject: str, term: str) -
 
 
 def get_subject_setting(year_group: int, subject: str, term: str) -> AssessmentSetting:
-    """Return the saved setting or a generated default row."""
-
     return get_or_create_assessment_setting(year_group, subject, term)
 
 
 def update_assessment_setting(setting: AssessmentSetting, payload: dict) -> AssessmentSetting:
-    """Apply a validated payload to an assessment setting row."""
-
     for field, value in payload.items():
         setattr(setting, field, value)
     db.session.add(setting)
@@ -195,8 +189,6 @@ def update_assessment_setting(setting: AssessmentSetting, payload: dict) -> Asse
 
 
 def compute_subject_result_values(setting: AssessmentSetting, paper_1_score: int | None, paper_2_score: int | None) -> dict:
-    """Compute combined score, percent, and band label for a subject result."""
-
     for label, score, max_score in (
         (setting.paper_1_name, paper_1_score, setting.paper_1_max),
         (setting.paper_2_name, paper_2_score, setting.paper_2_max),
@@ -210,11 +202,7 @@ def compute_subject_result_values(setting: AssessmentSetting, paper_1_score: int
 
     combined_score = SubjectResult.calculate_combined_score(paper_1_score, paper_2_score)
     combined_percent = SubjectResult.calculate_percent(combined_score, setting.combined_max)
-    band_label = SubjectResult.calculate_band_label(
-        combined_percent,
-        setting.below_are_threshold_percent,
-        setting.exceeding_threshold_percent,
-    )
+    band_label = SubjectResult.calculate_band_label(combined_percent, setting.below_are_threshold_percent, setting.exceeding_threshold_percent)
     return {
         'combined_score': combined_score,
         'combined_percent': combined_percent,
@@ -222,25 +210,12 @@ def compute_subject_result_values(setting: AssessmentSetting, paper_1_score: int
     }
 
 
-def recalculate_subject_results_for_scope(
-    year_group: int,
-    subject: str,
-    term: str,
-    *,
-    academic_year: str | None = None,
-    class_id: int | None = None,
-) -> int:
-    """Recalculate derived result fields after a setting change."""
-
+def recalculate_subject_results_for_scope(year_group: int, subject: str, term: str, *, academic_year: str | None = None, class_id: int | None = None) -> int:
     setting = get_subject_setting(year_group, subject, term)
     query = (
         SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)
         .options(joinedload(SubjectResult.pupil).joinedload(Pupil.school_class))
-        .filter(
-            SubjectResult.subject == subject,
-            SubjectResult.term == term,
-            SchoolClass.year_group == year_group,
-        )
+        .filter(SubjectResult.subject == subject, SubjectResult.term == term, SchoolClass.year_group == year_group)
     )
     if academic_year:
         query = query.filter(SubjectResult.academic_year == academic_year)
@@ -249,12 +224,24 @@ def recalculate_subject_results_for_scope(
 
     results = query.all()
     for result in results:
+        if result.paper_1_score is None or result.paper_2_score is None:
+            continue
         computed = compute_subject_result_values(setting, result.paper_1_score, result.paper_2_score)
         result.combined_score = computed['combined_score']
         result.combined_percent = computed['combined_percent']
         result.band_label = computed['band_label']
         db.session.add(result)
     return len(results)
+
+
+def apply_pupil_subgroup(query, subgroup: str):
+    if subgroup == 'pp':
+        return query.filter(Pupil.pupil_premium.is_(True))
+    if subgroup == 'laps':
+        return query.filter(Pupil.laps.is_(True))
+    if subgroup == 'service_child':
+        return query.filter(Pupil.service_child.is_(True))
+    return query
 
 
 def _empty_subject_summary(subject: str) -> dict:
@@ -268,6 +255,7 @@ def _empty_subject_summary(subject: str) -> dict:
         'exceeding': 0,
         'on_track_plus': 0,
         'pupil_count': 0,
+        'average_percent': None,
     }
 
 
@@ -287,66 +275,50 @@ def _counts_from_writing_bands(rows: list[WritingResult]) -> dict:
     }
 
 
-def get_most_recent_term_with_data(class_id: int, subject: str, academic_year: str) -> str | None:
-    """Return the latest term with saved data for a class and subject."""
-
+def get_most_recent_term_with_data(class_id: int, subject: str, academic_year: str, subgroup: str = 'all') -> str | None:
     if subject in CORE_SUBJECTS:
-        rows = (
-            SubjectResult.query.join(SubjectResult.pupil)
-            .filter(
-                SubjectResult.subject == subject,
-                SubjectResult.academic_year == academic_year,
-                SubjectResult.band_label.isnot(None),
-                Pupil.class_id == class_id,
-            )
-            .all()
+        query = SubjectResult.query.join(SubjectResult.pupil).filter(
+            SubjectResult.subject == subject,
+            SubjectResult.academic_year == academic_year,
+            SubjectResult.band_label.isnot(None),
+            Pupil.class_id == class_id,
         )
     else:
-        rows = (
-            WritingResult.query.join(WritingResult.pupil)
-            .filter(
-                WritingResult.academic_year == academic_year,
-                WritingResult.band.isnot(None),
-                Pupil.class_id == class_id,
-            )
-            .all()
+        query = WritingResult.query.join(WritingResult.pupil).filter(
+            WritingResult.academic_year == academic_year,
+            WritingResult.band.isnot(None),
+            Pupil.class_id == class_id,
         )
-
+    rows = apply_pupil_subgroup(query, subgroup).all()
     if not rows:
         return None
     return max(rows, key=lambda item: TERM_SEQUENCE.get(item.term, 0)).term
 
 
-def compute_class_subject_summary(class_id: int, subject: str, academic_year: str) -> dict:
-    """Build a subject summary for a single class using the most recent saved term."""
-
-    latest_term = get_most_recent_term_with_data(class_id, subject, academic_year)
+def compute_class_subject_summary(class_id: int, subject: str, academic_year: str, subgroup: str = 'all') -> dict:
+    latest_term = get_most_recent_term_with_data(class_id, subject, academic_year, subgroup)
     if not latest_term:
         return _empty_subject_summary(subject)
 
     if subject in CORE_SUBJECTS:
-        latest_rows = (
-            SubjectResult.query.join(SubjectResult.pupil)
-            .filter(
-                SubjectResult.subject == subject,
-                SubjectResult.academic_year == academic_year,
-                SubjectResult.term == latest_term,
-                Pupil.class_id == class_id,
-            )
-            .all()
+        query = SubjectResult.query.join(SubjectResult.pupil).filter(
+            SubjectResult.subject == subject,
+            SubjectResult.academic_year == academic_year,
+            SubjectResult.term == latest_term,
+            Pupil.class_id == class_id,
         )
+        latest_rows = apply_pupil_subgroup(query, subgroup).all()
         counts = _counts_from_band_labels(latest_rows)
+        percents = [row.combined_percent for row in latest_rows if row.combined_percent is not None]
     else:
-        latest_rows = (
-            WritingResult.query.join(WritingResult.pupil)
-            .filter(
-                WritingResult.academic_year == academic_year,
-                WritingResult.term == latest_term,
-                Pupil.class_id == class_id,
-            )
-            .all()
+        query = WritingResult.query.join(WritingResult.pupil).filter(
+            WritingResult.academic_year == academic_year,
+            WritingResult.term == latest_term,
+            Pupil.class_id == class_id,
         )
+        latest_rows = apply_pupil_subgroup(query, subgroup).all()
         counts = _counts_from_writing_bands(latest_rows)
+        percents = []
 
     return {
         'subject': subject,
@@ -358,25 +330,26 @@ def compute_class_subject_summary(class_id: int, subject: str, academic_year: st
         'exceeding': counts['Exceeding'],
         'on_track_plus': counts['On Track'] + counts['Exceeding'],
         'pupil_count': len(latest_rows),
+        'average_percent': round(sum(percents) / len(percents), 1) if percents else None,
     }
 
 
-def build_dashboard_summary(class_id: int | None, academic_year: str) -> list[dict]:
-    """Build dashboard counts using the most recent available term per subject."""
-
+def build_dashboard_summary(class_id: int | None, academic_year: str, subgroup: str = 'all') -> list[dict]:
     if not class_id:
         return [_empty_subject_summary(subject) for subject in ALL_SUBJECTS]
-    return [compute_class_subject_summary(class_id, subject, academic_year) for subject in ALL_SUBJECTS]
+    return [compute_class_subject_summary(class_id, subject, academic_year, subgroup) for subject in ALL_SUBJECTS]
 
 
-def build_class_overview_row(school_class: SchoolClass, academic_year: str) -> dict:
-    """Build a dashboard row for a class."""
-
-    pupil_count = school_class.pupils.filter_by(is_active=True).count()
-    subject_summaries = {
-        subject: compute_class_subject_summary(school_class.id, subject, academic_year)
-        for subject in ALL_SUBJECTS
-    }
+def build_class_overview_row(school_class: SchoolClass, academic_year: str, subgroup: str = 'all') -> dict:
+    pupil_query = school_class.pupils.filter_by(is_active=True)
+    pupil_query = apply_pupil_subgroup(pupil_query, subgroup)
+    pupil_count = pupil_query.count()
+    subject_summaries = {subject: compute_class_subject_summary(school_class.id, subject, academic_year, subgroup) for subject in ALL_SUBJECTS}
+    active_interventions = (
+        Intervention.query.join(Intervention.pupil)
+        .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.class_id == school_class.id)
+        .count()
+    )
     return {
         'class': school_class,
         'class_id': school_class.id,
@@ -384,13 +357,27 @@ def build_class_overview_row(school_class: SchoolClass, academic_year: str) -> d
         'year_group': school_class.year_group,
         'teacher_name': school_class.teacher.username if school_class.teacher else 'Unassigned',
         'pupil_count': pupil_count,
+        'active_interventions': active_interventions,
         'subjects': subject_summaries,
     }
 
 
-def build_subject_overview_cards(class_rows: list[dict]) -> list[dict]:
-    """Aggregate subject summary counts across class rows."""
+def sort_class_rows(class_rows: list[dict], sort: str) -> list[dict]:
+    if sort == 'class_name':
+        return sorted(class_rows, key=lambda row: (row['class_name'].lower(), row['year_group']))
+    if sort == 'teacher_name':
+        return sorted(class_rows, key=lambda row: (row['teacher_name'].lower(), row['class_name'].lower()))
+    if sort == 'pupil_count_desc':
+        return sorted(class_rows, key=lambda row: (-row['pupil_count'], row['class_name'].lower()))
+    if sort == 'pupil_count_asc':
+        return sorted(class_rows, key=lambda row: (row['pupil_count'], row['class_name'].lower()))
+    if sort.endswith('_ot_plus_desc'):
+        subject = sort.replace('_ot_plus_desc', '')
+        return sorted(class_rows, key=lambda row: (-row['subjects'][subject]['on_track_plus'], row['class_name'].lower()))
+    return sorted(class_rows, key=lambda row: (row['year_group'], row['class_name'].lower()))
 
+
+def build_subject_overview_cards(class_rows: list[dict]) -> list[dict]:
     cards = []
     for subject in ALL_SUBJECTS:
         card = _empty_subject_summary(subject)
@@ -401,7 +388,7 @@ def build_subject_overview_cards(class_rows: list[dict]) -> list[dict]:
             card['on_track'] += summary['on_track']
             card['exceeding'] += summary['exceeding']
             card['on_track_plus'] += summary['on_track_plus']
-            card['pupil_count'] += row['pupil_count']
+            card['pupil_count'] += summary['pupil_count']
             if summary['term']:
                 term_candidates.append(summary['term'])
         if term_candidates:
@@ -412,81 +399,124 @@ def build_subject_overview_cards(class_rows: list[dict]) -> list[dict]:
     return cards
 
 
-def get_class_detail_context(school_class: SchoolClass, academic_year: str) -> dict:
-    """Return summary and recent result context for a single class."""
+def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_year: str) -> tuple[str, list[dict]]:
+    latest_term = get_most_recent_term_with_data(school_class.id, subject, academic_year)
+    if not latest_term:
+        return 'No data', []
+
+    if subject in CORE_SUBJECTS:
+        rows = (
+            SubjectResult.query.join(SubjectResult.pupil)
+            .filter(
+                SubjectResult.subject == subject,
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.term == latest_term,
+                Pupil.class_id == school_class.id,
+            )
+            .order_by(Pupil.last_name, Pupil.first_name)
+            .all()
+        )
+        formatted_rows = [
+            {
+                'pupil_name': row.pupil.full_name,
+                'paper_1_score': row.paper_1_score,
+                'paper_2_score': row.paper_2_score,
+                'combined_score': row.combined_score,
+                'combined_percent': row.combined_percent,
+                'band_label': row.band_label,
+                'source': row.source,
+            }
+            for row in rows
+        ]
+    else:
+        rows = (
+            WritingResult.query.join(WritingResult.pupil)
+            .filter(
+                WritingResult.academic_year == academic_year,
+                WritingResult.term == latest_term,
+                Pupil.class_id == school_class.id,
+            )
+            .order_by(Pupil.last_name, Pupil.first_name)
+            .all()
+        )
+        formatted_rows = [
+            {
+                'pupil_name': row.pupil.full_name,
+                'band_label': get_writing_band_label(row.band),
+                'notes': row.notes,
+            }
+            for row in rows
+        ]
+    return get_term_label(latest_term), formatted_rows
+
+
+def build_year6_sats_summary(school_class: SchoolClass, academic_year: str) -> dict | None:
+    if school_class.year_group != 6:
+        return None
 
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    rows = []
+    for pupil in pupils:
+        row = {'pupil': pupil, 'subjects': {}, 'writing': {}}
+        for subject in SATS_SUBJECTS:
+            subject_rows = SatsResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, subject=subject).all()
+            row['subjects'][subject] = get_sats_subject_summary(subject_rows)
+        writing_rows = SatsWritingResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year).all()
+        row['writing'] = get_sats_writing_summary(writing_rows)
+        rows.append(row)
+    return {'rows': rows, 'academic_year': academic_year}
+
+
+def get_class_detail_context(school_class: SchoolClass, academic_year: str) -> dict:
+    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
     summary_rows = build_dashboard_summary(school_class.id, academic_year)
-    recent_tables: list[dict] = []
-
+    recent_tables = []
     for subject in ALL_SUBJECTS:
-        latest_term = get_most_recent_term_with_data(school_class.id, subject, academic_year)
-        if not latest_term:
-            recent_tables.append(
-                {
-                    'subject': subject,
-                    'subject_label': format_subject_name(subject),
-                    'term_label': 'No data',
-                    'rows': [],
-                }
-            )
-            continue
+        term_label, rows = _build_recent_table_rows(school_class, subject, academic_year)
+        recent_tables.append({'subject': subject, 'subject_label': format_subject_name(subject), 'term_label': term_label, 'rows': rows})
 
-        if subject in CORE_SUBJECTS:
-            rows = (
-                SubjectResult.query.join(SubjectResult.pupil)
-                .filter(
-                    SubjectResult.subject == subject,
-                    SubjectResult.academic_year == academic_year,
-                    SubjectResult.term == latest_term,
-                    Pupil.class_id == school_class.id,
-                )
-                .order_by(Pupil.last_name, Pupil.first_name)
-                .all()
-            )
-            formatted_rows = [
-                {
-                    'pupil_name': row.pupil.full_name,
-                    'paper_1_score': row.paper_1_score,
-                    'paper_2_score': row.paper_2_score,
-                    'combined_score': row.combined_score,
-                    'combined_percent': row.combined_percent,
-                    'band_label': row.band_label,
-                }
-                for row in rows
-            ]
-        else:
-            rows = (
-                WritingResult.query.join(WritingResult.pupil)
-                .filter(
-                    WritingResult.academic_year == academic_year,
-                    WritingResult.term == latest_term,
-                    Pupil.class_id == school_class.id,
-                )
-                .order_by(Pupil.last_name, Pupil.first_name)
-                .all()
-            )
-            formatted_rows = [
-                {
-                    'pupil_name': row.pupil.full_name,
-                    'band_label': get_writing_band_label(row.band),
-                    'notes': row.notes,
-                }
-                for row in rows
-            ]
-
-        recent_tables.append(
-            {
-                'subject': subject,
-                'subject_label': format_subject_name(subject),
-                'term_label': get_term_label(latest_term),
-                'rows': formatted_rows,
-            }
-        )
+    interventions = (
+        Intervention.query.join(Intervention.pupil)
+        .filter(Intervention.academic_year == academic_year, Pupil.class_id == school_class.id)
+        .order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name)
+        .all()
+    )
+    sats_summary = build_year6_sats_summary(school_class, academic_year)
 
     return {
         'school_class': school_class,
         'pupils': pupils,
         'summary_rows': summary_rows,
         'recent_tables': recent_tables,
+        'interventions': interventions,
+        'sats_summary': sats_summary,
     }
+
+
+def get_sats_subject_summary(rows: list[SatsResult]) -> dict:
+    by_point = {row.assessment_point: row for row in rows}
+    latest_scaled = get_latest_scaled_score(rows)
+    return {
+        'points': {
+            point: {'raw_score': by_point.get(point).raw_score if by_point.get(point) else None, 'scaled_score': by_point.get(point).scaled_score if by_point.get(point) else None}
+            for point in SATS_ASSESSMENT_POINTS
+        },
+        'latest_scaled': latest_scaled,
+    }
+
+
+def get_sats_writing_summary(rows: list[SatsWritingResult]) -> dict:
+    by_point = {row.assessment_point: row for row in rows}
+    latest_row = max((row for row in rows if row.band), key=lambda row: row.assessment_point, default=None)
+    return {
+        'points': {
+            point: {'band': by_point.get(point).band if by_point.get(point) else None, 'notes': by_point.get(point).notes if by_point.get(point) else None}
+            for point in SATS_ASSESSMENT_POINTS
+        },
+        'latest_band': get_writing_band_label(latest_row.band) if latest_row and latest_row.band else '—',
+    }
+
+
+def get_latest_scaled_score(rows: list[SatsResult]) -> int | None:
+    latest_row = max((row for row in rows if row.scaled_score is not None), key=lambda row: row.assessment_point, default=None)
+    return latest_row.scaled_score if latest_row else None

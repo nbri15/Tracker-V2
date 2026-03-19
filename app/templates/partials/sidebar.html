@@ -9,16 +9,21 @@
 
     {% if current_user.is_teacher %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Teacher area</div>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.maths' %}active{% endif %}" href="{{ url_for('teacher.maths') }}">Maths</a>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.reading' %}active{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.spag' %}active{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
+      <a class="nav-link text-white {% if request.endpoint == 'teacher.maths' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'maths') %}active{% endif %}" href="{{ url_for('teacher.maths') }}">Maths</a>
+      <a class="nav-link text-white {% if request.endpoint == 'teacher.reading' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'reading') %}active{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
+      <a class="nav-link text-white {% if request.endpoint == 'teacher.spag' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'spag') %}active{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
       <a class="nav-link text-white {% if request.endpoint == 'teacher.writing' %}active{% endif %}" href="{{ url_for('teacher.writing') }}">Writing</a>
+      <a class="nav-link text-white {% if request.endpoint == 'teacher.interventions' %}active{% endif %}" href="{{ url_for('teacher.interventions') }}">Interventions</a>
+      <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs</a>
     {% endif %}
 
     {% if current_user.is_admin %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
       <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
+      <a class="nav-link text-white {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Users</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.pupils' %}active{% endif %}" href="{{ url_for('admin.pupils') }}">Pupils</a>
+      <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>
+      <a class="nav-link text-white {% if request.endpoint == 'admin.sats' %}active{% endif %}" href="{{ url_for('admin.sats') }}">Year 6 SATs</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports</a>
     {% endif %}
