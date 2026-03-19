@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+
+{% block title %}Writing{% endblock %}
+{% set page_heading = 'Writing assessment entry' %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+  <div>
+    <h3 class="h5 mb-1">{{ school_class.name if school_class else 'No class assigned' }}</h3>
+    <p class="text-muted mb-0">Bulk entry for teacher-assessed writing bands.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2 subject-nav-tabs">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.maths') }}">Maths</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.reading') }}">Reading</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.spag') }}">SPaG</a>
+    <a class="btn btn-sm btn-primary" href="{{ url_for('teacher.writing') }}">Writing</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body py-3">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-sm-6 col-lg-2">
+        <label class="form-label">Academic year</label>
+        <select name="academic_year" class="form-select">
+          {% for option in academic_year_options %}
+            <option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-6 col-lg-2">
+        <label class="form-label">Term</label>
+        <select name="term" class="form-select">
+          {% for value, label in terms %}
+            <option value="{{ value }}" {% if value == term %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <label class="form-label">Search pupil</label>
+        <input type="text" name="search" value="{{ search }}" class="form-control" placeholder="Search by name">
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <label class="form-label">Sort by</label>
+        <select name="sort" class="form-select">
+          {% for value, label in sort_options.items() %}
+            <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-2 d-flex gap-2">
+        <button class="btn btn-primary flex-grow-1">Apply</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('teacher.writing') }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <div>
+      <strong>Writing bands</strong>
+      <div class="text-muted small">{{ academic_year }} · {{ get_term_label(term) }}</div>
+    </div>
+    <span class="text-muted small">{{ rows|length }} pupils shown</span>
+  </div>
+  <div class="card-body p-0">
+    <form method="post">
+      <input type="hidden" name="academic_year" value="{{ academic_year }}">
+      <input type="hidden" name="term" value="{{ term }}">
+      <input type="hidden" name="search" value="{{ search }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
+
+      <div class="px-3 pt-3 d-flex justify-content-end">
+        <button type="submit" class="btn btn-success btn-sm">Save writing results</button>
+      </div>
+
+      <div class="table-responsive spreadsheet-wrap mt-3">
+        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th>Pupil</th>
+              <th>Band</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ row.pupil.full_name }}</div>
+                  <div class="small text-muted">{{ row.pupil.gender }}{% if row.pupil.pupil_premium %} · PP{% endif %}{% if row.pupil.laps %} · LAPS{% endif %}{% if row.pupil.service_child %} · Service{% endif %}</div>
+                </td>
+                <td>
+                  <select name="band_{{ row.pupil.id }}" class="form-select form-select-sm">
+                    <option value="">— Select band —</option>
+                    {% for value, label in writing_band_choices %}
+                      <option value="{{ value }}" {% if row.band == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <input type="text" name="notes_{{ row.pupil.id }}" value="{{ row.notes }}" class="form-control form-control-sm" placeholder="Optional note">
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="3" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="px-3 py-3 d-flex justify-content-between align-items-center gap-2 border-top bg-light-subtle">
+        <div class="small text-muted">Expected maps to On Track in dashboard summaries. Greater Depth maps to Exceeding.</div>
+        <button type="submit" class="btn btn-success btn-sm">Save writing results</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 bg-body-tertiary shadow-sm">
+  <div class="card-body">
+    <strong>Future GAP / sync area</strong>
+    <p class="text-muted mb-0 small">Placeholder for future GAP links, moderation notes, and writing import tools.</p>
+  </div>
+</div>
+{% endblock %}

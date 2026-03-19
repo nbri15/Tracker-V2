@@ -1,8 +1,9 @@
-"""Development seed script for initial local data."""
+"""Development seed script for local assessment tracker data."""
 
 from app import create_app
 from app.extensions import db
-from app.models import AssessmentSetting, Pupil, SchoolClass, User
+from app.models import AssessmentSetting, Pupil, SchoolClass, SubjectResult, User, WritingResult
+from app.services import CORE_SUBJECTS, TERMS, WRITING_BAND_CHOICES, compute_subject_result_values, get_current_academic_year, get_or_create_assessment_setting
 
 
 app = create_app()
@@ -53,45 +54,83 @@ with app.app_context():
         ('Isla', 'Roberts', 'Female', False, False, True, 'Year 6'),
         ('Jack', 'Davies', 'Male', True, False, False, 'Year 6'),
     ]
+    pupil_lookup = {}
     for first_name, last_name, gender, pupil_premium, laps, service_child, class_name in pupil_specs:
         pupil = Pupil.query.filter_by(first_name=first_name, last_name=last_name).first()
         if not pupil:
-            db.session.add(
-                Pupil(
-                    first_name=first_name,
-                    last_name=last_name,
-                    gender=gender,
-                    pupil_premium=pupil_premium,
-                    laps=laps,
-                    service_child=service_child,
-                    class_id=class_lookup[class_name].id,
-                )
+            pupil = Pupil(
+                first_name=first_name,
+                last_name=last_name,
+                gender=gender,
+                pupil_premium=pupil_premium,
+                laps=laps,
+                service_child=service_child,
+                class_id=class_lookup[class_name].id,
             )
+            db.session.add(pupil)
+        pupil_lookup[f'{first_name} {last_name}'] = pupil
 
-    setting_specs = [
-        (3, 'maths', 'autumn', 'Arithmetic', 40, 'Reasoning', 35, 75, 39.0, 60.0, 80.0),
-        (3, 'reading', 'autumn', 'Paper 1', 30, 'Paper 2', 20, 50, 39.0, 60.0, 80.0),
-        (6, 'spag', 'spring', 'SPaG Test', 50, 'Teacher Check', 10, 60, 40.0, 62.0, 82.0),
-    ]
-    for spec in setting_specs:
-        scope = {'year_group': spec[0], 'subject': spec[1], 'term': spec[2]}
-        setting = AssessmentSetting.query.filter_by(**scope).first()
-        if not setting:
-            db.session.add(
-                AssessmentSetting(
-                    year_group=spec[0],
-                    subject=spec[1],
-                    term=spec[2],
-                    paper_1_name=spec[3],
-                    paper_1_max=spec[4],
-                    paper_2_name=spec[5],
-                    paper_2_max=spec[6],
-                    combined_max=spec[7],
-                    below_are_threshold_percent=spec[8],
-                    on_track_threshold_percent=spec[9],
-                    exceeding_threshold_percent=spec[10],
+    db.session.flush()
+
+    for year_group in range(1, 7):
+        for subject in CORE_SUBJECTS:
+            for term, _ in TERMS:
+                get_or_create_assessment_setting(year_group, subject, term)
+
+    db.session.flush()
+
+    academic_year = get_current_academic_year()
+    teacher_pupils = (
+        Pupil.query.filter_by(class_id=class_lookup['Year 3'].id, is_active=True)
+        .order_by(Pupil.last_name, Pupil.first_name)
+        .all()
+    )
+
+    sample_subject_scores = {
+        'maths': [(28, 22), (31, 25), (16, 14), (24, 18), (34, 30)],
+        'reading': [(18, 15), (23, 17), (12, 10), (19, 13), (24, 18)],
+        'spag': [(14, 22), (18, 25), (10, 14), (13, 18), (19, 28)],
+    }
+    sample_terms = {'maths': 'spring', 'reading': 'spring', 'spag': 'spring'}
+
+    for subject, rows in sample_subject_scores.items():
+        setting = AssessmentSetting.query.filter_by(year_group=3, subject=subject, term=sample_terms[subject]).first()
+        for pupil, (paper_1_score, paper_2_score) in zip(teacher_pupils, rows, strict=False):
+            computed = compute_subject_result_values(setting, paper_1_score, paper_2_score)
+            result = SubjectResult.query.filter_by(
+                pupil_id=pupil.id,
+                academic_year=academic_year,
+                term=sample_terms[subject],
+                subject=subject,
+            ).first()
+            if not result:
+                result = SubjectResult(
+                    pupil_id=pupil.id,
+                    academic_year=academic_year,
+                    term=sample_terms[subject],
+                    subject=subject,
                 )
-            )
+            result.paper_1_score = paper_1_score
+            result.paper_2_score = paper_2_score
+            result.combined_score = computed['combined_score']
+            result.combined_percent = computed['combined_percent']
+            result.band_label = computed['band_label']
+            result.source = 'manual'
+            result.notes = f'Seeded sample {subject} result'
+            db.session.add(result)
+
+    writing_bands = ['expected', 'greater_depth', 'working_towards', 'expected', 'greater_depth']
+    for pupil, band in zip(teacher_pupils, writing_bands, strict=False):
+        result = WritingResult.query.filter_by(
+            pupil_id=pupil.id,
+            academic_year=academic_year,
+            term='spring',
+        ).first()
+        if not result:
+            result = WritingResult(pupil_id=pupil.id, academic_year=academic_year, term='spring', band=band)
+        result.band = band
+        result.notes = 'Seeded sample writing judgement'
+        db.session.add(result)
 
     db.session.commit()
     print('Seed data created or updated successfully.')

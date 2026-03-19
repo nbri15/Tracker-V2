@@ -9,6 +9,9 @@ class WritingResult(db.Model):
     """Stores teacher-assessed writing bands for a pupil."""
 
     __tablename__ = 'writing_results'
+    __table_args__ = (
+        db.UniqueConstraint('pupil_id', 'academic_year', 'term', name='uq_writing_result_scope'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False)

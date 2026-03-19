@@ -46,6 +46,49 @@ body {
   min-height: 100vh;
 }
 
+.spreadsheet-wrap {
+  max-height: 68vh;
+}
+
+.spreadsheet-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.spreadsheet-table tbody td {
+  vertical-align: middle;
+}
+
+.spreadsheet-table .form-control,
+.spreadsheet-table .form-select {
+  min-width: 120px;
+}
+
+.subject-nav-tabs .btn {
+  min-width: 86px;
+}
+
+.dashboard-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.quick-link-card {
+  transition: transform 0.15s ease;
+}
+
+.quick-link-card:hover {
+  transform: translateY(-2px);
+}
+
+.settings-table .form-control,
+.settings-table .form-select {
+  min-width: 110px;
+}
+
 @media (max-width: 991.98px) {
   .app-shell {
     flex-direction: column;
@@ -54,5 +97,9 @@ body {
   .sidebar {
     width: 100%;
     min-height: auto;
+  }
+
+  .spreadsheet-wrap {
+    max-height: none;
   }
 }

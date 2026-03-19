@@ -6,6 +6,7 @@ from flask import Flask, redirect, render_template, request, url_for
 
 from config import config_by_name
 from .extensions import db, login_manager, migrate
+from .services import format_subject_name, get_term_label, get_writing_band_label
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -19,6 +20,7 @@ def create_app(config_name: str | None = None) -> Flask:
     register_extensions(app)
     register_blueprints(app)
     register_error_handlers(app)
+    register_template_helpers(app)
     register_shell_context(app)
 
     return app
@@ -70,6 +72,17 @@ def register_error_handlers(app: Flask) -> None:
         return render_template('errors/404.html'), 404
 
 
+
+
+
+def register_template_helpers(app: Flask) -> None:
+    """Expose common formatting helpers to templates."""
+
+    app.jinja_env.globals.update(
+        format_subject_name=format_subject_name,
+        get_term_label=get_term_label,
+        get_writing_band_label=get_writing_band_label,
+    )
 
 def register_shell_context(app: Flask) -> None:
     """Add common objects to the Flask shell for quick debugging."""

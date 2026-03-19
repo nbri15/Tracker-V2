@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ page_title }}{% endblock %}
+{% set page_heading = page_title ~ ' assessment entry' %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+  <div>
+    <h3 class="h5 mb-1">{{ school_class.name if school_class else 'No class assigned' }}</h3>
+    <p class="text-muted mb-0">Spreadsheet-style bulk entry for {{ page_title }}. Current year group setting: Year {{ school_class.year_group if school_class else '—' }}.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2 subject-nav-tabs">
+    <a class="btn btn-sm {% if subject_key == 'maths' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.maths') }}">Maths</a>
+    <a class="btn btn-sm {% if subject_key == 'reading' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
+    <a class="btn btn-sm {% if subject_key == 'spag' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.writing') }}">Writing</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body py-3">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-sm-6 col-lg-2">
+        <label class="form-label">Academic year</label>
+        <select name="academic_year" class="form-select">
+          {% for option in academic_year_options %}
+            <option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-6 col-lg-2">
+        <label class="form-label">Term</label>
+        <select name="term" class="form-select">
+          {% for value, label in terms %}
+            <option value="{{ value }}" {% if value == term %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <label class="form-label">Search pupil</label>
+        <input type="text" name="search" value="{{ search }}" class="form-control" placeholder="Search by name">
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <label class="form-label">Sort by</label>
+        <select name="sort" class="form-select">
+          {% for value, label in sort_options.items() %}
+            <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-2 d-flex gap-2">
+        <button class="btn btn-primary flex-grow-1">Apply</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('teacher.' ~ subject_key) }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+    <div>
+      <strong>{{ page_title }} settings summary</strong>
+      <div class="text-muted small">{{ academic_year }} · {{ get_term_label(term) }} · {{ school_class.name if school_class else 'No class' }}</div>
+    </div>
+    {% if setting %}
+      <div class="text-muted small text-lg-end">
+        <div>{{ setting.paper_1_name }} max: <strong>{{ setting.paper_1_max }}</strong> · {{ setting.paper_2_name }} max: <strong>{{ setting.paper_2_max }}</strong></div>
+        <div>Combined max: <strong>{{ setting.combined_max }}</strong> · Working Towards below <strong>{{ setting.below_are_threshold_percent }}%</strong> · Exceeding from <strong>{{ setting.exceeding_threshold_percent }}%</strong></div>
+      </div>
+    {% endif %}
+  </div>
+  <div class="card-body p-0">
+    <form method="post">
+      <input type="hidden" name="academic_year" value="{{ academic_year }}">
+      <input type="hidden" name="term" value="{{ term }}">
+      <input type="hidden" name="search" value="{{ search }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
+
+      <div class="px-3 pt-3 d-flex flex-wrap justify-content-between gap-2">
+        <div class="text-muted small">{{ rows|length }} pupils shown · manual source saved from this page</div>
+        <button type="submit" class="btn btn-success btn-sm">Save {{ page_title }} results</button>
+      </div>
+
+      <div class="table-responsive spreadsheet-wrap mt-3">
+        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table js-subject-table"
+          data-below-threshold="{{ setting.below_are_threshold_percent if setting else '' }}"
+          data-exceeding-threshold="{{ setting.exceeding_threshold_percent if setting else '' }}"
+          data-combined-max="{{ setting.combined_max if setting else '' }}">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th>Pupil</th>
+              <th>{{ setting.paper_1_name if setting else 'Paper 1' }}</th>
+              <th>{{ setting.paper_2_name if setting else 'Paper 2' }}</th>
+              <th>Combined</th>
+              <th>Percent</th>
+              <th>Category</th>
+              <th>Notes</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ row.pupil.full_name }}</div>
+                  <div class="small text-muted">{{ row.pupil.gender }}{% if row.pupil.pupil_premium %} · PP{% endif %}{% if row.pupil.laps %} · LAPS{% endif %}{% if row.pupil.service_child %} · Service{% endif %}</div>
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min="0"
+                    max="{{ setting.paper_1_max if setting else '' }}"
+                    step="1"
+                    name="paper_1_score_{{ row.pupil.id }}"
+                    value="{{ row.paper_1_score }}"
+                    class="form-control form-control-sm js-paper-score"
+                  >
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min="0"
+                    max="{{ setting.paper_2_max if setting else '' }}"
+                    step="1"
+                    name="paper_2_score_{{ row.pupil.id }}"
+                    value="{{ row.paper_2_score }}"
+                    class="form-control form-control-sm js-paper-score"
+                  >
+                </td>
+                <td class="js-combined-score">{{ row.combined_score if row.combined_score is not none else '—' }}</td>
+                <td class="js-combined-percent">{{ '%.1f%%'|format(row.combined_percent) if row.combined_percent is not none else '—' }}</td>
+                <td class="js-band-label">
+                  {% if row.band_label %}
+                    <span class="badge text-bg-light border">{{ row.band_label }}</span>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <input type="text" name="notes_{{ row.pupil.id }}" value="{{ row.notes }}" class="form-control form-control-sm" placeholder="Optional note">
+                </td>
+                <td>
+                  {% if row.source %}
+                    <span class="badge text-bg-info-subtle text-info-emphasis border">{{ row.source }}</span>
+                  {% else %}
+                    <span class="badge text-bg-light border">empty</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="8" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="px-3 py-3 d-flex justify-content-between align-items-center gap-2 border-top bg-light-subtle">
+        <div class="small text-muted">Scores are validated against current max scores. Leave a full row blank to keep it empty.</div>
+        <button type="submit" class="btn btn-success btn-sm">Save {{ page_title }} results</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 bg-body-tertiary shadow-sm">
+  <div class="card-body">
+    <strong>Future GAP / sync area</strong>
+    <p class="text-muted mb-0 small">Placeholder for future GAP links, QLA tools, and synced assessment sources in a later phase.</p>
+  </div>
+</div>
+{% endblock %}
