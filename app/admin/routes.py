@@ -19,6 +19,8 @@ from app.services import (
     CsvImportError,
     SatsColumnValidationError,
     build_admin_pupil_filter_state,
+    build_sort_indicator,
+    build_table_sort_state,
     build_class_overview_row,
     build_sats_tracker_rows,
     build_subject_overview_cards,
@@ -39,6 +41,7 @@ from app.services import (
     get_class_detail_context,
     get_current_academic_year,
     get_gender_filter_options,
+    get_next_sort_direction,
     get_history_rows,
     get_or_create_assessment_setting,
     get_sats_columns,
@@ -72,6 +75,21 @@ def _active_class_query():
 def _teacher_options():
     teachers = User.query.filter_by(role='teacher').all()
     return sort_teacher_accounts(teachers)
+
+
+CLASS_DETAIL_SUBJECT_SORT_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label'}
+CLASS_DETAIL_WRITING_SORT_COLUMNS = {'name', 'band_label', 'notes'}
+
+
+def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
+    return {
+        column: {
+            'indicator': build_sort_indicator(column, sort_state),
+            'next_direction': get_next_sort_direction(column, sort_state),
+            'active': sort_state['column'] == column,
+        }
+        for column in allowed_columns
+    }
 
 
 @admin_bp.route('/classes', methods=['GET', 'POST'])
@@ -162,18 +180,30 @@ def class_detail(class_id: int):
     pupil_filters = build_admin_pupil_filter_state(request.args)
     selected_subject = request.args.get('subject', 'maths').strip() or 'maths'
     selected_term = request.args.get('term', '').strip() or None
+    allowed_columns = CLASS_DETAIL_WRITING_SORT_COLUMNS if selected_subject == 'writing' else CLASS_DETAIL_SUBJECT_SORT_COLUMNS
+    sort_state = build_table_sort_state(request.args, allowed_columns=allowed_columns, default_column='name')
     context = get_class_detail_context(
         school_class,
         academic_year,
         subject=selected_subject,
         term=selected_term,
         filters=pupil_filters,
+        sort_column=sort_state['column'],
+        sort_direction=sort_state['direction'],
     )
+    if context['selected_subject'] == 'writing':
+        header_state = _table_header_state(sort_state, CLASS_DETAIL_WRITING_SORT_COLUMNS)
+    elif context['selected_subject'] in {'maths', 'reading', 'spag'}:
+        header_state = _table_header_state(sort_state, CLASS_DETAIL_SUBJECT_SORT_COLUMNS)
+    else:
+        header_state = {}
     return render_template(
         'admin/class_detail.html',
         academic_year=academic_year,
         boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
         gender_options=get_gender_filter_options(class_id=school_class.id),
+        sort_state=sort_state,
+        header_state=header_state,
         **context,
     )
 
