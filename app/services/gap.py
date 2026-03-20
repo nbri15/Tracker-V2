@@ -22,12 +22,14 @@ def get_or_create_gap_template(year_group: int, subject: str, term: str, academi
 def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
     questions: list[GapQuestion] = []
     question_ids = form.getlist('question_id[]')
+    paper_keys = form.getlist('question_paper[]')
     labels = form.getlist('question_label[]')
     types = form.getlist('question_type[]')
     max_scores = form.getlist('question_max[]')
 
     for index, label in enumerate(labels):
         question_id = (question_ids[index] if index < len(question_ids) else '').strip()
+        paper_key = (paper_keys[index] if index < len(paper_keys) else 'paper_1').strip() or 'paper_1'
         label = label.strip()
         question_type = (types[index] if index < len(types) else '').strip() or None
         max_raw = (max_scores[index] if index < len(max_scores) else '').strip()
@@ -42,6 +44,7 @@ def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
         if max_score < 0:
             raise AssessmentValidationError(f'Question {label}: max score cannot be negative.')
         question = GapQuestion.query.get(int(question_id)) if question_id else GapQuestion(template_id=template.id)
+        question.paper_key = paper_key
         question.question_label = label
         question.question_type = question_type
         question.max_score = max_score
@@ -145,52 +148,70 @@ def build_gap_page_context(pupils, template: GapTemplate) -> dict:
     rows = []
     question_totals = defaultdict(float)
     question_counts = defaultdict(int)
-    topic_totals = defaultdict(float)
-    topic_counts = defaultdict(int)
 
     for pupil in pupils:
         total = 0.0
-        row_scores = []
+        row_scores = {}
+        paper_totals = defaultdict(float)
+        paper_has_any = defaultdict(bool)
         has_any = False
         for question in questions:
             score = score_map.get((pupil.id, question.id))
-            row_scores.append(score)
+            row_scores[question.id] = score
             if score is not None:
                 total += score
                 has_any = True
+                paper_totals[question.paper_key or 'paper_1'] += score
+                paper_has_any[question.paper_key or 'paper_1'] = True
                 question_totals[question.id] += score
                 question_counts[question.id] += 1
-                if question.question_type:
-                    topic_totals[question.question_type] += score / question.max_score if question.max_score else 0
-                    topic_counts[question.question_type] += 1
-        rows.append({'pupil': pupil, 'scores': row_scores, 'total': total if has_any else None})
+        rows.append(
+            {
+                'pupil': pupil,
+                'scores': row_scores,
+                'total': total if has_any else None,
+                'paper_totals': {
+                    paper_key: (value if paper_has_any.get(paper_key) else None)
+                    for paper_key, value in paper_totals.items()
+                },
+            }
+        )
 
-    question_averages = []
+    question_averages_by_id = {}
     for question in questions:
         avg = question_totals[question.id] / question_counts[question.id] if question_counts[question.id] else None
         pct = ((avg / question.max_score) * 100) if avg is not None and question.max_score else None
-        question_averages.append({'question': question, 'average': round(avg, 2) if avg is not None else None, 'percent': round(pct, 1) if pct is not None else None})
+        question_averages_by_id[question.id] = {
+            'question': question,
+            'average': round(avg, 2) if avg is not None else None,
+            'percent': round(pct, 1) if pct is not None else None,
+        }
 
-    lowest_questions = sorted(
-        [item for item in question_averages if item['percent'] is not None],
-        key=lambda item: item['percent'],
-    )[:5]
-    weakest_topics = sorted(
-        [
-            {'topic': topic, 'average_percent': round((topic_totals[topic] / topic_counts[topic]) * 100, 1)}
-            for topic in topic_totals
-            if topic_counts[topic]
-        ],
-        key=lambda item: item['average_percent'],
-    )[:5]
+    paper_order = []
+    seen_papers = set()
+    for question in questions:
+        paper_key = question.paper_key or 'paper_1'
+        if paper_key not in seen_papers:
+            paper_order.append(paper_key)
+            seen_papers.add(paper_key)
+
+    papers = []
+    for paper_key in paper_order:
+        paper_questions = [question for question in questions if (question.paper_key or 'paper_1') == paper_key]
+        papers.append(
+            {
+                'key': paper_key,
+                'questions': paper_questions,
+                'max_total': sum(question.max_score or 0 for question in paper_questions),
+                'question_averages': [question_averages_by_id[question.id] for question in paper_questions],
+            }
+        )
 
     return {
         'template': template,
         'questions': questions,
+        'papers': papers,
         'rows': rows,
         'max_total': sum(question.max_score or 0 for question in questions),
-        'question_averages': question_averages,
-        'lowest_questions': lowest_questions,
-        'weakest_topics': weakest_topics,
-        'blank_question_slots': range(4),
+        'question_averages': [question_averages_by_id[question.id] for question in questions],
     }

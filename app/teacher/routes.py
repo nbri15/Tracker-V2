@@ -6,7 +6,7 @@ from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app.extensions import db
-from app.models import Intervention, Pupil, SubjectResult, WritingResult
+from app.models import GapQuestion, Intervention, Pupil, SubjectResult, WritingResult
 from app.services import (
     SATS_ASSESSMENT_POINTS,
     SATS_SUBJECTS,
@@ -94,29 +94,76 @@ def gap_analysis(subject: str):
     school_class = context['school_class']
     if not school_class:
         flash('No active class is assigned to your account yet.', 'warning')
-        return render_template('teacher/gap_analysis.html', rows=[], questions=[], template=None, max_total=0, **context)
+        return render_template('teacher/gap_analysis.html', rows=[], questions=[], template=None, max_total=0, papers=[], active_paper='paper_1', setting=None, **context)
 
     template = get_or_create_gap_template(school_class.year_group, subject, context['term'], context['academic_year'])
     pupils = context['pupils']
+    setting = get_subject_setting(school_class.year_group, subject, context['term'])
+    paper_tabs = [
+        {'key': 'paper_1', 'label': setting.paper_1_name or 'Paper 1'},
+        {'key': 'paper_2', 'label': setting.paper_2_name or 'Paper 2'},
+    ]
+    active_paper = request.values.get('paper', paper_tabs[0]['key'])
+    valid_paper_keys = {paper['key'] for paper in paper_tabs}
+    if active_paper not in valid_paper_keys:
+        active_paper = paper_tabs[0]['key']
 
     if request.method == 'POST':
         try:
-            template.paper_name = request.form.get('paper_name', '').strip() or None
-            questions = parse_question_columns(request.form, template)
-            db.session.flush()
-            outcome = save_gap_scores(pupils, questions, request.form)
-            db.session.commit()
-            flash(f'{format_subject_name(subject)} GAP analysis saved for {school_class.name}.', 'success')
-            for warning in outcome['warnings']:
-                flash(warning, 'warning')
-            return redirect(url_for('teacher.gap_analysis', subject=subject, academic_year=context['academic_year'], term=context['term']))
+            action = request.form.get('action', 'save_gap')
+            active_paper = request.form.get('active_paper', active_paper)
+            if active_paper not in valid_paper_keys:
+                active_paper = paper_tabs[0]['key']
+            if action == 'add_question':
+                label = request.form.get('new_question_label', '').strip()
+                max_raw = request.form.get('new_question_max', '').strip()
+                question_type = request.form.get('new_question_type', '').strip() or None
+                if not label:
+                    raise AssessmentValidationError('Enter a question label before adding a new question.')
+                try:
+                    max_score = int(max_raw or '0')
+                except ValueError as exc:
+                    raise AssessmentValidationError('New question max score must be a whole number.') from exc
+                if max_score < 0:
+                    raise AssessmentValidationError('New question max score cannot be negative.')
+                next_order = len(template.questions)
+                question = GapQuestion(
+                    template=template,
+                    paper_key=active_paper,
+                    question_label=label,
+                    question_type=question_type,
+                    max_score=max_score,
+                    display_order=next_order,
+                )
+                db.session.add(question)
+                db.session.commit()
+                flash(f'Added question {label} to {dict((item["key"], item["label"]) for item in paper_tabs)[active_paper]}.', 'success')
+            else:
+                template.paper_name = request.form.get('paper_name', '').strip() or None
+                questions = parse_question_columns(request.form, template)
+                db.session.flush()
+                outcome = save_gap_scores(pupils, questions, request.form)
+                db.session.commit()
+                flash(f'{format_subject_name(subject)} GAP analysis saved for {school_class.name}.', 'success')
+                for warning in outcome['warnings']:
+                    flash(warning, 'warning')
+            return redirect(url_for('teacher.gap_analysis', subject=subject, academic_year=context['academic_year'], term=context['term'], paper=active_paper))
         except (ValueError, AssessmentValidationError) as exc:
             db.session.rollback()
             flash(f'GAP analysis could not be saved: {exc}', 'danger')
             template = get_or_create_gap_template(school_class.year_group, subject, context['term'], context['academic_year'])
 
     gap_context = build_gap_page_context(pupils, template)
-    return render_template('teacher/gap_analysis.html', **gap_context, **context)
+    papers_by_key = {paper['key']: paper for paper in gap_context.get('papers', [])}
+    gap_context['papers'] = [
+        {
+            **paper,
+            **papers_by_key.get(paper['key'], {'questions': [], 'max_total': 0, 'question_averages': []}),
+        }
+        for paper in paper_tabs
+    ]
+    gap_context['active_paper'] = active_paper
+    return render_template('teacher/gap_analysis.html', setting=setting, **gap_context, **context)
 
 
 @teacher_bp.route('/interventions', methods=['GET', 'POST'])
