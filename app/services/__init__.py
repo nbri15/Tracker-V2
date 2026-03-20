@@ -2,6 +2,7 @@
 
 from .assessments import (
     ALL_SUBJECTS,
+    BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
     CORE_SUBJECTS,
     SATS_ASSESSMENT_POINTS,
@@ -14,8 +15,10 @@ from .assessments import (
     WRITING_BAND_CHOICES,
     AssessmentValidationError,
     CsvImportError,
+    apply_admin_pupil_filters,
     apply_pupil_subgroup,
     build_academic_year_options,
+    build_admin_pupil_filter_state,
     build_class_overview_row,
     build_dashboard_summary,
     build_subject_overview_cards,
@@ -26,6 +29,7 @@ from .assessments import (
     get_class_detail_context,
     get_current_academic_year,
     get_current_term,
+    get_gender_filter_options,
     get_latest_scaled_score,
     get_most_recent_term_with_data,
     get_or_create_assessment_setting,
