@@ -56,72 +56,94 @@
   </div>
 </div>
 
-<div class="card shadow-sm mb-4">
-  <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
-    <div>
-      <strong>{{ page_title }} page settings</strong>
-      <div class="text-muted small">This is now the main place teachers adjust paper names, max marks, and thresholds for Year {{ school_class.year_group if school_class else '—' }} {{ get_term_label(term) }}.</div>
-    </div>
-    <div class="text-muted small text-lg-end">
-      <div>Class: <strong>{{ school_class.name if school_class else '—' }}</strong></div>
-      <div>Academic year: <strong>{{ academic_year }}</strong></div>
+<div class="row g-4 mb-4">
+  <div class="col-lg-8">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+        <div>
+          <strong>{{ page_title }} page settings</strong>
+          <div class="text-muted small">Teachers can adjust paper names, max marks, and thresholds here.</div>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('teacher.gap_analysis', subject=subject_key, academic_year=academic_year, term=term) }}">GAP Analysis</a>
+      </div>
+      <div class="card-body">
+        <form method="post" class="row g-3 align-items-end js-setting-form">
+          <input type="hidden" name="form_name" value="settings">
+          <input type="hidden" name="academic_year" value="{{ academic_year }}">
+          <input type="hidden" name="term" value="{{ term }}">
+          <input type="hidden" name="search" value="{{ search }}">
+          <input type="hidden" name="sort" value="{{ sort }}">
+
+          <div class="col-md-3 col-xl-2">
+            <label class="form-label">Paper 1 name</label>
+            <input type="text" name="paper_1_name" value="{{ setting.paper_1_name if setting else '' }}" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-2 col-xl-1">
+            <label class="form-label">Paper 1 max</label>
+            <input type="number" name="paper_1_max" value="{{ setting.paper_1_max if setting else '' }}" min="0" class="form-control form-control-sm js-setting-paper-1" required>
+          </div>
+          <div class="col-md-3 col-xl-2">
+            <label class="form-label">Paper 2 name</label>
+            <input type="text" name="paper_2_name" value="{{ setting.paper_2_name if setting else '' }}" class="form-control form-control-sm" required>
+          </div>
+          <div class="col-md-2 col-xl-1">
+            <label class="form-label">Paper 2 max</label>
+            <input type="number" name="paper_2_max" value="{{ setting.paper_2_max if setting else '' }}" min="0" class="form-control form-control-sm js-setting-paper-2" required>
+          </div>
+          <div class="col-md-2 col-xl-1">
+            <label class="form-label">Combined max</label>
+            <input type="number" name="combined_max" value="{{ setting.combined_max if setting else '' }}" min="1" class="form-control form-control-sm js-setting-combined" required>
+          </div>
+          <div class="col-md-4 col-xl-2">
+            <label class="form-label">Pass threshold</label>
+            <div class="input-group input-group-sm">
+              <input type="number" name="below_are_threshold_percent" value="{{ setting.below_are_threshold_percent if setting else '' }}" min="0" max="100" step="0.1" class="form-control" required>
+              <span class="input-group-text">%</span>
+            </div>
+          </div>
+          <div class="col-md-4 col-xl-2">
+            <label class="form-label">Exceeding threshold</label>
+            <div class="input-group input-group-sm">
+              <input type="number" name="exceeding_threshold_percent" value="{{ setting.exceeding_threshold_percent if setting else '' }}" min="0" max="100" step="0.1" class="form-control" required>
+              <span class="input-group-text">%</span>
+            </div>
+          </div>
+          <div class="col-md-4 col-xl-1">
+            <div class="form-check mt-md-4 pt-md-2">
+              <input class="form-check-input js-setting-manual-toggle" type="checkbox" id="manual-combined-max" {% if setting and setting.combined_max != (setting.paper_1_max + setting.paper_2_max) %}checked{% endif %}>
+              <label class="form-check-label small" for="manual-combined-max">Manual combined</label>
+            </div>
+          </div>
+          <div class="col-12 d-flex justify-content-end border-top pt-3 mt-2">
+            <button type="submit" class="btn btn-outline-primary btn-sm">Save {{ page_title }} settings</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
-  <div class="card-body">
-    <form method="post" class="row g-3 align-items-end js-setting-form">
-      <input type="hidden" name="form_name" value="settings">
-      <input type="hidden" name="academic_year" value="{{ academic_year }}">
-      <input type="hidden" name="term" value="{{ term }}">
-      <input type="hidden" name="search" value="{{ search }}">
-      <input type="hidden" name="sort" value="{{ sort }}">
-
-      <div class="col-md-3 col-xl-2">
-        <label class="form-label">Paper 1 name</label>
-        <input type="text" name="paper_1_name" value="{{ setting.paper_1_name if setting else '' }}" class="form-control form-control-sm" required>
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Intervention suggestions</strong>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.interventions', subject=subject_key, term=term, academic_year=academic_year) }}">Manage</a>
       </div>
-      <div class="col-md-2 col-xl-1">
-        <label class="form-label">Paper 1 max</label>
-        <input type="number" name="paper_1_max" value="{{ setting.paper_1_max if setting else '' }}" min="0" class="form-control form-control-sm js-setting-paper-1" required>
+      <div class="card-body">
+        <p class="text-muted small">Closest 6 pupils below the pass threshold are auto-flagged for {{ page_title }}.</p>
+        <ul class="list-group list-group-flush">
+          {% for record in active_interventions %}
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-start gap-2">
+              <div>
+                <div class="fw-semibold">{{ record.pupil.full_name }}</div>
+                <div class="small text-muted">{{ record.reason }}{% if record.note %} · {{ record.note }}{% endif %}</div>
+              </div>
+              <span class="badge {% if record.auto_flagged %}text-bg-warning{% else %}text-bg-info{% endif %}">{{ 'auto' if record.auto_flagged else 'manual' }}</span>
+            </li>
+          {% else %}
+            <li class="list-group-item px-0 text-muted">No active intervention records for this term.</li>
+          {% endfor %}
+        </ul>
       </div>
-      <div class="col-md-3 col-xl-2">
-        <label class="form-label">Paper 2 name</label>
-        <input type="text" name="paper_2_name" value="{{ setting.paper_2_name if setting else '' }}" class="form-control form-control-sm" required>
-      </div>
-      <div class="col-md-2 col-xl-1">
-        <label class="form-label">Paper 2 max</label>
-        <input type="number" name="paper_2_max" value="{{ setting.paper_2_max if setting else '' }}" min="0" class="form-control form-control-sm js-setting-paper-2" required>
-      </div>
-      <div class="col-md-2 col-xl-1">
-        <label class="form-label">Combined max</label>
-        <input type="number" name="combined_max" value="{{ setting.combined_max if setting else '' }}" min="1" class="form-control form-control-sm js-setting-combined" required>
-      </div>
-      <div class="col-md-4 col-xl-2">
-        <label class="form-label">Working Towards threshold</label>
-        <div class="input-group input-group-sm">
-          <input type="number" name="below_are_threshold_percent" value="{{ setting.below_are_threshold_percent if setting else '' }}" min="0" max="100" step="0.1" class="form-control" required>
-          <span class="input-group-text">%</span>
-        </div>
-      </div>
-      <div class="col-md-4 col-xl-2">
-        <label class="form-label">Exceeding threshold</label>
-        <div class="input-group input-group-sm">
-          <input type="number" name="exceeding_threshold_percent" value="{{ setting.exceeding_threshold_percent if setting else '' }}" min="0" max="100" step="0.1" class="form-control" required>
-          <span class="input-group-text">%</span>
-        </div>
-      </div>
-      <div class="col-md-4 col-xl-1">
-        <div class="form-check mt-md-4 pt-md-2">
-          <input class="form-check-input js-setting-manual-toggle" type="checkbox" id="manual-combined-max" {% if setting and setting.combined_max != (setting.paper_1_max + setting.paper_2_max) %}checked{% endif %}>
-          <label class="form-check-label small" for="manual-combined-max">Manual combined</label>
-        </div>
-      </div>
-      <div class="col-12 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2 border-top pt-3 mt-2">
-        <div class="small text-muted">
-          Banding: below threshold = <strong>Working Towards</strong>, between thresholds = <strong>On Track</strong>, exceeding threshold and above = <strong>Exceeding</strong>.
-        </div>
-        <button type="submit" class="btn btn-outline-primary btn-sm">Save {{ page_title }} settings</button>
-      </div>
-    </form>
+    </div>
   </div>
 </div>
 
@@ -133,7 +155,7 @@
     </div>
     <div class="text-muted small text-lg-end">
       <div>{{ setting.paper_1_name if setting else 'Paper 1' }} max: <strong>{{ setting.paper_1_max if setting else '—' }}</strong> · {{ setting.paper_2_name if setting else 'Paper 2' }} max: <strong>{{ setting.paper_2_max if setting else '—' }}</strong></div>
-      <div>Combined max: <strong>{{ setting.combined_max if setting else '—' }}</strong> · Working Towards below <strong>{{ setting.below_are_threshold_percent if setting else '—' }}%</strong> · Exceeding from <strong>{{ setting.exceeding_threshold_percent if setting else '—' }}%</strong></div>
+      <div>Combined max: <strong>{{ setting.combined_max if setting else '—' }}</strong> · Pass below <strong>{{ setting.below_are_threshold_percent if setting else '—' }}%</strong></div>
     </div>
   </div>
   <div class="card-body p-0">
@@ -143,17 +165,12 @@
       <input type="hidden" name="term" value="{{ term }}">
       <input type="hidden" name="search" value="{{ search }}">
       <input type="hidden" name="sort" value="{{ sort }}">
-
       <div class="px-3 pt-3 d-flex flex-wrap justify-content-between gap-2">
         <div class="text-muted small">Current term: {{ get_term_label(term) }} · Academic year: {{ academic_year }}</div>
         <button type="submit" class="btn btn-success btn-sm">Save {{ page_title }} results</button>
       </div>
-
       <div class="table-responsive spreadsheet-wrap mt-3">
-        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table js-subject-table"
-          data-below-threshold="{{ setting.below_are_threshold_percent if setting else '' }}"
-          data-exceeding-threshold="{{ setting.exceeding_threshold_percent if setting else '' }}"
-          data-combined-max="{{ setting.combined_max if setting else '' }}">
+        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table js-subject-table" data-below-threshold="{{ setting.below_are_threshold_percent if setting else '' }}" data-exceeding-threshold="{{ setting.exceeding_threshold_percent if setting else '' }}" data-combined-max="{{ setting.combined_max if setting else '' }}">
           <thead class="table-light sticky-top">
             <tr>
               <th>Pupil</th>
@@ -173,47 +190,13 @@
                   <div class="fw-semibold">{{ row.pupil.full_name }}</div>
                   <div class="small text-muted">{{ row.pupil.gender }}{% if row.pupil.pupil_premium %} · PP{% endif %}{% if row.pupil.laps %} · LAPS{% endif %}{% if row.pupil.service_child %} · Service{% endif %}</div>
                 </td>
-                <td>
-                  <input
-                    type="number"
-                    min="0"
-                    max="{{ setting.paper_1_max if setting else '' }}"
-                    step="1"
-                    name="paper_1_score_{{ row.pupil.id }}"
-                    value="{{ row.paper_1_score }}"
-                    class="form-control form-control-sm js-paper-score"
-                  >
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    min="0"
-                    max="{{ setting.paper_2_max if setting else '' }}"
-                    step="1"
-                    name="paper_2_score_{{ row.pupil.id }}"
-                    value="{{ row.paper_2_score }}"
-                    class="form-control form-control-sm js-paper-score"
-                  >
-                </td>
+                <td><input type="number" min="0" max="{{ setting.paper_1_max if setting else '' }}" step="1" name="paper_1_score_{{ row.pupil.id }}" value="{{ row.paper_1_score }}" class="form-control form-control-sm js-paper-score"></td>
+                <td><input type="number" min="0" max="{{ setting.paper_2_max if setting else '' }}" step="1" name="paper_2_score_{{ row.pupil.id }}" value="{{ row.paper_2_score }}" class="form-control form-control-sm js-paper-score"></td>
                 <td class="js-combined-score">{{ row.combined_score if row.combined_score is not none else '—' }}</td>
                 <td class="js-combined-percent">{{ '%.1f%%'|format(row.combined_percent) if row.combined_percent is not none else '—' }}</td>
-                <td class="js-band-label">
-                  {% if row.band_label %}
-                    <span class="badge text-bg-light border">{{ row.band_label }}</span>
-                  {% else %}
-                    <span class="text-muted">—</span>
-                  {% endif %}
-                </td>
-                <td>
-                  <input type="text" name="notes_{{ row.pupil.id }}" value="{{ row.notes }}" class="form-control form-control-sm" placeholder="Optional note">
-                </td>
-                <td>
-                  {% if row.source %}
-                    <span class="badge text-bg-info-subtle text-info-emphasis border">{{ row.source }}</span>
-                  {% else %}
-                    <span class="badge text-bg-light border">empty</span>
-                  {% endif %}
-                </td>
+                <td class="js-band-label">{% if row.band_label %}<span class="badge text-bg-light border">{{ row.band_label }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td><input type="text" name="notes_{{ row.pupil.id }}" value="{{ row.notes }}" class="form-control form-control-sm" placeholder="Optional note"></td>
+                <td>{% if row.source %}<span class="badge text-bg-info-subtle text-info-emphasis border">{{ row.source }}</span>{% else %}<span class="badge text-bg-light border">empty</span>{% endif %}</td>
               </tr>
             {% else %}
               <tr><td colspan="8" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
@@ -221,19 +204,14 @@
           </tbody>
         </table>
       </div>
-
       <div class="px-3 py-3 d-flex justify-content-between align-items-center gap-2 border-top bg-light-subtle">
-        <div class="small text-muted">Scores are validated against the current max marks. Leave a full row blank to keep it empty.</div>
-        <button type="submit" class="btn btn-success btn-sm">Save {{ page_title }} results</button>
+        <div class="small text-muted">Scores are validated against the current max marks. GAP totals can also populate empty combined scores.</div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('teacher.gap_analysis', subject=subject_key, academic_year=academic_year, term=term) }}">Question Analysis</a>
+          <button type="submit" class="btn btn-success btn-sm">Save {{ page_title }} results</button>
+        </div>
       </div>
     </form>
-  </div>
-</div>
-
-<div class="card border-0 bg-body-tertiary shadow-sm">
-  <div class="card-body">
-    <strong>Future GAP / sync area</strong>
-    <p class="text-muted mb-0 small">Placeholder for future GAP links, QLA tools, and synced assessment sources in a later phase.</p>
   </div>
 </div>
 
@@ -241,12 +219,10 @@
   (() => {
     const form = document.querySelector('.js-setting-form');
     if (!form) return;
-
     const paper1 = form.querySelector('.js-setting-paper-1');
     const paper2 = form.querySelector('.js-setting-paper-2');
     const combined = form.querySelector('.js-setting-combined');
     const toggle = form.querySelector('.js-setting-manual-toggle');
-
     const syncCombined = () => {
       if (!toggle.checked) {
         const total = (parseInt(paper1.value || '0', 10) || 0) + (parseInt(paper2.value || '0', 10) || 0);
@@ -256,7 +232,6 @@
         combined.removeAttribute('readonly');
       }
     };
-
     paper1.addEventListener('input', syncCombined);
     paper2.addEventListener('input', syncCombined);
     toggle.addEventListener('change', syncCombined);

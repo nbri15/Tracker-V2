@@ -1,6 +1,6 @@
 """Pupil model definitions."""
 
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 from app.extensions import db
 
@@ -11,21 +11,23 @@ class Pupil(db.Model):
     __tablename__ = 'pupils'
 
     id = db.Column(db.Integer, primary_key=True)
-    first_name = db.Column(db.String(80), nullable=False)
-    last_name = db.Column(db.String(80), nullable=False)
+    first_name = db.Column(db.String(80), nullable=False, index=True)
+    last_name = db.Column(db.String(80), nullable=False, index=True)
     gender = db.Column(db.String(20), nullable=False)
-    pupil_premium = db.Column(db.Boolean, nullable=False, default=False)
-    laps = db.Column(db.Boolean, nullable=False, default=False)
-    service_child = db.Column(db.Boolean, nullable=False, default=False)
-    class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False)
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    pupil_premium = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    laps = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    service_child = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False, index=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     school_class = db.relationship('SchoolClass', back_populates='pupils')
     subject_results = db.relationship('SubjectResult', back_populates='pupil', cascade='all, delete-orphan')
     writing_results = db.relationship('WritingResult', back_populates='pupil', cascade='all, delete-orphan')
     interventions = db.relationship('Intervention', back_populates='pupil', cascade='all, delete-orphan')
     sats_results = db.relationship('SatsResult', back_populates='pupil', cascade='all, delete-orphan')
+    sats_writing_results = db.relationship('SatsWritingResult', back_populates='pupil', cascade='all, delete-orphan')
+    gap_scores = db.relationship('GapScore', back_populates='pupil', cascade='all, delete-orphan')
 
     @property
     def full_name(self) -> str:

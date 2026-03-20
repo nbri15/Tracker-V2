@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+
+{% block title %}Year 6 SATs{% endblock %}
+{% set page_heading = 'Year 6 SATs tracker' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+  <div>
+    <h3 class="h5 mb-1">{{ school_class.name }}</h3>
+    <p class="text-muted mb-0">Raw and scaled score tracking across four assessment points, plus writing judgements.</p>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body py-3">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Academic year</label>
+        <select name="academic_year" class="form-select">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+      </div>
+      <div class="col-md-3"><button class="btn btn-primary w-100">Load tracker</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <strong>Year 6 SATs tracker</strong>
+    <button form="sats-form" class="btn btn-success btn-sm">Save SATs tracker</button>
+  </div>
+  <div class="card-body p-0">
+    <form method="post" id="sats-form">
+      <div class="table-responsive spreadsheet-wrap sats-wrap">
+        <table class="table table-sm align-middle mb-0 spreadsheet-table">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th rowspan="2">Pupil</th>
+              {% for subject in sats_subjects %}
+                <th colspan="{{ assessment_points|length * 2 + 1 }}">{{ format_subject_name(subject) }}</th>
+              {% endfor %}
+              <th colspan="{{ assessment_points|length * 2 + 1 }}">Writing</th>
+            </tr>
+            <tr>
+              {% for subject in sats_subjects %}
+                {% for point in assessment_points %}
+                  <th>P{{ point }} raw</th>
+                  <th>P{{ point }} scaled</th>
+                {% endfor %}
+                <th>Latest scaled</th>
+              {% endfor %}
+              {% for point in assessment_points %}
+                <th>P{{ point }} band</th>
+                <th>P{{ point }} notes</th>
+              {% endfor %}
+              <th>Latest band</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td class="fw-semibold">{{ row.pupil.full_name }}</td>
+                {% for subject in sats_subjects %}
+                  {% for point in assessment_points %}
+                    {% set cell = row.subjects[subject].points[point] %}
+                    <td><input type="number" class="form-control form-control-sm" name="{{ subject }}_raw_{{ point }}_{{ row.pupil.id }}" value="{{ '' if cell.raw_score is none else cell.raw_score }}"></td>
+                    <td><input type="number" class="form-control form-control-sm" name="{{ subject }}_scaled_{{ point }}_{{ row.pupil.id }}" value="{{ '' if cell.scaled_score is none else cell.scaled_score }}"></td>
+                  {% endfor %}
+                  <td class="fw-semibold">{{ row.subjects[subject].latest_scaled if row.subjects[subject].latest_scaled is not none else '—' }}</td>
+                {% endfor %}
+                {% for point in assessment_points %}
+                  {% set cell = row.writing.points[point] %}
+                  <td>
+                    <select class="form-select form-select-sm" name="writing_band_{{ point }}_{{ row.pupil.id }}">
+                      <option value="">—</option>
+                      {% for value, label in writing_band_choices %}<option value="{{ value }}" {% if cell.band == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                  </td>
+                  <td><input type="text" class="form-control form-control-sm" name="writing_notes_{{ point }}_{{ row.pupil.id }}" value="{{ cell.notes or '' }}"></td>
+                {% endfor %}
+                <td class="fw-semibold">{{ row.writing.latest_band }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="px-3 py-3 border-top bg-light-subtle d-flex justify-content-between align-items-center">
+        <div class="small text-muted">Most recent scaled score uses the latest assessment point with a scaled score.</div>
+        <button class="btn btn-success btn-sm">Save SATs tracker</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

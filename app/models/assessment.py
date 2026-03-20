@@ -1,8 +1,8 @@
-"""Assessment threshold and subject result models."""
+"""Assessment, GAP, and subject result models."""
 
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.extensions import db
@@ -17,9 +17,9 @@ class AssessmentSetting(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    year_group = db.Column(db.Integer, nullable=False)
-    subject = db.Column(db.String(20), nullable=False)
-    term = db.Column(db.String(20), nullable=False)
+    year_group = db.Column(db.Integer, nullable=False, index=True)
+    subject = db.Column(db.String(20), nullable=False, index=True)
+    term = db.Column(db.String(20), nullable=False, index=True)
     paper_1_name = db.Column(db.String(100), nullable=False)
     paper_1_max = db.Column(db.Integer, nullable=False)
     paper_2_name = db.Column(db.String(100), nullable=False)
@@ -39,10 +39,11 @@ class SubjectResult(db.Model):
     __tablename__ = 'subject_results'
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'academic_year', 'term', 'subject', name='uq_subject_result_scope'),
+        db.Index('ix_subject_results_lookup', 'academic_year', 'term', 'subject'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False)
+    pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False)
     term = db.Column(db.String(20), nullable=False)
     subject = db.Column(db.String(20), nullable=False)
@@ -53,7 +54,7 @@ class SubjectResult(db.Model):
     band_label = db.Column(db.String(50), nullable=True)
     source = db.Column(db.String(20), nullable=True)
     notes = db.Column(db.Text, nullable=True)
-    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     pupil = db.relationship('Pupil', back_populates='subject_results')
 
@@ -92,3 +93,78 @@ class SubjectResult(db.Model):
 
     def __repr__(self) -> str:
         return f'<SubjectResult {self.subject} {self.term}>'
+
+
+class GapTemplate(db.Model):
+    """Spreadsheet-style GAP / QLA template for a year group, subject, and term."""
+
+    __tablename__ = 'gap_templates'
+    __table_args__ = (
+        db.UniqueConstraint('year_group', 'subject', 'term', 'academic_year', name='uq_gap_template_scope'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    year_group = db.Column(db.Integer, nullable=False, index=True)
+    subject = db.Column(db.String(20), nullable=False, index=True)
+    term = db.Column(db.String(20), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=True, index=True)
+    paper_name = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    questions = db.relationship(
+        'GapQuestion',
+        back_populates='template',
+        cascade='all, delete-orphan',
+        order_by='GapQuestion.display_order',
+    )
+
+    @property
+    def max_total(self) -> int:
+        return sum(question.max_score or 0 for question in self.questions)
+
+    def __repr__(self) -> str:
+        return f'<GapTemplate Y{self.year_group} {self.subject} {self.term} {self.academic_year}>'
+
+
+class GapQuestion(db.Model):
+    """A single question or strand column inside a GAP template."""
+
+    __tablename__ = 'gap_questions'
+    __table_args__ = (
+        db.Index('ix_gap_questions_template_order', 'template_id', 'display_order'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    template_id = db.Column(db.Integer, db.ForeignKey('gap_templates.id'), nullable=False)
+    question_label = db.Column(db.String(20), nullable=False)
+    question_type = db.Column(db.String(120), nullable=True)
+    max_score = db.Column(db.Integer, nullable=False, default=1)
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+
+    template = db.relationship('GapTemplate', back_populates='questions')
+    scores = db.relationship('GapScore', back_populates='question', cascade='all, delete-orphan')
+
+    def __repr__(self) -> str:
+        return f'<GapQuestion {self.question_label}>'
+
+
+class GapScore(db.Model):
+    """Per-pupil score for one question in a GAP template."""
+
+    __tablename__ = 'gap_scores'
+    __table_args__ = (
+        db.UniqueConstraint('pupil_id', 'question_id', name='uq_gap_score_scope'),
+        db.Index('ix_gap_scores_pupil_question', 'pupil_id', 'question_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
+    question_id = db.Column(db.Integer, db.ForeignKey('gap_questions.id'), nullable=False, index=True)
+    score = db.Column(db.Float, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    pupil = db.relationship('Pupil', back_populates='gap_scores')
+    question = db.relationship('GapQuestion', back_populates='scores')
+
+    def __repr__(self) -> str:
+        return f'<GapScore pupil={self.pupil_id} question={self.question_id}>'

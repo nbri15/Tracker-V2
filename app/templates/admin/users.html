@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}Users{% endblock %}
+{% set page_heading = 'Admin user management' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Create teacher user</strong></div>
+      <div class="card-body">
+        <form method="post" class="row g-3">
+          <input type="hidden" name="action" value="create">
+          <div class="col-12"><label class="form-label">Username</label><input type="text" name="username" class="form-control" required></div>
+          <div class="col-12"><label class="form-label">Password</label><input type="text" name="password" class="form-control" required></div>
+          <div class="col-12 text-end"><button class="btn btn-primary">Create teacher</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Existing users</strong></div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light"><tr><th>Username</th><th>Role</th><th>Assigned classes</th><th>Update</th></tr></thead>
+          <tbody>
+            {% for user in teachers %}
+              <tr>
+                <td>
+                  <form method="post" class="d-flex gap-2 align-items-center">
+                    <input type="hidden" name="action" value="update">
+                    <input type="hidden" name="user_id" value="{{ user.id }}">
+                    <input type="text" name="username_{{ user.id }}" value="{{ user.username }}" class="form-control form-control-sm">
+                </td>
+                <td>{{ user.role }}</td>
+                <td>
+                  {% for school_class in user.classes.all() %}
+                    <span class="badge text-bg-light border">{{ school_class.name }}</span>
+                  {% else %}
+                    <span class="text-muted">Unassigned</span>
+                  {% endfor %}
+                </td>
+                <td>
+                    <input type="text" name="password_{{ user.id }}" class="form-control form-control-sm mb-2" placeholder="New password">
+                    <button class="btn btn-outline-primary btn-sm">Save</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,32 +1,46 @@
 {% extends 'base.html' %}
-
 {% block title %}Imports{% endblock %}
 {% set page_heading = 'Imports and exports' %}
-
 {% block content %}
 <div class="row g-4">
   <div class="col-lg-8">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-white">
-        <strong>CSV import/export placeholder</strong>
-      </div>
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white"><strong>CSV imports</strong></div>
       <div class="card-body">
-        <p class="mb-3">This area is intentionally kept as a placeholder in Phase 1. In Phase 2 it can become the home for upload templates, preview tables, validation, and export downloads.</p>
-        <div class="border rounded bg-light p-4 text-center text-muted">Future drag-and-drop or file picker area</div>
+        <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end">
+          <div class="col-md-4"><label class="form-label">Import type</label><select name="import_type" class="form-select"><option value="pupils">Pupils</option><option value="subject_results">Subject results</option><option value="writing_results">Writing results</option></select></div>
+          <div class="col-md-5"><label class="form-label">CSV file</label><input type="file" name="csv_file" class="form-control" accept=".csv" required></div>
+          <div class="col-md-3"><button class="btn btn-primary w-100">Upload CSV</button></div>
+        </form>
+        <hr>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='pupils') }}">Download pupil template</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='subject_results') }}">Download subject result template</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='writing_results') }}">Download writing template</a>
+        </div>
+      </div>
+    </div>
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>CSV exports</strong></div>
+      <div class="card-body">
+        <form method="get" action="{{ url_for('admin.export_subject_results') }}" class="row g-3 align-items-end mb-4">
+          <div class="col-md-3"><label class="form-label">Class</label><select name="class_id" class="form-select"><option value="">All classes</option>{% for option in class_options %}<option value="{{ option.id }}">{{ option.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-2"><label class="form-label">Subject</label><select name="subject" class="form-select"><option value="">All</option><option value="maths">Maths</option><option value="reading">Reading</option><option value="spag">SPaG</option></select></div>
+          <div class="col-md-2"><label class="form-label">Term</label><select name="term" class="form-select"><option value="">All</option>{% for value, label in [('autumn', 'Autumn'), ('spring', 'Spring'), ('summer', 'Summer')] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><label class="form-label">Academic year</label><input type="text" class="form-control" name="academic_year" value="{{ current_year }}"></div>
+          <div class="col-md-2"><button class="btn btn-outline-primary w-100">Export subject CSV</button></div>
+        </form>
+        <form method="get" action="{{ url_for('admin.export_writing_results') }}" class="row g-3 align-items-end">
+          <div class="col-md-3"><label class="form-label">Class</label><select name="class_id" class="form-select"><option value="">All classes</option>{% for option in class_options %}<option value="{{ option.id }}">{{ option.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><label class="form-label">Term</label><select name="term" class="form-select"><option value="">All</option>{% for value, label in [('autumn', 'Autumn'), ('spring', 'Spring'), ('summer', 'Summer')] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+          <div class="col-md-4"><label class="form-label">Academic year</label><input type="text" class="form-control" name="academic_year" value="{{ current_year }}"></div>
+          <div class="col-md-2"><button class="btn btn-outline-primary w-100">Export writing CSV</button></div>
+        </form>
       </div>
     </div>
   </div>
   <div class="col-lg-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-white">
-        <strong>Current data snapshot</strong>
-      </div>
-      <div class="list-group list-group-flush">
-        <div class="list-group-item d-flex justify-content-between"><span>Teachers</span><strong>{{ overview.teachers }}</strong></div>
-        <div class="list-group-item d-flex justify-content-between"><span>Classes</span><strong>{{ overview.classes }}</strong></div>
-        <div class="list-group-item d-flex justify-content-between"><span>Pupils</span><strong>{{ overview.pupils }}</strong></div>
-      </div>
-    </div>
+    <div class="card shadow-sm h-100"><div class="card-header bg-white"><strong>Current data snapshot</strong></div><div class="list-group list-group-flush"><div class="list-group-item d-flex justify-content-between"><span>Teachers</span><strong>{{ overview.teachers }}</strong></div><div class="list-group-item d-flex justify-content-between"><span>Classes</span><strong>{{ overview.classes }}</strong></div><div class="list-group-item d-flex justify-content-between"><span>Pupils</span><strong>{{ overview.pupils }}</strong></div></div></div>
   </div>
 </div>
 {% endblock %}

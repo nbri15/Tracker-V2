@@ -1,8 +1,6 @@
 {% extends 'base.html' %}
-
 {% block title %}{{ school_class.name }}{% endblock %}
 {% set page_heading = school_class.name ~ ' class overview' %}
-
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
   <div>
@@ -16,108 +14,49 @@
 </div>
 
 <div class="row g-4 mb-4">
-  <div class="col-lg-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <p class="text-muted mb-2">Pupil count</p>
-        <h3 class="display-6 mb-0">{{ pupils|length }}</h3>
-      </div>
-    </div>
-  </div>
+  <div class="col-lg-4"><div class="card shadow-sm h-100"><div class="card-body"><p class="text-muted mb-2">Pupil count</p><h3 class="display-6 mb-0">{{ pupils|length }}</h3></div></div></div>
   {% for row in summary_rows %}
-    <div class="col-sm-6 col-lg-2">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <div class="text-muted small">{{ row.subject_label }}</div>
-          <div class="small mb-2">{{ row.term_label }}</div>
-          <div class="small">WT {{ row.working_towards }} · OT {{ row.on_track }} · EX {{ row.exceeding }}</div>
-          <div class="fw-semibold mt-2">On Track+ {{ row.on_track_plus }}</div>
-        </div>
-      </div>
-    </div>
+    <div class="col-sm-6 col-lg-2"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">{{ row.subject_label }}</div><div class="small mb-2">{{ row.term_label }}</div><div class="small">WT {{ row.working_towards }} · OT {{ row.on_track }} · EX {{ row.exceeding }}</div><div class="fw-semibold mt-2">On Track+ {{ row.on_track_plus }}</div></div></div></div>
   {% endfor %}
 </div>
 
 <div class="row g-4 mb-4">
   <div class="col-lg-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-white">
-        <strong>Pupil list</strong>
-      </div>
-      <div class="card-body">
-        <ul class="list-group list-group-flush">
-          {% for pupil in pupils %}
-            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
-              <span>{{ pupil.full_name }}</span>
-              <span class="small text-muted">{{ pupil.gender }}</span>
-            </li>
-          {% else %}
-            <li class="list-group-item px-0 text-muted">No active pupils.</li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
+    <div class="card shadow-sm h-100"><div class="card-header bg-white"><strong>Pupil list</strong></div><div class="card-body"><ul class="list-group list-group-flush">{% for pupil in pupils %}<li class="list-group-item px-0 d-flex justify-content-between align-items-center"><span>{{ pupil.full_name }}</span><span class="small text-muted">{{ pupil.gender }}</span></li>{% else %}<li class="list-group-item px-0 text-muted">No active pupils.</li>{% endfor %}</ul></div></div>
   </div>
-  <div class="col-lg-8">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-white">
-        <strong>Subject result links</strong>
-      </div>
-      <div class="card-body d-flex flex-wrap gap-2">
-        <a class="btn btn-outline-primary btn-sm" href="#subject-maths">Maths overview</a>
-        <a class="btn btn-outline-primary btn-sm" href="#subject-reading">Reading overview</a>
-        <a class="btn btn-outline-primary btn-sm" href="#subject-spag">SPaG overview</a>
-        <a class="btn btn-outline-secondary btn-sm" href="#subject-writing">Writing overview</a>
-        <p class="text-muted small mb-0 w-100 mt-2">Jump straight to the most recent saved table for each subject in this class.</p>
-      </div>
-    </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100"><div class="card-header bg-white"><strong>Interventions summary</strong></div><div class="list-group list-group-flush">{% for record in interventions %}<div class="list-group-item"><div class="fw-semibold">{{ record.pupil.full_name }} · {{ format_subject_name(record.subject) }}</div><div class="small text-muted">{{ record.reason }}{% if record.note %} · {{ record.note }}{% endif %}</div><span class="badge {% if record.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ 'active' if record.is_active else 'inactive' }}</span></div>{% else %}<div class="list-group-item text-muted">No interventions for this class yet.</div>{% endfor %}</div></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100"><div class="card-header bg-white"><strong>Quick links</strong></div><div class="card-body d-flex flex-wrap gap-2"><a class="btn btn-outline-primary btn-sm" href="#subject-maths">Maths</a><a class="btn btn-outline-primary btn-sm" href="#subject-reading">Reading</a><a class="btn btn-outline-primary btn-sm" href="#subject-spag">SPaG</a><a class="btn btn-outline-secondary btn-sm" href="#subject-writing">Writing</a>{% if sats_summary %}<a class="btn btn-outline-warning btn-sm" href="#subject-sats">Year 6 SATs</a>{% endif %}</div></div>
   </div>
 </div>
+
+{% if sats_summary %}
+<div class="card shadow-sm mb-4" id="subject-sats">
+  <div class="card-header bg-white"><strong>Year 6 SATs summary</strong></div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr><th>Pupil</th><th>Reading latest</th><th>Maths latest</th><th>SPaG latest</th><th>Writing latest</th></tr></thead>
+      <tbody>{% for row in sats_summary.rows %}<tr><td>{{ row.pupil.full_name }}</td><td>{{ row.subjects.reading.latest_scaled if row.subjects.reading.latest_scaled is not none else '—' }}</td><td>{{ row.subjects.maths.latest_scaled if row.subjects.maths.latest_scaled is not none else '—' }}</td><td>{{ row.subjects.spag.latest_scaled if row.subjects.spag.latest_scaled is not none else '—' }}</td><td>{{ row.writing.latest_band }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <div class="row g-4">
   {% for table in recent_tables %}
     <div class="col-12" id="subject-{{ table.subject }}">
       <div class="card shadow-sm">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
-          <strong>{{ table.subject_label }} recent results</strong>
-          <span class="badge text-bg-light border">{{ table.term_label }}</span>
-        </div>
+        <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2"><strong>{{ table.subject_label }} recent results</strong><span class="badge text-bg-light border">{{ table.term_label }}</span></div>
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Pupil</th>
-                {% if table.subject != 'writing' %}
-                  <th>Paper 1</th>
-                  <th>Paper 2</th>
-                  <th>Combined</th>
-                  <th>Percent</th>
-                {% endif %}
-                <th>Band</th>
-                {% if table.subject == 'writing' %}
-                  <th>Notes</th>
-                {% endif %}
-              </tr>
-            </thead>
+            <thead class="table-light"><tr><th>Pupil</th>{% if table.subject != 'writing' %}<th>Paper 1</th><th>Paper 2</th><th>Combined</th><th>Percent</th><th>Source</th>{% endif %}<th>Band</th>{% if table.subject == 'writing' %}<th>Notes</th>{% endif %}</tr></thead>
             <tbody>
               {% for row in table.rows %}
-                <tr>
-                  <td>{{ row.pupil_name }}</td>
-                  {% if table.subject != 'writing' %}
-                    <td>{{ row.paper_1_score if row.paper_1_score is not none else '—' }}</td>
-                    <td>{{ row.paper_2_score if row.paper_2_score is not none else '—' }}</td>
-                    <td>{{ row.combined_score if row.combined_score is not none else '—' }}</td>
-                    <td>{{ '%.1f%%'|format(row.combined_percent) if row.combined_percent is not none else '—' }}</td>
-                  {% endif %}
-                  <td>{{ row.band_label or '—' }}</td>
-                  {% if table.subject == 'writing' %}
-                    <td>{{ row.notes or '—' }}</td>
-                  {% endif %}
-                </tr>
+                <tr><td>{{ row.pupil_name }}</td>{% if table.subject != 'writing' %}<td>{{ row.paper_1_score if row.paper_1_score is not none else '—' }}</td><td>{{ row.paper_2_score if row.paper_2_score is not none else '—' }}</td><td>{{ row.combined_score if row.combined_score is not none else '—' }}</td><td>{{ '%.1f%%'|format(row.combined_percent) if row.combined_percent is not none else '—' }}</td><td>{{ row.source or '—' }}</td>{% endif %}<td>{{ row.band_label or '—' }}</td>{% if table.subject == 'writing' %}<td>{{ row.notes or '—' }}</td>{% endif %}</tr>
               {% else %}
-                <tr>
-                  <td colspan="{% if table.subject == 'writing' %}3{% else %}6{% endif %}" class="text-center py-4 text-muted">No saved {{ table.subject_label }} results for this class yet.</td>
-                </tr>
+                <tr><td colspan="{% if table.subject == 'writing' %}3{% else %}7{% endif %}" class="text-center py-4 text-muted">No saved {{ table.subject_label }} results for this class yet.</td></tr>
               {% endfor %}
             </tbody>
           </table>

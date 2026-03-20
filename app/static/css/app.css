@@ -32,13 +32,10 @@ body {
   z-index: 10;
 }
 
-.chart-placeholder {
-  min-height: 280px;
-  background: linear-gradient(135deg, #f8fafc, #eef2f7);
-}
-
 .subject-table th,
-.subject-table td {
+.subject-table td,
+.gap-table th,
+.gap-table td {
   white-space: nowrap;
 }
 
@@ -63,7 +60,7 @@ body {
 
 .spreadsheet-table .form-control,
 .spreadsheet-table .form-select {
-  min-width: 120px;
+  min-width: 105px;
 }
 
 .subject-nav-tabs .btn {
@@ -87,6 +84,24 @@ body {
 .settings-table .form-control,
 .settings-table .form-select {
   min-width: 110px;
+}
+
+.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--bs-body-bg);
+  box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.06);
+}
+
+.gap-table thead .sticky-col,
+.gap-table tfoot .sticky-col {
+  background: var(--bs-light);
+}
+
+.gap-wrap,
+.sats-wrap {
+  overflow-x: auto;
 }
 
 @media (max-width: 991.98px) {
