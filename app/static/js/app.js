@@ -42,28 +42,59 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  document.querySelectorAll('.js-gap-table').forEach((table) => {
-    const maxInputs = () => Array.from(table.querySelectorAll('.js-gap-max'));
-    const rowTotals = () => table.querySelectorAll('tbody tr');
-    const totalMaxCell = table.querySelector('.js-gap-total-max');
+  const formatGapNumber = (value) => (Number.isInteger(value) ? `${value}` : value.toFixed(1));
+
+  document.querySelectorAll('.js-gap-form').forEach((form) => {
+    const tables = Array.from(form.querySelectorAll('.js-gap-table'));
+    const activePaperField = form.querySelector('.js-gap-active-paper');
 
     const updateGapTotals = () => {
-      const totalMax = maxInputs().reduce((sum, input) => sum + (Number.parseFloat(input.value || '0') || 0), 0);
-      if (totalMaxCell) totalMaxCell.textContent = totalMax;
-      rowTotals().forEach((row) => {
-        const scoreInputs = row.querySelectorAll('.js-gap-score');
-        const totalCell = row.querySelector('.js-gap-row-total');
-        const values = Array.from(scoreInputs).map((input) => (input.value === '' ? null : Number.parseFloat(input.value)));
-        if (!values.length || values.every((value) => value === null)) {
-          totalCell.textContent = '—';
-          return;
-        }
-        const total = values.reduce((sum, value) => sum + (value || 0), 0);
-        totalCell.textContent = Number.isInteger(total) ? total : total.toFixed(1);
+      const overallTotals = new Map();
+
+      tables.forEach((table) => {
+        const maxTotal = Array.from(table.querySelectorAll('.js-gap-max')).reduce((sum, input) => sum + (Number.parseFloat(input.value || '0') || 0), 0);
+        table.querySelectorAll('.js-gap-paper-max').forEach((cell) => {
+          cell.textContent = formatGapNumber(maxTotal);
+        });
+
+        table.querySelectorAll('tbody tr[data-pupil-id]').forEach((row) => {
+          const scoreInputs = Array.from(row.querySelectorAll('.js-gap-score'));
+          const values = scoreInputs.map((input) => (input.value === '' ? null : Number.parseFloat(input.value)));
+          const paperTotalCell = row.querySelector('.js-gap-row-total');
+          const pupilId = row.dataset.pupilId;
+          const numericValues = values.filter((value) => value !== null && !Number.isNaN(value));
+
+          if (!numericValues.length) {
+            paperTotalCell.textContent = '—';
+          } else {
+            const total = numericValues.reduce((sum, value) => sum + value, 0);
+            paperTotalCell.textContent = formatGapNumber(total);
+            overallTotals.set(pupilId, (overallTotals.get(pupilId) || 0) + total);
+          }
+        });
+      });
+
+      tables.forEach((table) => {
+        table.querySelectorAll('tbody tr[data-pupil-id]').forEach((row) => {
+          const overallCell = row.querySelector('.js-gap-overall-total');
+          const pupilId = row.dataset.pupilId;
+          const total = overallTotals.get(pupilId);
+          overallCell.textContent = total === undefined ? '—' : formatGapNumber(total);
+        });
       });
     };
 
-    table.querySelectorAll('.js-gap-max, .js-gap-score').forEach((input) => input.addEventListener('input', updateGapTotals));
+    form.querySelectorAll('.js-gap-max, .js-gap-score').forEach((input) => input.addEventListener('input', updateGapTotals));
+
+    document.querySelectorAll('.gap-paper-tabs a[role="tab"]').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        if (activePaperField) {
+          const url = new URL(tab.href, window.location.origin);
+          activePaperField.value = url.searchParams.get('paper') || '';
+        }
+      });
+    });
+
     updateGapTotals();
   });
 });
