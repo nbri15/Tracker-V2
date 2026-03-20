@@ -76,26 +76,29 @@ $env:SECRET_KEY = 'change-this-in-production'
 
 ### 4) Run database migrations
 
-For a normal setup run:
-
 ```bash
 flask db upgrade
 ```
 
-If you are resetting local development data:
-
-```bash
-rm -f instance/assessment_tracker.db
-flask db upgrade
-```
+Run this once after cloning the repo and again whenever new migrations are added.
 
 ### 5) Seed development data
+
+Normal reseed / refresh:
 
 ```bash
 python seed.py
 ```
 
-The seed script is safe to rerun in normal local development. It updates or creates the expected default users, classes, settings, and sample rows where possible.
+Optional hard reset for local development:
+
+```bash
+python seed.py --reset
+```
+
+The seed script is safe to rerun in normal local development. It now updates the documented default users in place, resets their passwords to the expected development defaults, relinks each teacher to the matching `Year 1` to `Year 6` class, and recreates the sample data without requiring manual database deletion.
+
+Use `--reset` only when you explicitly want to wipe the current development data and rebuild the default local dataset from scratch.
 
 ### 6) Run the application
 
@@ -244,6 +247,12 @@ flask db upgrade
 
 ```bash
 python seed.py
+```
+
+### Hard reset and reseed development data
+
+```bash
+python seed.py --reset
 ```
 
 ### Run the app
