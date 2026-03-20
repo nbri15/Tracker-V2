@@ -8,6 +8,18 @@ from app.extensions import db
 from app.models import GapQuestion, GapScore, GapTemplate, SubjectResult
 from .assessments import AssessmentValidationError, get_subject_setting
 
+GAP_PAPERS = ('paper_1', 'paper_2')
+
+
+def build_gap_paper_tabs(subject: str, setting) -> list[dict]:
+    paper_labels = {
+        'paper_1': setting.paper_1_name or 'Paper 1',
+        'paper_2': setting.paper_2_name or 'Paper 2',
+    }
+    supports_two_papers = subject in {'maths', 'reading', 'spag'}
+    papers = ['paper_1', 'paper_2'] if supports_two_papers else ['paper_1']
+    return [{'key': paper, 'label': paper_labels[paper]} for paper in papers]
+
 
 def get_or_create_gap_template(year_group: int, subject: str, term: str, academic_year: str) -> GapTemplate:
     template = GapTemplate.query.filter_by(year_group=year_group, subject=subject, term=term, academic_year=academic_year).first()
@@ -19,18 +31,25 @@ def get_or_create_gap_template(year_group: int, subject: str, term: str, academi
     return template
 
 
-def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
+def parse_question_columns(form, template: GapTemplate, *, selected_paper: str = 'paper_1') -> list[GapQuestion]:
     questions: list[GapQuestion] = []
     question_ids = form.getlist('question_id[]')
     labels = form.getlist('question_label[]')
     types = form.getlist('question_type[]')
     max_scores = form.getlist('question_max[]')
+    display_orders = form.getlist('question_display_order[]')
+    papers = form.getlist('question_paper[]')
+
+    if selected_paper not in GAP_PAPERS:
+        selected_paper = 'paper_1'
 
     for index, label in enumerate(labels):
         question_id = (question_ids[index] if index < len(question_ids) else '').strip()
         label = label.strip()
         question_type = (types[index] if index < len(types) else '').strip() or None
         max_raw = (max_scores[index] if index < len(max_scores) else '').strip()
+        display_order_raw = (display_orders[index] if index < len(display_orders) else '').strip()
+        paper = (papers[index] if index < len(papers) else selected_paper).strip() or selected_paper
         if not label and not max_raw and not question_type:
             continue
         if not label:
@@ -41,11 +60,18 @@ def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
             raise AssessmentValidationError(f'Question {label}: max score must be a whole number.') from exc
         if max_score < 0:
             raise AssessmentValidationError(f'Question {label}: max score cannot be negative.')
+        try:
+            display_order = int(display_order_raw or str(index + 1))
+        except ValueError as exc:
+            raise AssessmentValidationError(f'Question {label}: display order must be a whole number.') from exc
+        if paper not in GAP_PAPERS:
+            raise AssessmentValidationError(f'Question {label}: choose a valid paper.')
         question = GapQuestion.query.get(int(question_id)) if question_id else GapQuestion(template_id=template.id)
         question.question_label = label
         question.question_type = question_type
         question.max_score = max_score
-        question.display_order = len(questions)
+        question.paper = paper
+        question.display_order = display_order
         question.template = template
         db.session.add(question)
         questions.append(question)
@@ -55,20 +81,17 @@ def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
 
     existing_ids = {question.id for question in questions if question.id}
     for old_question in list(template.questions):
-        if old_question.id not in existing_ids:
+        if old_question.paper == selected_paper and old_question.id not in existing_ids:
             db.session.delete(old_question)
     db.session.flush()
-    return questions
+    return sorted(questions, key=lambda question: (question.display_order, question.id or 0))
 
 
-def save_gap_scores(pupils, questions: list[GapQuestion], form) -> dict:
+def save_gap_scores(pupils, template: GapTemplate, questions: list[GapQuestion], form) -> dict:
     warnings = []
     score_lookup = {(score.pupil_id, score.question_id): score for question in questions for score in question.scores}
-    pupil_totals = {}
 
     for pupil in pupils:
-        total = 0.0
-        has_any_value = False
         for question in questions:
             field_name = f'score_{pupil.id}_{question.id}'
             raw_value = form.get(field_name, '').strip()
@@ -88,11 +111,10 @@ def save_gap_scores(pupils, questions: list[GapQuestion], form) -> dict:
             row = existing or GapScore(pupil_id=pupil.id, question_id=question.id)
             row.score = score_value
             db.session.add(row)
-            total += score_value
-            has_any_value = True
-        pupil_totals[pupil.id] = total if has_any_value else None
 
-    warnings.extend(sync_gap_totals_to_subject_results(pupils, questions, pupil_totals))
+    db.session.flush()
+    pupil_totals = _build_template_pupil_totals(pupils, template)
+    warnings.extend(sync_gap_totals_to_subject_results(pupils, list(template.questions), pupil_totals))
     return {'warnings': warnings, 'pupil_totals': pupil_totals}
 
 
@@ -136,23 +158,65 @@ def sync_gap_totals_to_subject_results(pupils, questions: list[GapQuestion], pup
     return warnings
 
 
-def build_gap_page_context(pupils, template: GapTemplate) -> dict:
-    questions = list(template.questions)
-    question_ids = [question.id for question in questions]
+def _build_template_pupil_totals(pupils, template: GapTemplate) -> dict[int, float | None]:
+    question_ids = [question.id for question in template.questions]
+    scores = GapScore.query.filter(GapScore.question_id.in_(question_ids)).all() if question_ids else []
+    totals = {pupil.id: 0.0 for pupil in pupils}
+    has_scores = {pupil.id: False for pupil in pupils}
+    valid_pupil_ids = {pupil.id for pupil in pupils}
+    for score in scores:
+        if score.pupil_id not in valid_pupil_ids or score.score is None:
+            continue
+        totals[score.pupil_id] += score.score
+        has_scores[score.pupil_id] = True
+    return {pupil.id: totals[pupil.id] if has_scores[pupil.id] else None for pupil in pupils}
+
+
+def build_gap_page_context(pupils, template: GapTemplate, *, subject: str, selected_paper: str, setting) -> dict:
+    all_questions = list(template.questions)
+    question_ids = [question.id for question in all_questions]
     scores = GapScore.query.filter(GapScore.question_id.in_(question_ids)).all() if question_ids else []
     score_map = {(score.pupil_id, score.question_id): score.score for score in scores}
+    selected_questions = [question for question in all_questions if (question.paper or 'paper_1') == selected_paper]
+    paper_tabs = build_gap_paper_tabs(subject, setting)
+    valid_papers = {paper['key'] for paper in paper_tabs}
+    if selected_paper not in valid_papers:
+        selected_paper = paper_tabs[0]['key']
+        selected_questions = [question for question in all_questions if (question.paper or 'paper_1') == selected_paper]
+    paper_summaries = []
+
+    for paper in paper_tabs:
+        paper_questions = [question for question in all_questions if (question.paper or 'paper_1') == paper['key']]
+        max_total = sum(question.max_score or 0 for question in paper_questions)
+        answered_cells = 0
+        for pupil in pupils:
+            for question in paper_questions:
+                if score_map.get((pupil.id, question.id)) is not None:
+                    answered_cells += 1
+        paper_summaries.append(
+            {
+                'key': paper['key'],
+                'label': paper['label'],
+                'question_count': len(paper_questions),
+                'max_total': max_total,
+                'answered_cells': answered_cells,
+            }
+        )
 
     rows = []
     question_totals = defaultdict(float)
     question_counts = defaultdict(int)
     topic_totals = defaultdict(float)
     topic_counts = defaultdict(int)
+    combined_totals = _build_template_pupil_totals(pupils, template)
+    current_paper_row_totals: list[float] = []
+    combined_row_totals: list[float] = []
 
     for pupil in pupils:
         total = 0.0
         row_scores = []
         has_any = False
-        for question in questions:
+        for question in selected_questions:
             score = score_map.get((pupil.id, question.id))
             row_scores.append(score)
             if score is not None:
@@ -163,10 +227,16 @@ def build_gap_page_context(pupils, template: GapTemplate) -> dict:
                 if question.question_type:
                     topic_totals[question.question_type] += score / question.max_score if question.max_score else 0
                     topic_counts[question.question_type] += 1
-        rows.append({'pupil': pupil, 'scores': row_scores, 'total': total if has_any else None})
+        current_total = total if has_any else None
+        combined_total = combined_totals.get(pupil.id)
+        if current_total is not None:
+            current_paper_row_totals.append(current_total)
+        if combined_total is not None:
+            combined_row_totals.append(combined_total)
+        rows.append({'pupil': pupil, 'scores': row_scores, 'total': current_total, 'combined_total': combined_total})
 
     question_averages = []
-    for question in questions:
+    for question in selected_questions:
         avg = question_totals[question.id] / question_counts[question.id] if question_counts[question.id] else None
         pct = ((avg / question.max_score) * 100) if avg is not None and question.max_score else None
         question_averages.append({'question': question, 'average': round(avg, 2) if avg is not None else None, 'percent': round(pct, 1) if pct is not None else None})
@@ -186,11 +256,18 @@ def build_gap_page_context(pupils, template: GapTemplate) -> dict:
 
     return {
         'template': template,
-        'questions': questions,
+        'questions': selected_questions,
+        'all_questions': all_questions,
         'rows': rows,
-        'max_total': sum(question.max_score or 0 for question in questions),
+        'max_total': sum(question.max_score or 0 for question in selected_questions),
+        'combined_max_total': sum(question.max_score or 0 for question in all_questions),
         'question_averages': question_averages,
         'lowest_questions': lowest_questions,
         'weakest_topics': weakest_topics,
-        'blank_question_slots': range(4),
+        'paper_tabs': paper_tabs,
+        'paper_summaries': paper_summaries,
+        'selected_paper': selected_paper,
+        'selected_paper_label': next((paper['label'] for paper in paper_tabs if paper['key'] == selected_paper), 'Paper 1'),
+        'current_paper_average_total': round(sum(current_paper_row_totals) / len(current_paper_row_totals), 1) if current_paper_row_totals else None,
+        'combined_average_total': round(sum(combined_row_totals) / len(combined_row_totals), 1) if combined_row_totals else None,
     }

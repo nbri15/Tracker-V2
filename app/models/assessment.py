@@ -138,6 +138,7 @@ class GapQuestion(db.Model):
     template_id = db.Column(db.Integer, db.ForeignKey('gap_templates.id'), nullable=False)
     question_label = db.Column(db.String(20), nullable=False)
     question_type = db.Column(db.String(120), nullable=True)
+    paper = db.Column(db.String(20), nullable=False, default='paper_1')
     max_score = db.Column(db.Integer, nullable=False, default=1)
     display_order = db.Column(db.Integer, nullable=False, default=0)
 

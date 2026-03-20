@@ -104,6 +104,27 @@ body {
   overflow-x: auto;
 }
 
+.gap-wrap {
+  overflow-y: auto;
+}
+
+.gap-table {
+  min-width: max-content;
+}
+
+.gap-table .sticky-col {
+  min-width: 220px;
+}
+
+.gap-total-col {
+  min-width: 110px;
+}
+
+.gap-table th[data-gap-col],
+.gap-table td[data-gap-col] {
+  min-width: 132px;
+}
+
 @media (max-width: 991.98px) {
   .app-shell {
     flex-direction: column;

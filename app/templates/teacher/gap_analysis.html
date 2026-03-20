@@ -18,6 +18,7 @@
 <div class="card shadow-sm mb-4">
   <div class="card-body py-3">
     <form method="get" class="row g-3 align-items-end">
+      <input type="hidden" name="paper" value="{{ selected_paper }}">
       <div class="col-sm-6 col-lg-2">
         <label class="form-label">Academic year</label>
         <select name="academic_year" class="form-select">
@@ -40,48 +41,142 @@
   </div>
 </div>
 
-<form method="post">
-  <div class="card shadow-sm mb-4">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
-      <div>
-        <strong>GAP spreadsheet</strong>
-        <div class="text-muted small">Edit question labels, topics, max scores, and pupil marks in one save.</div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <strong>Paper tabs</strong>
+          <div class="small text-muted">Switch between papers without leaving the GAP page.</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 subject-nav-tabs">
+          {% for paper in paper_tabs %}
+            <a class="btn btn-sm {% if selected_paper == paper.key %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.gap_analysis', subject=subject_key, academic_year=academic_year, term=term, search=search, paper=paper.key) }}">{{ paper.label }}</a>
+          {% endfor %}
+        </div>
       </div>
-      <button type="submit" class="btn btn-success btn-sm">Save GAP analysis</button>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <div class="border rounded p-3 h-100">
+              <div class="text-muted small">Current paper</div>
+              <div class="h5 mb-1">{{ selected_paper_label }}</div>
+              <div class="small">Questions: <strong>{{ questions|length }}</strong> · Max total: <strong>{{ max_total }}</strong></div>
+              <div class="small">Average total: <strong>{{ current_paper_average_total if current_paper_average_total is not none else '—' }}</strong></div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="border rounded p-3 h-100">
+              <div class="text-muted small">Combined summary</div>
+              <div class="h5 mb-1">All papers</div>
+              <div class="small">Questions: <strong>{{ all_questions|length }}</strong> · Max total: <strong>{{ combined_max_total }}</strong></div>
+              <div class="small">Average total: <strong>{{ combined_average_total if combined_average_total is not none else '—' }}</strong></div>
+            </div>
+          </div>
+          {% for summary in paper_summaries %}
+            <div class="col-sm-6">
+              <div class="border rounded p-3 {% if summary.key == selected_paper %}border-primary-subtle bg-primary-subtle{% endif %}">
+                <div class="fw-semibold">{{ summary.label }}</div>
+                <div class="small text-muted">{{ summary.question_count }} questions · Max {{ summary.max_total }}</div>
+                <div class="small text-muted">{{ summary.answered_cells }} saved score cells</div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
+        <div>
+          <strong>Add question</strong>
+          <div class="small text-muted">Add a new question to {{ selected_paper_label }} before saving.</div>
+        </div>
+        <button type="button" class="btn btn-outline-primary btn-sm js-gap-add-question">Add Question</button>
+      </div>
+      <div class="card-body">
+        <div class="row g-3 js-gap-add-panel" data-selected-paper="{{ selected_paper }}">
+          <div class="col-md-3">
+            <label class="form-label">Question label</label>
+            <input type="text" class="form-control form-control-sm js-gap-add-label" placeholder="Q7">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Type / topic</label>
+            <input type="text" class="form-control form-control-sm js-gap-add-type" placeholder="Fractions">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Max score</label>
+            <input type="number" min="0" class="form-control form-control-sm js-gap-add-max" value="1">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Display order</label>
+            <input type="number" min="1" class="form-control form-control-sm js-gap-add-order" value="{{ questions|length + 1 }}">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Paper</label>
+            <input type="text" class="form-control form-control-sm" value="{{ selected_paper_label }}" readonly>
+          </div>
+        </div>
+        <div class="small text-muted mt-3">Use this to add extra questions while keeping the spreadsheet view simple for teachers.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<form method="post">
+  <input type="hidden" name="selected_paper" value="{{ selected_paper }}">
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+      <div>
+        <strong>GAP spreadsheet · {{ selected_paper_label }}</strong>
+        <div class="text-muted small">Edit labels, topics, max scores, display order, and pupil marks in one save.</div>
+      </div>
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <div class="small text-muted">Current max total <strong class="js-gap-total-max">{{ max_total }}</strong> · Combined max <strong>{{ combined_max_total }}</strong></div>
+        <button type="submit" class="btn btn-success btn-sm">Save GAP analysis</button>
+      </div>
     </div>
     <div class="card-body p-0">
       <div class="table-responsive spreadsheet-wrap gap-wrap">
-        <table class="table table-sm align-middle mb-0 spreadsheet-table gap-table js-gap-table">
+        <table class="table table-sm align-middle mb-0 spreadsheet-table gap-table js-gap-table" data-selected-paper-label="{{ selected_paper_label }}">
           <thead class="table-light sticky-top">
             <tr>
               <th class="sticky-col">Pupil / question</th>
               {% for question in questions %}
-                <th>
+                <th data-gap-col>
                   <input type="hidden" name="question_id[]" value="{{ question.id }}">
+                  <input type="hidden" name="question_paper[]" value="{{ question.paper or selected_paper }}">
                   <input type="text" class="form-control form-control-sm" name="question_label[]" value="{{ question.question_label }}" placeholder="Label">
                 </th>
               {% endfor %}
-              {% for _ in blank_question_slots %}
-                <th>
-                  <input type="hidden" name="question_id[]" value="">
-                  <input type="text" class="form-control form-control-sm" name="question_label[]" value="" placeholder="New label">
-                </th>
-              {% endfor %}
-              <th>Total</th>
+              <th class="gap-total-col">Paper total</th>
+              <th class="gap-total-col">Combined total</th>
             </tr>
             <tr>
               <th class="sticky-col small text-muted">Question type / topic</th>
-              {% for question in questions %}<th><input type="text" class="form-control form-control-sm" name="question_type[]" value="{{ question.question_type or '' }}" placeholder="Topic"></th>{% endfor %}
-              {% for _ in blank_question_slots %}<th><input type="text" class="form-control form-control-sm" name="question_type[]" value="" placeholder="Topic"></th>{% endfor %}
-              <th class="small text-muted">Paper name</th>
+              {% for question in questions %}
+                <th data-gap-col><input type="text" class="form-control form-control-sm" name="question_type[]" value="{{ question.question_type or '' }}" placeholder="Topic"></th>
+              {% endfor %}
+              <th class="small text-muted">Paper</th>
+              <th class="small text-muted">All papers</th>
             </tr>
             <tr>
               <th class="sticky-col small text-muted">Max score</th>
-              {% for question in questions %}<th><input type="number" min="0" class="form-control form-control-sm js-gap-max" name="question_max[]" value="{{ question.max_score }}"></th>{% endfor %}
-              {% for _ in blank_question_slots %}<th><input type="number" min="0" class="form-control form-control-sm js-gap-max" name="question_max[]" value="" placeholder="0"></th>{% endfor %}
+              {% for question in questions %}
+                <th data-gap-col><input type="number" min="0" class="form-control form-control-sm js-gap-max" name="question_max[]" value="{{ question.max_score }}"></th>
+              {% endfor %}
+              <th class="fw-semibold js-gap-total-max">{{ max_total }}</th>
+              <th class="fw-semibold">{{ combined_max_total }}</th>
+            </tr>
+            <tr>
+              <th class="sticky-col small text-muted">Display order</th>
+              {% for question in questions %}
+                <th data-gap-col><input type="number" min="1" class="form-control form-control-sm" name="question_display_order[]" value="{{ question.display_order }}"></th>
+              {% endfor %}
+              <th class="small text-muted">{{ selected_paper_label }}</th>
               <th>
-                <input type="text" name="paper_name" class="form-control form-control-sm" value="{{ template.paper_name or '' }}" placeholder="Optional paper name">
-                <div class="small text-muted mt-1">Max total <strong class="js-gap-total-max">{{ max_total }}</strong></div>
+                <input type="text" name="paper_name" class="form-control form-control-sm" value="{{ template.paper_name or '' }}" placeholder="Optional summary note">
               </th>
             </tr>
           </thead>
@@ -94,23 +189,23 @@
                 </td>
                 {% for question in questions %}
                   {% set score = row.scores[loop.index0] %}
-                  <td><input type="number" step="0.5" min="0" max="{{ question.max_score }}" class="form-control form-control-sm js-gap-score" name="score_{{ row.pupil.id }}_{{ question.id }}" value="{{ '' if score is none else score }}"></td>
+                  <td data-gap-col><input type="number" step="0.5" min="0" max="{{ question.max_score }}" class="form-control form-control-sm js-gap-score" name="score_{{ row.pupil.id }}_{{ question.id }}" value="{{ '' if score is none else score }}"></td>
                 {% endfor %}
-                {% for _ in blank_question_slots %}<td class="bg-body-tertiary"></td>{% endfor %}
                 <td class="fw-semibold js-gap-row-total">{{ row.total if row.total is not none else '—' }}</td>
+                <td class="fw-semibold text-muted">{{ row.combined_total if row.combined_total is not none else '—' }}</td>
               </tr>
             {% else %}
-              <tr><td colspan="99" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
+              <tr><td colspan="{{ questions|length + 3 }}" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
             {% endfor %}
           </tbody>
           <tfoot class="table-light">
             <tr>
               <th class="sticky-col">Question average</th>
               {% for item in question_averages %}
-                <th>{{ item.average if item.average is not none else '—' }}{% if item.percent is not none %}<div class="small text-muted">{{ item.percent }}%</div>{% endif %}</th>
+                <th data-gap-col>{{ item.average if item.average is not none else '—' }}{% if item.percent is not none %}<div class="small text-muted">{{ item.percent }}%</div>{% endif %}</th>
               {% endfor %}
-              {% for _ in blank_question_slots %}<th>—</th>{% endfor %}
-              <th>{{ max_total }}</th>
+              <th>{{ current_paper_average_total if current_paper_average_total is not none else '—' }}</th>
+              <th>{{ combined_average_total if combined_average_total is not none else '—' }}</th>
             </tr>
           </tfoot>
         </table>
@@ -125,9 +220,9 @@
       <div class="card-header bg-white"><strong>Average by question</strong></div>
       <div class="list-group list-group-flush">
         {% for item in question_averages %}
-          <div class="list-group-item d-flex justify-content-between"><span>Q{{ item.question.question_label }}</span><span>{{ item.average if item.average is not none else '—' }}{% if item.percent is not none %} ({{ item.percent }}%){% endif %}</span></div>
+          <div class="list-group-item d-flex justify-content-between"><span>{{ item.question.question_label }}</span><span>{{ item.average if item.average is not none else '—' }}{% if item.percent is not none %} ({{ item.percent }}%){% endif %}</span></div>
         {% else %}
-          <div class="list-group-item text-muted">No questions set up yet.</div>
+          <div class="list-group-item text-muted">Add questions to {{ selected_paper_label }} to view averages.</div>
         {% endfor %}
       </div>
     </div>
@@ -137,7 +232,7 @@
       <div class="card-header bg-white"><strong>Lowest-performing questions</strong></div>
       <div class="list-group list-group-flush">
         {% for item in lowest_questions %}
-          <div class="list-group-item d-flex justify-content-between"><span>Q{{ item.question.question_label }}</span><span>{{ item.percent }}%</span></div>
+          <div class="list-group-item d-flex justify-content-between"><span>{{ item.question.question_label }}</span><span>{{ item.percent }}%</span></div>
         {% else %}
           <div class="list-group-item text-muted">No averages available yet.</div>
         {% endfor %}

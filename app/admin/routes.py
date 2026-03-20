@@ -156,7 +156,11 @@ def classes():
 def class_detail(class_id: int):
     academic_year = request.args.get('academic_year', get_current_academic_year())
     school_class = SchoolClass.query.get_or_404(class_id)
-    context = get_class_detail_context(school_class, academic_year)
+    active_tab = request.args.get('tab', 'overview').strip() or 'overview'
+    term = request.args.get('term', '').strip()
+    search = request.args.get('search', '').strip()
+    sort = request.args.get('sort', 'name_asc').strip() or 'name_asc'
+    context = get_class_detail_context(school_class, academic_year, active_tab=active_tab, term=term, search=search, sort=sort)
     return render_template('admin/class_detail.html', academic_year=academic_year, **context)
 
 

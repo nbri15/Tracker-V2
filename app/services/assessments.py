@@ -36,6 +36,7 @@ SORT_OPTIONS = {
     'percent_asc': 'Lowest combined percent',
     'band_asc': 'Band A–Z',
 }
+CLASS_DETAIL_TABS = ('overview', 'maths', 'reading', 'spag', 'writing', 'sats')
 CLASS_SORT_OPTIONS = {
     'year_group': 'Year group',
     'class_name': 'Class name',
@@ -450,6 +451,144 @@ def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_y
     return get_term_label(latest_term), formatted_rows
 
 
+def _sort_class_detail_rows(rows: list[dict], sort_key: str) -> list[dict]:
+    if sort_key == 'name_desc':
+        return sorted(rows, key=lambda row: (row['pupil_name'].lower(),), reverse=True)
+    if sort_key == 'percent_desc':
+        return sorted(rows, key=lambda row: (row.get('combined_percent') is None, -(row.get('combined_percent') or 0), row['pupil_name'].lower()))
+    if sort_key == 'percent_asc':
+        return sorted(rows, key=lambda row: (row.get('combined_percent') is None, row.get('combined_percent') or 0, row['pupil_name'].lower()))
+    if sort_key == 'band_asc':
+        return sorted(rows, key=lambda row: ((row.get('band_label') or 'ZZZ'), row['pupil_name'].lower()))
+    return sorted(rows, key=lambda row: row['pupil_name'].lower())
+
+
+def build_class_subject_table(school_class: SchoolClass, subject: str, academic_year: str, *, term: str = '', search: str = '', sort: str = 'name_asc') -> dict:
+    selected_term = term.strip()
+    latest_term = get_most_recent_term_with_data(school_class.id, subject, academic_year)
+    effective_term = selected_term or latest_term
+
+    term_options = [{'value': value, 'label': label} for value, label in TERMS]
+    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    if not effective_term:
+        return {
+            'subject': subject,
+            'subject_label': format_subject_name(subject),
+            'rows': _sort_class_detail_rows(
+                [
+                    {
+                        'pupil_name': pupil.full_name,
+                        'paper_1_score': None,
+                        'paper_2_score': None,
+                        'combined_score': None,
+                        'combined_percent': None,
+                        'band_label': None,
+                        'source': None,
+                    }
+                    for pupil in pupils
+                    if not search.lower().strip() or search.lower().strip() in pupil.full_name.lower()
+                ],
+                sort,
+            ) if subject in CORE_SUBJECTS else _sort_class_detail_rows(
+                [
+                    {'pupil_name': pupil.full_name, 'band_label': None, 'notes': None}
+                    for pupil in pupils
+                    if not search.lower().strip() or search.lower().strip() in pupil.full_name.lower()
+                ],
+                sort,
+            ),
+            'term': selected_term,
+            'effective_term': None,
+            'term_label': 'No data',
+            'latest_term': latest_term,
+            'paper_1_label': 'Paper 1',
+            'paper_2_label': 'Paper 2',
+            'term_options': term_options,
+        }
+
+    search_value = search.lower().strip()
+
+    if subject in CORE_SUBJECTS:
+        setting = get_subject_setting(school_class.year_group, subject, effective_term)
+        query = (
+            SubjectResult.query.join(SubjectResult.pupil)
+            .filter(
+                SubjectResult.subject == subject,
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.term == effective_term,
+                Pupil.class_id == school_class.id,
+            )
+            .order_by(Pupil.last_name, Pupil.first_name)
+        )
+        results = {row.pupil_id: row for row in query.all()}
+        rows = []
+        for pupil in pupils:
+            row = results.get(pupil.id)
+            if search_value and search_value not in pupil.full_name.lower():
+                continue
+            rows.append(
+                {
+                    'pupil_name': pupil.full_name,
+                    'paper_1_score': row.paper_1_score if row else None,
+                    'paper_2_score': row.paper_2_score if row else None,
+                    'combined_score': row.combined_score if row else None,
+                    'combined_percent': row.combined_percent if row else None,
+                    'band_label': row.band_label if row else None,
+                    'source': row.source if row else None,
+                }
+            )
+        rows = _sort_class_detail_rows(rows, sort)
+        return {
+            'subject': subject,
+            'subject_label': format_subject_name(subject),
+            'rows': rows,
+            'term': selected_term,
+            'effective_term': effective_term,
+            'term_label': get_term_label(effective_term),
+            'latest_term': latest_term,
+            'paper_1_label': setting.paper_1_name,
+            'paper_2_label': setting.paper_2_name,
+            'term_options': term_options,
+        }
+
+    results = (
+        WritingResult.query.join(WritingResult.pupil)
+        .filter(
+            WritingResult.academic_year == academic_year,
+            WritingResult.term == effective_term,
+            Pupil.class_id == school_class.id,
+        )
+        .order_by(Pupil.last_name, Pupil.first_name)
+        .all()
+    )
+    results_by_pupil = {row.pupil_id: row for row in results}
+    rows = []
+    for pupil in pupils:
+        if search_value and search_value not in pupil.full_name.lower():
+            continue
+        row = results_by_pupil.get(pupil.id)
+        rows.append(
+            {
+                'pupil_name': pupil.full_name,
+                'band_label': get_writing_band_label(row.band) if row else None,
+                'notes': row.notes if row else None,
+            }
+        )
+    rows = _sort_class_detail_rows(rows, sort)
+    return {
+        'subject': subject,
+        'subject_label': format_subject_name(subject),
+        'rows': rows,
+        'term': selected_term,
+        'effective_term': effective_term,
+        'term_label': get_term_label(effective_term),
+        'latest_term': latest_term,
+        'paper_1_label': None,
+        'paper_2_label': None,
+        'term_options': term_options,
+    }
+
+
 def build_year6_sats_summary(school_class: SchoolClass, academic_year: str) -> dict | None:
     if school_class.year_group != 6:
         return None
@@ -467,13 +606,13 @@ def build_year6_sats_summary(school_class: SchoolClass, academic_year: str) -> d
     return {'rows': rows, 'academic_year': academic_year}
 
 
-def get_class_detail_context(school_class: SchoolClass, academic_year: str) -> dict:
+def get_class_detail_context(school_class: SchoolClass, academic_year: str, *, active_tab: str = 'overview', term: str = '', search: str = '', sort: str = 'name_asc') -> dict:
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
     summary_rows = build_dashboard_summary(school_class.id, academic_year)
-    recent_tables = []
-    for subject in ALL_SUBJECTS:
-        term_label, rows = _build_recent_table_rows(school_class, subject, academic_year)
-        recent_tables.append({'subject': subject, 'subject_label': format_subject_name(subject), 'term_label': term_label, 'rows': rows})
+    subject_tables = {
+        subject: build_class_subject_table(school_class, subject, academic_year, term=term, search=search, sort=sort)
+        for subject in ALL_SUBJECTS
+    }
 
     interventions = (
         Intervention.query.join(Intervention.pupil)
@@ -482,14 +621,37 @@ def get_class_detail_context(school_class: SchoolClass, academic_year: str) -> d
         .all()
     )
     sats_summary = build_year6_sats_summary(school_class, academic_year)
+    active_interventions = sum(1 for record in interventions if record.is_active)
+    tabs = [{'key': 'overview', 'label': 'Overview'}]
+    tabs.extend({'key': subject, 'label': format_subject_name(subject)} for subject in ALL_SUBJECTS)
+    if sats_summary:
+        tabs.append({'key': 'sats', 'label': 'SATs'})
+    valid_tab_keys = {item['key'] for item in tabs}
+    if active_tab not in valid_tab_keys:
+        active_tab = 'overview'
+    active_subject_table = subject_tables.get(active_tab) if active_tab in ALL_SUBJECTS else None
+    overview_cards = [
+        {'label': 'Class', 'value': school_class.name, 'muted': f'Year {school_class.year_group}'},
+        {'label': 'Teacher', 'value': school_class.teacher.username if school_class.teacher else 'Unassigned', 'muted': 'Assigned lead'},
+        {'label': 'Pupils', 'value': len(pupils), 'muted': 'Active on roll'},
+        {'label': 'Interventions', 'value': active_interventions, 'muted': f'{academic_year} active'},
+    ]
 
     return {
         'school_class': school_class,
         'pupils': pupils,
         'summary_rows': summary_rows,
-        'recent_tables': recent_tables,
+        'subject_tables': subject_tables,
+        'active_subject_table': active_subject_table,
         'interventions': interventions,
         'sats_summary': sats_summary,
+        'active_interventions': active_interventions,
+        'active_tab': active_tab,
+        'tabs': tabs,
+        'search': search,
+        'sort': sort,
+        'term': term,
+        'overview_cards': overview_cards,
     }
 
 

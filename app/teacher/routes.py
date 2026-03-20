@@ -94,28 +94,49 @@ def gap_analysis(subject: str):
     school_class = context['school_class']
     if not school_class:
         flash('No active class is assigned to your account yet.', 'warning')
-        return render_template('teacher/gap_analysis.html', rows=[], questions=[], template=None, max_total=0, **context)
+        return render_template(
+            'teacher/gap_analysis.html',
+            rows=[],
+            questions=[],
+            all_questions=[],
+            template=None,
+            max_total=0,
+            combined_max_total=0,
+            question_averages=[],
+            lowest_questions=[],
+            weakest_topics=[],
+            paper_tabs=[{'key': 'paper_1', 'label': 'Paper 1'}, {'key': 'paper_2', 'label': 'Paper 2'}],
+            paper_summaries=[],
+            selected_paper='paper_1',
+            selected_paper_label='Paper 1',
+            current_paper_average_total=None,
+            combined_average_total=None,
+            **context,
+        )
 
     template = get_or_create_gap_template(school_class.year_group, subject, context['term'], context['academic_year'])
     pupils = context['pupils']
+    setting = get_subject_setting(school_class.year_group, subject, context['term'])
+    selected_paper = request.values.get('paper', 'paper_1').strip() or 'paper_1'
 
     if request.method == 'POST':
         try:
             template.paper_name = request.form.get('paper_name', '').strip() or None
-            questions = parse_question_columns(request.form, template)
+            selected_paper = request.form.get('selected_paper', selected_paper).strip() or 'paper_1'
+            questions = parse_question_columns(request.form, template, selected_paper=selected_paper)
             db.session.flush()
-            outcome = save_gap_scores(pupils, questions, request.form)
+            outcome = save_gap_scores(pupils, template, questions, request.form)
             db.session.commit()
             flash(f'{format_subject_name(subject)} GAP analysis saved for {school_class.name}.', 'success')
             for warning in outcome['warnings']:
                 flash(warning, 'warning')
-            return redirect(url_for('teacher.gap_analysis', subject=subject, academic_year=context['academic_year'], term=context['term']))
+            return redirect(url_for('teacher.gap_analysis', subject=subject, academic_year=context['academic_year'], term=context['term'], paper=selected_paper))
         except (ValueError, AssessmentValidationError) as exc:
             db.session.rollback()
             flash(f'GAP analysis could not be saved: {exc}', 'danger')
             template = get_or_create_gap_template(school_class.year_group, subject, context['term'], context['academic_year'])
 
-    gap_context = build_gap_page_context(pupils, template)
+    gap_context = build_gap_page_context(pupils, template, subject=subject, selected_paper=selected_paper, setting=setting)
     return render_template('teacher/gap_analysis.html', **gap_context, **context)
 
 
