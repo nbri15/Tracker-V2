@@ -2,6 +2,16 @@
 
 {% block title %}Writing{% endblock %}
 {% set page_heading = 'Writing assessment entry' %}
+{% macro sort_link(column, label) -%}
+  {% set state = header_state[column] %}
+  <a
+    href="{{ url_for('teacher.writing', academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, sort=column, direction=state.next_direction) }}"
+    class="table-sort-link{% if state.active %} active{% endif %}"
+  >
+    <span>{{ label }}</span>
+    <span class="sort-indicator">{{ state.indicator or '↕' }}</span>
+  </a>
+{%- endmacro %}
 
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
@@ -19,10 +29,10 @@
 
 <div class="card shadow-sm mb-4">
   <div class="card-body py-3">
-    <form method="get" class="row g-3 align-items-end">
+    <form method="get" class="row g-2 align-items-end compact-filter-row">
       <div class="col-sm-6 col-lg-2">
         <label class="form-label">Academic year</label>
-        <select name="academic_year" class="form-select">
+        <select name="academic_year" class="form-select form-select-sm">
           {% for option in academic_year_options %}
             <option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>
           {% endfor %}
@@ -30,27 +40,54 @@
       </div>
       <div class="col-sm-6 col-lg-2">
         <label class="form-label">Term</label>
-        <select name="term" class="form-select">
+        <select name="term" class="form-select form-select-sm">
           {% for value, label in terms %}
             <option value="{{ value }}" {% if value == term %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="col-sm-6 col-lg-3">
+      <div class="col-sm-6 col-lg-2">
         <label class="form-label">Search pupil</label>
-        <input type="text" name="search" value="{{ search }}" class="form-control" placeholder="Search by name">
+        <input type="text" name="search" value="{{ filters.search }}" class="form-control form-control-sm" placeholder="Search by name">
       </div>
-      <div class="col-sm-6 col-lg-3">
-        <label class="form-label">Sort by</label>
-        <select name="sort" class="form-select">
-          {% for value, label in sort_options.items() %}
-            <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ label }}</option>
+      <div class="col-sm-6 col-lg-2">
+        <label class="form-label">Gender</label>
+        <select name="gender" class="form-select form-select-sm">
+          <option value="all" {% if filters.gender == 'all' %}selected{% endif %}>All</option>
+          {% for gender in gender_options %}
+            <option value="{{ gender }}" {% if filters.gender == gender %}selected{% endif %}>{{ gender }}</option>
           {% endfor %}
         </select>
       </div>
+      <div class="col-sm-4 col-lg-1">
+        <label class="form-label">PP</label>
+        <select name="pupil_premium" class="form-select form-select-sm">
+          <option value="all" {% if filters.pupil_premium == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if filters.pupil_premium == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if filters.pupil_premium == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      <div class="col-sm-4 col-lg-1">
+        <label class="form-label">LAPS</label>
+        <select name="laps" class="form-select form-select-sm">
+          <option value="all" {% if filters.laps == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if filters.laps == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if filters.laps == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      <div class="col-sm-4 col-lg-1">
+        <label class="form-label">Service</label>
+        <select name="service_child" class="form-select form-select-sm">
+          <option value="all" {% if filters.service_child == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if filters.service_child == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if filters.service_child == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      <input type="hidden" name="sort" value="{{ sort_state.column }}">
+      <input type="hidden" name="direction" value="{{ sort_state.direction }}">
       <div class="col-lg-2 d-flex gap-2">
-        <button class="btn btn-primary flex-grow-1">Apply</button>
-        <a class="btn btn-outline-secondary" href="{{ url_for('teacher.writing') }}">Clear</a>
+        <button class="btn btn-primary btn-sm flex-grow-1">Apply</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.writing') }}">Clear</a>
       </div>
     </form>
   </div>
@@ -68,8 +105,13 @@
     <form method="post">
       <input type="hidden" name="academic_year" value="{{ academic_year }}">
       <input type="hidden" name="term" value="{{ term }}">
-      <input type="hidden" name="search" value="{{ search }}">
-      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="search" value="{{ filters.search }}">
+      <input type="hidden" name="gender" value="{{ filters.gender }}">
+      <input type="hidden" name="pupil_premium" value="{{ filters.pupil_premium }}">
+      <input type="hidden" name="laps" value="{{ filters.laps }}">
+      <input type="hidden" name="service_child" value="{{ filters.service_child }}">
+      <input type="hidden" name="sort" value="{{ sort_state.column }}">
+      <input type="hidden" name="direction" value="{{ sort_state.direction }}">
 
       <div class="px-3 pt-3 d-flex justify-content-end">
         <button type="submit" class="btn btn-success btn-sm">Save writing results</button>
@@ -79,19 +121,19 @@
         <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table">
           <thead class="table-light sticky-top">
             <tr>
-              <th>Pupil</th>
-              <th>Band</th>
-              <th>Notes</th>
+              <th>{{ sort_link('name', 'Pupil') }}</th>
+              <th>{{ sort_link('band_label', 'Band') }}</th>
+              <th>{{ sort_link('notes', 'Notes') }}</th>
             </tr>
           </thead>
           <tbody>
             {% for row in rows %}
-              <tr>
+              <tr class="result-row{% if row.outcome_theme %} result-row-{{ row.outcome_theme }}{% endif %}">
                 <td>
                   <div class="fw-semibold">{{ row.pupil.full_name }}</div>
                   <div class="small text-muted">{{ row.pupil.gender }}{% if row.pupil.pupil_premium %} · PP{% endif %}{% if row.pupil.laps %} · LAPS{% endif %}{% if row.pupil.service_child %} · Service{% endif %}</div>
                 </td>
-                <td>
+                <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">
                   <select name="band_{{ row.pupil.id }}" class="form-select form-select-sm">
                     <option value="">— Select band —</option>
                     {% for value, label in writing_band_choices %}
@@ -111,7 +153,7 @@
       </div>
 
       <div class="px-3 py-3 d-flex justify-content-between align-items-center gap-2 border-top bg-light-subtle">
-        <div class="small text-muted">Expected maps to On Track in dashboard summaries. Greater Depth maps to Exceeding.</div>
+        <div class="small text-muted">Working Towards shows red, Expected green, and Greater Depth orange for quick scanning.</div>
         <button type="submit" class="btn btn-success btn-sm">Save writing results</button>
       </div>
     </form>

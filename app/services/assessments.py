@@ -37,6 +37,15 @@ SORT_OPTIONS = {
     'percent_asc': 'Lowest combined percent',
     'band_asc': 'Band A–Z',
 }
+RESULT_OUTCOME_THEMES = {
+    'Working Towards': 'wt',
+    'On Track': 'ot',
+    'Working At': 'ot',
+    'Expected': 'ot',
+    'Exceeding': 'ex',
+    'Greater Depth': 'ex',
+}
+RESULT_THEME_ORDER = {'wt': 0, 'ot': 1, 'ex': 2}
 CLASS_SORT_OPTIONS = {
     'year_group': 'Year group',
     'class_name': 'Class name',
@@ -113,6 +122,16 @@ def get_writing_band_label(band: str | None) -> str:
     if not band:
         return '—'
     return WRITING_BAND_LABELS.get(band, band.replace('_', ' ').title())
+
+
+def get_result_outcome_theme(band_label: str | None) -> str | None:
+    if not band_label:
+        return None
+    return RESULT_OUTCOME_THEMES.get(band_label)
+
+
+def get_writing_outcome_theme(band: str | None) -> str | None:
+    return get_result_outcome_theme(get_writing_band_label(band))
 
 
 def get_current_academic_year(today: datetime | None = None) -> str:
@@ -289,6 +308,102 @@ def build_admin_pupil_filter_state(args) -> dict:
         'service_child': (args.get('service_child', 'all') or 'all').strip() or 'all',
         'search': (args.get('search', '') or '').strip(),
     }
+
+
+def build_table_sort_state(args, *, allowed_columns: set[str], default_column: str) -> dict:
+    sort_column = (args.get('sort', default_column) or default_column).strip()
+    if sort_column not in allowed_columns:
+        sort_column = default_column
+    sort_direction = (args.get('direction', 'asc') or 'asc').strip().lower()
+    if sort_direction not in {'asc', 'desc'}:
+        sort_direction = 'asc'
+    return {'column': sort_column, 'direction': sort_direction}
+
+
+def build_sort_indicator(column: str, sort_state: dict) -> str:
+    if sort_state.get('column') != column:
+        return ''
+    return '↑' if sort_state.get('direction') == 'asc' else '↓'
+
+
+def get_next_sort_direction(column: str, sort_state: dict) -> str:
+    if sort_state.get('column') == column and sort_state.get('direction') == 'asc':
+        return 'desc'
+    return 'asc'
+
+
+def _name_sort_key(row: dict) -> tuple:
+    pupil = row.get('pupil')
+    if pupil is not None:
+        return (pupil.last_name.lower(), pupil.first_name.lower(), pupil.id)
+    return ((row.get('name') or '').lower(),)
+
+
+def _sort_rows_with_none_last(rows: list[dict], value_func, *, reverse: bool = False) -> list[dict]:
+    populated = [row for row in rows if value_func(row) is not None]
+    empty = [row for row in rows if value_func(row) is None]
+    populated = sorted(populated, key=lambda row: (value_func(row), _name_sort_key(row)), reverse=reverse)
+    empty = sorted(empty, key=_name_sort_key)
+    return populated + empty
+
+
+def annotate_subject_result_rows(rows: list[dict]) -> list[dict]:
+    annotated = []
+    for row in rows:
+        updated = row.copy()
+        updated['outcome_theme'] = get_result_outcome_theme(updated.get('band_label'))
+        annotated.append(updated)
+    return annotated
+
+
+def annotate_writing_result_rows(rows: list[dict]) -> list[dict]:
+    annotated = []
+    for row in rows:
+        updated = row.copy()
+        updated['band_label'] = updated.get('band_label') or get_writing_band_label(updated.get('band'))
+        updated['outcome_theme'] = updated.get('outcome_theme') or get_result_outcome_theme(updated.get('band_label'))
+        annotated.append(updated)
+    return annotated
+
+
+def sort_subject_result_rows(rows: list[dict], sort_column: str, sort_direction: str) -> list[dict]:
+    reverse = sort_direction == 'desc'
+    if sort_column == 'name':
+        return sorted(rows, key=_name_sort_key, reverse=reverse)
+    if sort_column == 'paper_1_score':
+        return _sort_rows_with_none_last(rows, lambda row: row.get('paper_1_score'), reverse=reverse)
+    if sort_column == 'paper_2_score':
+        return _sort_rows_with_none_last(rows, lambda row: row.get('paper_2_score'), reverse=reverse)
+    if sort_column == 'combined_score':
+        return _sort_rows_with_none_last(rows, lambda row: row.get('combined_score'), reverse=reverse)
+    if sort_column == 'combined_percent':
+        return _sort_rows_with_none_last(rows, lambda row: row.get('combined_percent'), reverse=reverse)
+    if sort_column == 'band_label':
+        return _sort_rows_with_none_last(
+            rows,
+            lambda row: RESULT_THEME_ORDER.get(row.get('outcome_theme')),
+            reverse=reverse,
+        )
+    return sorted(rows, key=_name_sort_key)
+
+
+def sort_writing_result_rows(rows: list[dict], sort_column: str, sort_direction: str) -> list[dict]:
+    reverse = sort_direction == 'desc'
+    if sort_column == 'name':
+        return sorted(rows, key=_name_sort_key, reverse=reverse)
+    if sort_column == 'band_label':
+        return _sort_rows_with_none_last(
+            rows,
+            lambda row: RESULT_THEME_ORDER.get(row.get('outcome_theme')),
+            reverse=reverse,
+        )
+    if sort_column == 'notes':
+        return _sort_rows_with_none_last(
+            rows,
+            lambda row: (row.get('notes') or '').strip().lower() or None,
+            reverse=reverse,
+        )
+    return sorted(rows, key=_name_sort_key)
 
 
 def get_gender_filter_options(*, class_id: int | None = None) -> list[str]:
@@ -582,6 +697,9 @@ def _build_class_detail_subject_rows(
     term: str,
     academic_year: str,
     filters: dict | None = None,
+    *,
+    sort_column: str = 'name',
+    sort_direction: str = 'asc',
 ) -> tuple[list[Pupil], list[dict]]:
     pupils = apply_admin_pupil_filters(
         school_class.pupils.filter_by(is_active=True),
@@ -639,6 +757,12 @@ def _build_class_detail_subject_rows(
                 'notes': result.notes if result else None,
             })
         rows.append(base_row)
+    if subject in CORE_SUBJECTS:
+        rows = annotate_subject_result_rows(rows)
+        rows = sort_subject_result_rows(rows, sort_column, sort_direction)
+    else:
+        rows = annotate_writing_result_rows(rows)
+        rows = sort_writing_result_rows(rows, sort_column, sort_direction)
     return pupils, rows
 
 
@@ -692,6 +816,8 @@ def get_class_detail_context(
     subject: str = 'maths',
     term: str | None = None,
     filters: dict | None = None,
+    sort_column: str = 'name',
+    sort_direction: str = 'asc',
 ) -> dict:
     filters = filters or {}
     available_subjects = list(ALL_SUBJECTS)
