@@ -5,13 +5,16 @@ from flask_login import current_user, login_required
 
 from app.models import Intervention, Pupil, SchoolClass, User
 from app.services import (
+    BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
     SUBGROUP_FILTERS,
+    build_admin_pupil_filter_state,
     build_class_overview_row,
     build_dashboard_summary,
     build_subject_overview_cards,
     build_year6_sats_overview,
     get_current_academic_year,
+    get_gender_filter_options,
     get_tracker_mode,
     get_tracker_mode_label,
     sort_class_rows,
@@ -76,6 +79,7 @@ def admin_dashboard():
     filter_class = request.args.get('class_id', '').strip()
     subgroup = request.args.get('subgroup', 'all').strip() or 'all'
     sort = request.args.get('sort', 'year_group')
+    pupil_filters = build_admin_pupil_filter_state(request.args)
 
     query = SchoolClass.query.filter_by(is_active=True)
     if filter_year_group:
@@ -86,7 +90,7 @@ def admin_dashboard():
         query = query.filter(SchoolClass.id == int(filter_class))
 
     classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
-    class_rows = [build_class_overview_row(school_class, academic_year, subgroup) for school_class in classes]
+    class_rows = [build_class_overview_row(school_class, academic_year, subgroup, pupil_filters) for school_class in classes]
     class_rows = sort_class_rows(class_rows, sort)
     subject_cards = build_subject_overview_cards(class_rows)
     teacher_options = User.query.filter_by(role='teacher', is_active=True).order_by(User.username).all()
@@ -98,6 +102,7 @@ def admin_dashboard():
         'total_pupils': Pupil.query.filter_by(is_active=True).count(),
         'total_classes': SchoolClass.query.filter_by(is_active=True).count(),
         'teacher_count': User.query.filter_by(role='teacher', is_active=True).count(),
+        'filtered_pupil_total': sum(row['pupil_count'] for row in class_rows),
         'filtered_class_count': len(class_rows),
         'class_rows': class_rows,
         'subject_cards': subject_cards,
@@ -105,7 +110,10 @@ def admin_dashboard():
         'filter_teacher': filter_teacher,
         'filter_class': filter_class,
         'subgroup': subgroup,
+        'pupil_filters': pupil_filters,
         'subgroup_filters': SUBGROUP_FILTERS,
+        'boolean_filter_choices': BOOLEAN_FILTER_CHOICES,
+        'gender_options': get_gender_filter_options(class_id=int(filter_class)) if filter_class else get_gender_filter_options(),
         'sort': sort,
         'sort_options': CLASS_SORT_OPTIONS,
         'teacher_options': teacher_options,

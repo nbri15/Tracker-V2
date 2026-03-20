@@ -8,6 +8,7 @@ from flask_login import login_required
 from app.extensions import db
 from app.models import AssessmentSetting, Pupil, SchoolClass, User
 from app.services import (
+    BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
     CORE_SUBJECTS,
     SATS_COLUMN_SUBJECTS,
@@ -17,6 +18,7 @@ from app.services import (
     AssessmentValidationError,
     CsvImportError,
     SatsColumnValidationError,
+    build_admin_pupil_filter_state,
     build_class_overview_row,
     build_sats_tracker_rows,
     build_subject_overview_cards,
@@ -36,6 +38,7 @@ from app.services import (
     generate_csv,
     get_class_detail_context,
     get_current_academic_year,
+    get_gender_filter_options,
     get_history_rows,
     get_or_create_assessment_setting,
     get_sats_columns,
@@ -156,8 +159,23 @@ def classes():
 def class_detail(class_id: int):
     academic_year = request.args.get('academic_year', get_current_academic_year())
     school_class = SchoolClass.query.get_or_404(class_id)
-    context = get_class_detail_context(school_class, academic_year)
-    return render_template('admin/class_detail.html', academic_year=academic_year, **context)
+    pupil_filters = build_admin_pupil_filter_state(request.args)
+    selected_subject = request.args.get('subject', 'maths').strip() or 'maths'
+    selected_term = request.args.get('term', '').strip() or None
+    context = get_class_detail_context(
+        school_class,
+        academic_year,
+        subject=selected_subject,
+        term=selected_term,
+        filters=pupil_filters,
+    )
+    return render_template(
+        'admin/class_detail.html',
+        academic_year=academic_year,
+        boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
+        gender_options=get_gender_filter_options(class_id=school_class.id),
+        **context,
+    )
 
 
 @admin_bp.route('/classes/<int:class_id>/sats')

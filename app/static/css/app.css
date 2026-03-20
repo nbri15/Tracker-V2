@@ -150,3 +150,45 @@ body {
     max-height: none;
   }
 }
+
+.admin-summary-bar {
+  display: flex;
+  height: 12px;
+  width: 100%;
+  min-width: 160px;
+  overflow: hidden;
+  background: #edf1f5;
+  border-radius: 999px;
+}
+
+.admin-summary-bar .segment {
+  display: block;
+  height: 100%;
+}
+
+.admin-summary-bar .segment-wt {
+  background: rgba(220, 53, 69, 0.55);
+}
+
+.admin-summary-bar .segment-ot {
+  background: rgba(25, 135, 84, 0.55);
+}
+
+.admin-summary-bar .segment-ex {
+  background: rgba(253, 126, 20, 0.6);
+}
+
+.admin-overview-table th,
+.admin-overview-table td,
+.admin-class-table th,
+.admin-class-table td {
+  vertical-align: top;
+}
+
+.admin-overview-table td {
+  min-width: 200px;
+}
+
+.admin-mini-stat {
+  border: 1px solid rgba(36, 52, 71, 0.05);
+}

@@ -1,13 +1,232 @@
 {% extends 'base.html' %}
 {% block title %}Admin dashboard{% endblock %}
 {% set page_heading = 'Admin dashboard' %}
-{% macro summary_counts(summary) -%}
-  <div class="small text-muted">{{ summary.term_label }}</div>
-  <div class="small"><strong>WT:</strong> {{ summary.working_towards }} · <strong>OT:</strong> {{ summary.on_track }} · <strong>EX:</strong> {{ summary.exceeding }} · <strong>OT+:</strong> {{ summary.on_track_plus }}</div>
+{% macro summary_bar(summary) -%}
+  <div class="admin-summary-bar mb-2" aria-label="{{ summary.subject_label }} summary bar">
+    <span class="segment segment-wt" style="width: {{ summary.working_towards_percent }}%"></span>
+    <span class="segment segment-ot" style="width: {{ summary.on_track_percent }}%"></span>
+    <span class="segment segment-ex" style="width: {{ summary.exceeding_percent }}%"></span>
+  </div>
+  <div class="d-flex flex-wrap gap-2 small text-muted">
+    <span>WT {{ summary.working_towards_percent }}%</span>
+    <span>OT {{ summary.on_track_percent }}%</span>
+    <span>EX {{ summary.exceeding_percent }}%</span>
+    <span>OT+ {{ summary.on_track_plus_percent }}%</span>
+  </div>
 {%- endmacro %}
 {% block content %}
-<div class="row g-4 mb-4"><div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><p class="text-muted mb-2">Total pupils</p><h3 class="display-6 mb-0">{{ total_pupils }}</h3></div></div></div><div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><p class="text-muted mb-2">Total classes</p><h3 class="display-6 mb-0">{{ total_classes }}</h3></div></div></div><div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><p class="text-muted mb-2">Total teachers</p><h3 class="display-6 mb-0">{{ teacher_count }}</h3></div></div></div><div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><p class="text-muted mb-2">Year 6 tracker</p><h3 class="h4 mb-0">{{ year6_tracker_mode_label }}</h3><p class="text-muted small mb-0">Academic year {{ academic_year }}</p></div></div></div></div>
-<div class="card shadow-sm mb-4"><div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2"><strong>Overview filters</strong><div class="small text-muted">Filter by class, teacher, subgroup, and sortable subject summaries.</div></div><div class="card-body"><form method="get" class="row g-3 align-items-end"><div class="col-md-2"><label class="form-label">Academic year</label><input type="text" class="form-control" name="academic_year" value="{{ academic_year }}"></div><div class="col-md-2"><label class="form-label">Year group</label><select name="year_group" class="form-select"><option value="">All</option>{% for year in range(1, 7) %}<option value="{{ year }}" {% if filter_year_group == year|string %}selected{% endif %}>Year {{ year }}</option>{% endfor %}</select></div><div class="col-md-2"><label class="form-label">Class</label><select name="class_id" class="form-select"><option value="">All</option>{% for option in class_options %}<option value="{{ option.id }}" {% if filter_class == option.id|string %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select></div><div class="col-md-2"><label class="form-label">Teacher</label><select name="teacher_id" class="form-select"><option value="">All</option>{% for option in teacher_options %}<option value="{{ option.id }}" {% if filter_teacher == option.id|string %}selected{% endif %}>{{ option.username }}</option>{% endfor %}</select></div><div class="col-md-2"><label class="form-label">Subgroup</label><select name="subgroup" class="form-select">{% for value, label in subgroup_filters.items() %}<option value="{{ value }}" {% if subgroup == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div class="col-md-2"><label class="form-label">Sort by</label><select name="sort" class="form-select">{% for value, label in sort_options.items() %}<option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div class="col-12 d-flex gap-2 justify-content-end"><a class="btn btn-outline-secondary" href="{{ url_for('admin.sats', academic_year=academic_year) }}">Open SATs</a><a class="btn btn-outline-secondary" href="{{ url_for('admin.promotion', academic_year=academic_year) }}">Promotion</a><button class="btn btn-primary">Apply filters</button><a class="btn btn-outline-secondary" href="{{ url_for('dashboards.admin_dashboard') }}">Clear</a></div></form></div></div>
-<div class="row g-4 mb-4">{% for card in subject_cards %}<div class="col-md-6 col-xl-3"><div class="card shadow-sm h-100"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>{{ card.subject_label }}</strong><span class="badge text-bg-light border">{{ card.term_label }}</span></div><div class="card-body"><div class="row g-2 text-center"><div class="col-6"><div class="text-muted small">Working Towards</div><div class="fs-4 fw-semibold">{{ card.working_towards }}</div></div><div class="col-6"><div class="text-muted small">On Track</div><div class="fs-4 fw-semibold">{{ card.on_track }}</div></div><div class="col-6"><div class="text-muted small">Exceeding</div><div class="fs-4 fw-semibold">{{ card.exceeding }}</div></div><div class="col-6"><div class="text-muted small">On Track+</div><div class="fs-4 fw-semibold">{{ card.on_track_plus }}</div></div></div></div></div></div>{% endfor %}</div>
-<div class="row g-4 mb-4"><div class="col-lg-8"><div class="card shadow-sm"><div class="card-header bg-white d-flex justify-content-between align-items-center gap-2"><strong>Class comparison table</strong><span class="text-muted small">Each subject uses the most recent saved term in {{ academic_year }} for that class.</span></div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Class</th><th>Year group</th><th>Teacher</th><th>Pupils</th><th>Interventions</th><th>Maths summary</th><th>Reading summary</th><th>SPaG summary</th><th>Writing summary</th></tr></thead><tbody>{% for row in class_rows %}<tr><td><a class="fw-semibold text-decoration-none" href="{{ url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">{{ row.class_name }}</a></td><td>Year {{ row.year_group }}</td><td>{{ row.teacher_name }}</td><td>{{ row.pupil_count }}</td><td>{{ row.active_interventions }}</td><td>{{ summary_counts(row.subjects.maths) }}</td><td>{{ summary_counts(row.subjects.reading) }}</td><td>{{ summary_counts(row.subjects.spag) }}</td><td>{{ summary_counts(row.subjects.writing) }}</td></tr>{% else %}<tr><td colspan="9" class="text-center py-4 text-muted">No classes match the current filters.</td></tr>{% endfor %}</tbody></table></div></div></div><div class="col-lg-4"><div class="card shadow-sm h-100"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Year 6 SATs overview</strong><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.sats', academic_year=academic_year) }}">Open</a></div><div class="card-body">{% for summary in year6_overview.class_summaries %}<div class="border rounded p-3 mb-3"><div class="fw-semibold">{{ summary.class.name }}</div><div class="small text-muted mb-2">{{ summary.rows|length }} pupils</div>{% for subject, item in summary.subject_totals.items() %}<div class="small">{{ subject|replace('_', ' ')|title }} · Avg {{ item.average_percent if item.average_percent is not none else '—' }}%</div>{% else %}<div class="small text-muted">No SATs scores yet.</div>{% endfor %}</div>{% else %}<div class="text-muted">No Year 6 classes yet.</div>{% endfor %}</div></div></div></div>
+<div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4">
+  <div>
+    <h3 class="h4 mb-1">Class overview</h3>
+    <p class="text-muted mb-0">Most recent saved results in academic year {{ academic_year }} for Maths, Reading, SPaG, and Writing.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.sats', academic_year=academic_year) }}">Open SATs</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.promotion', academic_year=academic_year) }}">Promotion</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white">
+    <strong>Filters</strong>
+  </div>
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-md-2">
+        <label class="form-label">Academic year</label>
+        <input type="text" class="form-control" name="academic_year" value="{{ academic_year }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Year group</label>
+        <select name="year_group" class="form-select">
+          <option value="">All</option>
+          {% for year in range(1, 7) %}
+            <option value="{{ year }}" {% if filter_year_group == year|string %}selected{% endif %}>Year {{ year }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Class</label>
+        <select name="class_id" class="form-select">
+          <option value="">All</option>
+          {% for option in class_options %}
+            <option value="{{ option.id }}" {% if filter_class == option.id|string %}selected{% endif %}>{{ option.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Teacher</label>
+        <select name="teacher_id" class="form-select">
+          <option value="">All</option>
+          {% for option in teacher_options %}
+            <option value="{{ option.id }}" {% if filter_teacher == option.id|string %}selected{% endif %}>{{ option.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Gender</label>
+        <select name="gender" class="form-select">
+          <option value="all" {% if pupil_filters.gender == 'all' %}selected{% endif %}>All</option>
+          {% for gender in gender_options %}
+            <option value="{{ gender }}" {% if pupil_filters.gender == gender %}selected{% endif %}>{{ gender }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Pupil search</label>
+        <input type="text" name="search" class="form-control" value="{{ pupil_filters.search }}" placeholder="Name">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Pupil Premium</label>
+        <select name="pupil_premium" class="form-select">
+          {% for value, label in boolean_filter_choices.items() %}
+            <option value="{{ value }}" {% if pupil_filters.pupil_premium == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">LAPS</label>
+        <select name="laps" class="form-select">
+          {% for value, label in boolean_filter_choices.items() %}
+            <option value="{{ value }}" {% if pupil_filters.laps == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Service child</label>
+        <select name="service_child" class="form-select">
+          {% for value, label in boolean_filter_choices.items() %}
+            <option value="{{ value }}" {% if pupil_filters.service_child == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Subgroup view</label>
+        <select name="subgroup" class="form-select">
+          {% for value, label in subgroup_filters.items() %}
+            <option value="{{ value }}" {% if subgroup == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Sort by</label>
+        <select name="sort" class="form-select">
+          {% for value, label in sort_options.items() %}
+            <option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 d-flex justify-content-end gap-2">
+        <button class="btn btn-primary">Apply filters</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('dashboards.admin_dashboard') }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="card shadow-sm h-100 admin-mini-stat">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Filtered pupils</div>
+        <div class="h3 mb-1">{{ filtered_pupil_total }}</div>
+        <div class="small text-muted">{{ filtered_class_count }} classes shown</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card shadow-sm h-100 admin-mini-stat">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Total pupils on roll</div>
+        <div class="h3 mb-1">{{ total_pupils }}</div>
+        <div class="small text-muted">All active pupils</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card shadow-sm h-100 admin-mini-stat">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Teachers</div>
+        <div class="h3 mb-1">{{ teacher_count }}</div>
+        <div class="small text-muted">Across {{ total_classes }} active classes</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card shadow-sm h-100 admin-mini-stat">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Year 6 tracker</div>
+        <div class="h5 mb-1">{{ year6_tracker_mode_label }}</div>
+        <div class="small text-muted">Most recent class data shown below</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {% for card in subject_cards %}
+    <div class="col-md-6 col-xl-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+            <div>
+              <div class="fw-semibold">{{ card.subject_label }}</div>
+              <div class="small text-muted">Latest term in view: {{ card.term_label }}</div>
+            </div>
+            <span class="badge text-bg-light border">{{ card.pupil_count }} results</span>
+          </div>
+          {{ summary_bar(card) }}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
+    <strong>Class overview</strong>
+    <span class="small text-muted">Each subject uses the latest saved term available for the filtered pupils in that class.</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 admin-overview-table">
+      <thead class="table-light">
+        <tr>
+          <th>Class</th>
+          <th>Pupils</th>
+          <th>Maths</th>
+          <th>Reading</th>
+          <th>SPaG</th>
+          <th>Writing</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in class_rows %}
+          <tr>
+            <td>
+              <a class="fw-semibold text-decoration-none" href="{{ url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, search=pupil_filters.search) }}">{{ row.class_name }}</a>
+              <div class="small text-muted">Year {{ row.year_group }} · {{ row.teacher_name }}</div>
+              <div class="small text-muted">{{ row.active_interventions }} active interventions</div>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ row.pupil_count }}</div>
+              <div class="small text-muted">Filtered pupils</div>
+            </td>
+            {% for subject in ['maths', 'reading', 'spag', 'writing'] %}
+              {% set summary = row.subjects[subject] %}
+              <td>
+                <div class="small text-muted mb-1">{{ summary.term_label }}</div>
+                {{ summary_bar(summary) }}
+                <div class="small mt-2">{{ summary.on_track_plus }} pupils OT+</div>
+              </td>
+            {% endfor %}
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-4 text-muted">No classes match the current filters.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
