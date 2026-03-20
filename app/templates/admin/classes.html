@@ -20,7 +20,7 @@
           <div class="col-md-3"><label class="form-label">Teacher</label><select name="teacher_id" class="form-select"><option value="">All</option>{% for option in teacher_options %}<option value="{{ option.id }}" {% if filter_teacher == option.id|string %}selected{% endif %}>{{ option.username }}</option>{% endfor %}</select></div>
           <div class="col-md-2"><label class="form-label">Subgroup</label><select name="subgroup" class="form-select">{% for value, label in subgroup_filters.items() %}<option value="{{ value }}" {% if subgroup == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Sort by</label><select name="sort" class="form-select">{% for value, label in sort_options.items() %}<option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-          <div class="col-12 d-flex gap-2 justify-content-end"><button class="btn btn-primary">Apply filters</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.classes') }}">Clear</a></div>
+          <div class="col-12 d-flex gap-2 justify-content-end"><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_class_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export class CSV</a><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_pupil_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export pupil CSV</a><button class="btn btn-primary">Apply filters</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.classes') }}">Clear</a></div>
         </form>
       </div>
     </div>
@@ -45,33 +45,34 @@
   <div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Classes</strong><span class="badge text-bg-secondary">Admin overview</span></div>
   <div class="table-responsive">
     <table class="table table-striped align-middle mb-0">
-      <thead><tr><th>Name</th><th>Year group</th><th>Teacher</th><th>Pupil count</th><th>Active interventions</th><th>Maths</th><th>Reading</th><th>SPaG</th><th>Writing</th><th>Assign teacher</th></tr></thead>
+      <thead><tr><th>Name</th><th>Year</th><th>Teacher</th><th>Status</th><th>Pupils</th><th>Interventions</th><th>Maths</th><th>Reading</th><th>SPaG</th><th>Writing</th><th>Edit / archive</th></tr></thead>
       <tbody>
         {% for row in classes %}
           <tr>
-            <td><a class="text-decoration-none fw-semibold" href="{{ url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">{{ row.class_name }}</a></td>
+            <td><a class="text-decoration-none fw-semibold" href="{{ url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">{{ row.class_name }}</a>{% if row.year_group == 6 %}<div class="small text-muted">{{ get_tracker_mode_label(6) }}</div>{% endif %}</td>
             <td>Year {{ row.year_group }}</td>
             <td>{{ row.teacher_name }}</td>
+            <td>{{ 'Active' if row.class.is_active else 'Archived' }}</td>
             <td>{{ row.pupil_count }}</td>
             <td>{{ row.active_interventions }}</td>
             <td>{{ summary_counts(row.subjects.maths) }}</td>
             <td>{{ summary_counts(row.subjects.reading) }}</td>
             <td>{{ summary_counts(row.subjects.spag) }}</td>
             <td>{{ summary_counts(row.subjects.writing) }}</td>
-            <td>
-              <form method="post" class="d-flex gap-2">
-                <input type="hidden" name="action" value="assign_teacher">
+            <td style="min-width: 280px;">
+              <form method="post" class="row g-2">
+                <input type="hidden" name="action" value="update_class">
                 <input type="hidden" name="class_id" value="{{ row.class_id }}">
-                <select name="teacher_id" class="form-select form-select-sm">
-                  <option value="">Unassigned</option>
-                  {% for option in teacher_options %}<option value="{{ option.id }}" {% if row.class.teacher_id == option.id %}selected{% endif %}>{{ option.username }}</option>{% endfor %}
-                </select>
-                <button class="btn btn-outline-primary btn-sm">Save</button>
+                <div class="col-12"><input type="text" class="form-control form-control-sm" name="name_{{ row.class_id }}" value="{{ row.class_name }}"></div>
+                <div class="col-4"><select class="form-select form-select-sm" name="year_group_{{ row.class_id }}">{% for year in range(1, 7) %}<option value="{{ year }}" {% if row.year_group == year %}selected{% endif %}>Y{{ year }}</option>{% endfor %}</select></div>
+                <div class="col-8"><select class="form-select form-select-sm" name="teacher_id_{{ row.class_id }}"><option value="">Unassigned</option>{% for option in teacher_options %}<option value="{{ option.id }}" {% if row.class.teacher_id == option.id %}selected{% endif %}>{{ option.username }}</option>{% endfor %}</select></div>
+                <div class="col-6 form-check ms-2"><input class="form-check-input" type="checkbox" name="is_active_{{ row.class_id }}" id="active_{{ row.class_id }}" {% if row.class.is_active %}checked{% endif %}><label class="form-check-label small" for="active_{{ row.class_id }}">Active</label></div>
+                <div class="col-12 d-flex gap-2"><button class="btn btn-outline-primary btn-sm">Save</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_sats', class_id=row.class_id, academic_year=academic_year) if row.year_group == 6 else url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">Open</a></div>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="10" class="text-center py-4 text-muted">No classes created yet.</td></tr>
+          <tr><td colspan="11" class="text-center py-4 text-muted">No classes created yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

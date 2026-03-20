@@ -1,25 +1,105 @@
 {% extends 'base.html' %}
 
 {% block title %}Year 6 SATs{% endblock %}
-{% set page_heading = 'Year 6 SATs tracker' %}
+{% set page_heading = 'Year 6 tracker' %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
-  <div>
-    <h3 class="h5 mb-1">{{ school_class.name }}</h3>
-    <p class="text-muted mb-0">Raw and scaled score tracking across four assessment points, plus writing judgements.</p>
+<div class="row g-4 mb-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Year 6 mode</strong>
+        <span class="badge text-bg-primary">{{ tracker_mode_label }}</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">This only affects Year 6. Other year groups keep the usual tracker.</p>
+        <form method="post" class="row g-3 align-items-end">
+          <input type="hidden" name="action" value="update_mode">
+          <div class="col-12">
+            <label class="form-label">Tracker mode</label>
+            <select name="tracker_mode" class="form-select">
+              {% for value, label in tracker_mode_options.items() %}<option value="{{ value }}" {% if value == tracker_mode %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-12 text-end"><button class="btn btn-primary">Save mode</button></div>
+        </form>
+        {% if tracker_mode != 'sats' %}
+          <div class="alert alert-info mt-3 mb-0">Year 6 is currently using the usual tracker pages for Maths, Reading, SPaG, and Writing.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white"><strong>SATs column settings</strong></div>
+      <div class="card-body">
+        <form method="post" class="row g-3 align-items-end mb-3">
+          <input type="hidden" name="action" value="save_column">
+          <div class="col-md-4"><label class="form-label">Column name</label><input type="text" class="form-control" name="name" placeholder="Spring Mock Reading" required></div>
+          <div class="col-md-2"><label class="form-label">Subject</label><select name="subject" class="form-select">{% for value, label in sats_subject_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+          <div class="col-md-2"><label class="form-label">Max marks</label><input type="number" min="1" class="form-control" name="max_marks" value="50" required></div>
+          <div class="col-md-2"><label class="form-label">Pass %</label><input type="number" min="0" max="100" step="0.1" class="form-control" name="pass_percentage" value="60" required></div>
+          <div class="col-md-2"><label class="form-label">Order</label><input type="number" min="1" class="form-control" name="display_order" value="{{ all_columns|length + 1 }}" required></div>
+          <div class="col-md-3 form-check ms-2"><input class="form-check-input" type="checkbox" name="is_active" id="is_active" checked><label class="form-check-label" for="is_active">Visible column</label></div>
+          <div class="col-12 text-end"><button class="btn btn-outline-primary">Add SATs column</button></div>
+        </form>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>Name</th><th>Subject</th><th>Max</th><th>Pass %</th><th>Order</th><th>Status</th><th>Toggle</th></tr></thead>
+            <tbody>
+              {% for column in all_columns %}
+                <tr>
+                  <td>{{ column.name }}</td>
+                  <td>{{ column.subject|replace('_', ' ')|title }}</td>
+                  <td>{{ column.max_marks }}</td>
+                  <td>{{ column.pass_percentage }}</td>
+                  <td>{{ column.display_order }}</td>
+                  <td>{{ 'Visible' if column.is_active else 'Hidden' }}</td>
+                  <td>
+                    <form method="post">
+                      <input type="hidden" name="action" value="toggle_column">
+                      <input type="hidden" name="column_id" value="{{ column.id }}">
+                      <button class="btn btn-outline-secondary btn-sm">{{ 'Hide' if column.is_active else 'Show' }}</button>
+                    </form>
+                  </td>
+                </tr>
+              {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-3">No SATs columns yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if tracker_mode == 'sats' %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body py-3">
+    <form method="get" class="row g-3 align-items-end">
+      <div class="col-md-3"><label class="form-label">Academic year</label><select name="academic_year" class="form-select">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><button class="btn btn-primary w-100">Load tracker</button></div>
+    </form>
   </div>
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-body py-3">
-    <form method="get" class="row g-3 align-items-end">
-      <div class="col-md-3">
-        <label class="form-label">Academic year</label>
-        <select name="academic_year" class="form-select">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
-      </div>
-      <div class="col-md-3"><button class="btn btn-primary w-100">Load tracker</button></div>
-    </form>
+  <div class="card-header bg-white"><strong>Subject overview</strong></div>
+  <div class="card-body">
+    <div class="row g-3">
+      {% for subject, summary in overview.items() %}
+        <div class="col-md-4">
+          <div class="border rounded p-3 h-100 bg-light-subtle">
+            <div class="fw-semibold mb-1">{{ subject|replace('_', ' ')|title }}</div>
+            <div class="small text-muted">Average %: {{ summary.average_percent if summary.average_percent is not none else '—' }}</div>
+            <div class="small text-muted">Passes logged: {{ summary.pass_count }}</div>
+          </div>
+        </div>
+      {% else %}
+        <div class="col-12 text-muted">Add SATs columns to start tracking results.</div>
+      {% endfor %}
+    </div>
   </div>
 </div>
 
@@ -30,64 +110,37 @@
   </div>
   <div class="card-body p-0">
     <form method="post" id="sats-form">
+      <input type="hidden" name="action" value="save_results">
       <div class="table-responsive spreadsheet-wrap sats-wrap">
         <table class="table table-sm align-middle mb-0 spreadsheet-table">
           <thead class="table-light sticky-top">
             <tr>
-              <th rowspan="2">Pupil</th>
-              {% for subject in sats_subjects %}
-                <th colspan="{{ assessment_points|length * 2 + 1 }}">{{ format_subject_name(subject) }}</th>
-              {% endfor %}
-              <th colspan="{{ assessment_points|length * 2 + 1 }}">Writing</th>
-            </tr>
-            <tr>
-              {% for subject in sats_subjects %}
-                {% for point in assessment_points %}
-                  <th>P{{ point }} raw</th>
-                  <th>P{{ point }} scaled</th>
-                {% endfor %}
-                <th>Latest scaled</th>
-              {% endfor %}
-              {% for point in assessment_points %}
-                <th>P{{ point }} band</th>
-                <th>P{{ point }} notes</th>
-              {% endfor %}
-              <th>Latest band</th>
+              <th class="sticky-col">Pupil</th>
+              {% for column in columns %}<th>{{ column.name }}<div class="small text-muted">{{ column.subject|replace('_', ' ')|title }} · /{{ column.max_marks }}</div></th>{% endfor %}
+              <th>Reading %</th><th>SPaG %</th><th>Arithmetic %</th><th>Maths %</th>
             </tr>
           </thead>
           <tbody>
             {% for row in rows %}
               <tr>
-                <td class="fw-semibold">{{ row.pupil.full_name }}</td>
-                {% for subject in sats_subjects %}
-                  {% for point in assessment_points %}
-                    {% set cell = row.subjects[subject].points[point] %}
-                    <td><input type="number" class="form-control form-control-sm" name="{{ subject }}_raw_{{ point }}_{{ row.pupil.id }}" value="{{ '' if cell.raw_score is none else cell.raw_score }}"></td>
-                    <td><input type="number" class="form-control form-control-sm" name="{{ subject }}_scaled_{{ point }}_{{ row.pupil.id }}" value="{{ '' if cell.scaled_score is none else cell.scaled_score }}"></td>
-                  {% endfor %}
-                  <td class="fw-semibold">{{ row.subjects[subject].latest_scaled if row.subjects[subject].latest_scaled is not none else '—' }}</td>
+                <td class="fw-semibold sticky-col">{{ row.pupil.full_name }}</td>
+                {% for column in columns %}
+                  {% set result = row.results[column.id] %}
+                  <td><input type="number" min="0" max="{{ column.max_marks }}" class="form-control form-control-sm" name="column_{{ column.id }}_{{ row.pupil.id }}" value="{{ result.raw_score if result else '' }}"></td>
                 {% endfor %}
-                {% for point in assessment_points %}
-                  {% set cell = row.writing.points[point] %}
-                  <td>
-                    <select class="form-select form-select-sm" name="writing_band_{{ point }}_{{ row.pupil.id }}">
-                      <option value="">—</option>
-                      {% for value, label in writing_band_choices %}<option value="{{ value }}" {% if cell.band == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-                    </select>
-                  </td>
-                  <td><input type="text" class="form-control form-control-sm" name="writing_notes_{{ point }}_{{ row.pupil.id }}" value="{{ cell.notes or '' }}"></td>
-                {% endfor %}
-                <td class="fw-semibold">{{ row.writing.latest_band }}</td>
+                <td>{{ row.subject_summaries.get('reading', {}).get('percent', '—') }}</td>
+                <td>{{ row.subject_summaries.get('spag', {}).get('percent', '—') }}</td>
+                <td>{{ row.subject_summaries.get('arithmetic', {}).get('percent', '—') }}</td>
+                <td>{{ row.subject_summaries.get('maths', {}).get('percent', '—') }}</td>
               </tr>
+            {% else %}
+              <tr><td colspan="{{ columns|length + 5 }}" class="text-center text-muted py-4">No active Year 6 pupils found.</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-      <div class="px-3 py-3 border-top bg-light-subtle d-flex justify-content-between align-items-center">
-        <div class="small text-muted">Most recent scaled score uses the latest assessment point with a scaled score.</div>
-        <button class="btn btn-success btn-sm">Save SATs tracker</button>
-      </div>
     </form>
   </div>
 </div>
+{% endif %}
 {% endblock %}

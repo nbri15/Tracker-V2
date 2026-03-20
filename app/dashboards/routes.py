@@ -10,7 +10,10 @@ from app.services import (
     build_class_overview_row,
     build_dashboard_summary,
     build_subject_overview_cards,
+    build_year6_sats_overview,
     get_current_academic_year,
+    get_tracker_mode,
+    get_tracker_mode_label,
     sort_class_rows,
 )
 from app.utils import admin_required, get_primary_class_for_user, teacher_required
@@ -57,6 +60,8 @@ def teacher_dashboard():
         'summary_rows': summary_rows,
         'chart_cards': summary_rows,
         'active_interventions': active_interventions,
+        'tracker_mode': get_tracker_mode(school_class.year_group) if school_class else 'normal',
+        'tracker_mode_label': get_tracker_mode_label(school_class.year_group) if school_class else 'Usual tracker',
     }
     return render_template('dashboards/teacher_dashboard.html', **context)
 
@@ -83,10 +88,10 @@ def admin_dashboard():
     classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
     class_rows = [build_class_overview_row(school_class, academic_year, subgroup) for school_class in classes]
     class_rows = sort_class_rows(class_rows, sort)
-
     subject_cards = build_subject_overview_cards(class_rows)
     teacher_options = User.query.filter_by(role='teacher', is_active=True).order_by(User.username).all()
     class_options = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    year6_overview = build_year6_sats_overview(academic_year)
 
     context = {
         'academic_year': academic_year,
@@ -105,5 +110,7 @@ def admin_dashboard():
         'sort_options': CLASS_SORT_OPTIONS,
         'teacher_options': teacher_options,
         'class_options': class_options,
+        'year6_overview': year6_overview,
+        'year6_tracker_mode_label': get_tracker_mode_label(6),
     }
     return render_template('dashboards/admin_dashboard.html', **context)

@@ -6,7 +6,7 @@ from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app.extensions import db
-from app.models import Intervention, Pupil, SatsResult, SatsWritingResult, SubjectResult, WritingResult
+from app.models import Intervention, Pupil, SubjectResult, WritingResult
 from app.services import (
     SATS_ASSESSMENT_POINTS,
     SATS_SUBJECTS,
@@ -22,15 +22,24 @@ from app.services import (
     get_current_academic_year,
     get_current_term,
     get_or_create_gap_template,
-    get_sats_subject_summary,
-    get_sats_writing_summary,
+    get_sats_columns,
     get_subject_setting,
+    get_tracker_mode,
+    get_tracker_mode_label,
     parse_question_columns,
     recalculate_subject_results_for_scope,
     save_gap_scores,
+    save_sats_column,
+    save_sats_tracker_results,
+    set_tracker_mode,
     sync_auto_interventions,
+    toggle_sats_column,
     update_assessment_setting,
     validate_setting_payload,
+    build_sats_tracker_rows,
+    SATS_COLUMN_SUBJECTS,
+    SATS_TRACKER_MODES,
+    SatsColumnValidationError,
 )
 from app.utils import get_primary_class_for_user, teacher_required
 
@@ -187,27 +196,54 @@ def sats_tracker():
         flash('The SATs tracker is only available for the Year 6 teacher.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
+    tracker_mode = get_tracker_mode(6)
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
-    if request.method == 'POST':
-        try:
-            _save_sats_rows(pupils, academic_year)
-            db.session.commit()
-            flash('SATs tracker saved.', 'success')
-            return redirect(url_for('teacher.sats_tracker', academic_year=academic_year))
-        except ValueError as exc:
-            db.session.rollback()
-            flash(f'SATs tracker could not be saved: {exc}', 'danger')
 
-    rows = _build_sats_rows(pupils, academic_year)
+    if request.method == 'POST':
+        action = request.form.get('action', 'save_results')
+        try:
+            if action == 'update_mode':
+                set_tracker_mode(6, request.form.get('tracker_mode', 'sats'))
+                flash(f'Year 6 tracker mode changed to {get_tracker_mode_label(6)}.', 'success')
+            elif action == 'save_column':
+                column_id = int(request.form.get('column_id', '0')) or None
+                save_sats_column(6, {
+                    'name': request.form.get('name', ''),
+                    'subject': request.form.get('subject', ''),
+                    'max_marks': request.form.get('max_marks', '0'),
+                    'pass_percentage': request.form.get('pass_percentage', '0'),
+                    'display_order': request.form.get('display_order', '1'),
+                    'is_active': request.form.get('is_active') == 'on',
+                }, column_id=column_id)
+                flash('SATs column saved.', 'success')
+            elif action == 'toggle_column':
+                column = toggle_sats_column(int(request.form.get('column_id', '0')))
+                state = 'shown' if column.is_active else 'hidden'
+                flash(f'{column.name} is now {state}.', 'success')
+            else:
+                columns = get_sats_columns(6, active_only=True)
+                save_sats_tracker_results(pupils, academic_year, columns, request.form)
+                flash('SATs tracker saved.', 'success')
+            db.session.commit()
+            return redirect(url_for('teacher.sats_tracker', academic_year=academic_year))
+        except (ValueError, SatsColumnValidationError) as exc:
+            db.session.rollback()
+            flash(f'SATs changes could not be saved: {exc}', 'danger')
+
+    columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, active_only=True)
     return render_template(
         'teacher/sats_tracker.html',
         school_class=school_class,
         academic_year=academic_year,
         academic_year_options=build_academic_year_options(academic_year),
+        tracker_mode=tracker_mode,
+        tracker_mode_label=get_tracker_mode_label(6),
+        tracker_mode_options=SATS_TRACKER_MODES,
+        columns=columns,
+        all_columns=get_sats_columns(6, active_only=False),
         rows=rows,
-        sats_subjects=SATS_SUBJECTS,
-        assessment_points=SATS_ASSESSMENT_POINTS,
-        writing_band_choices=WRITING_BAND_CHOICES,
+        overview=overview,
+        sats_subject_choices=SATS_COLUMN_SUBJECTS,
     )
 
 
@@ -463,55 +499,3 @@ def render_writing_page():
         rows.append({'pupil': pupil, 'band': existing.band if existing else '', 'notes': existing.notes if existing else ''})
     rows = _sort_subject_rows(rows, context['sort'])
     return render_template('teacher/writing_results.html', rows=rows, writing_band_choices=WRITING_BAND_CHOICES, **context)
-
-
-def _save_sats_rows(pupils: list[Pupil], academic_year: str) -> None:
-    for pupil in pupils:
-        for subject in SATS_SUBJECTS:
-            for point in SATS_ASSESSMENT_POINTS:
-                raw = _parse_int(request.form.get(f'{subject}_raw_{point}_{pupil.id}', ''))
-                scaled = _parse_int(request.form.get(f'{subject}_scaled_{point}_{pupil.id}', ''))
-                existing = SatsResult.query.filter_by(pupil_id=pupil.id, subject=subject, assessment_point=point, academic_year=academic_year).first()
-                if raw is None and scaled is None:
-                    if existing:
-                        db.session.delete(existing)
-                    continue
-                row = existing or SatsResult(pupil_id=pupil.id, subject=subject, assessment_point=point, academic_year=academic_year)
-                row.raw_score = raw
-                row.scaled_score = scaled
-                db.session.add(row)
-
-        for point in SATS_ASSESSMENT_POINTS:
-            band = request.form.get(f'writing_band_{point}_{pupil.id}', '').strip()
-            notes = request.form.get(f'writing_notes_{point}_{pupil.id}', '').strip()
-            existing = SatsWritingResult.query.filter_by(pupil_id=pupil.id, assessment_point=point, academic_year=academic_year).first()
-            if not band and not notes:
-                if existing:
-                    db.session.delete(existing)
-                continue
-            if band and band not in {choice[0] for choice in WRITING_BAND_CHOICES}:
-                raise ValueError(f'{pupil.full_name} writing point {point}: invalid band.')
-            row = existing or SatsWritingResult(pupil_id=pupil.id, assessment_point=point, academic_year=academic_year)
-            row.band = band or None
-            row.notes = notes or None
-            db.session.add(row)
-
-    for pupil in pupils:
-        for subject in SATS_SUBJECTS:
-            subject_rows = SatsResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, subject=subject).order_by(SatsResult.assessment_point).all()
-            latest_point = max((row.assessment_point for row in subject_rows if row.scaled_score is not None), default=None)
-            for row in subject_rows:
-                row.is_most_recent = row.assessment_point == latest_point if latest_point is not None else False
-                db.session.add(row)
-
-
-def _build_sats_rows(pupils: list[Pupil], academic_year: str) -> list[dict]:
-    rows = []
-    for pupil in pupils:
-        subject_map = {}
-        for subject in SATS_SUBJECTS:
-            subject_rows = SatsResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, subject=subject).all()
-            subject_map[subject] = get_sats_subject_summary(subject_rows)
-        writing_rows = SatsWritingResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year).all()
-        rows.append({'pupil': pupil, 'subjects': subject_map, 'writing': get_sats_writing_summary(writing_rows)})
-    return rows

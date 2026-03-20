@@ -1,24 +1,23 @@
 # assessment-tracker-v2
 
-A Phase 3 Flask application for a school assessment tracker covering Years 1 to 6. This build keeps the teacher spreadsheet-style pages, preserves the teacher-side settings strip and existing assessment routes, and adds GAP/QLA, interventions, Year 6 SATs tracking, CSV tooling, and stronger admin management.
+A Phase 4 Flask assessment tracker for Years 1 to 6. The app keeps the existing spreadsheet-style teacher workflows, GAP/intervention/import features, teacher-side settings, and SATs work, while adding a Year 6 mode toggle, flexible SATs columns, stronger admin setup tools, promotion/history support, and broader exports.
 
 ## Project overview
 
-This project now supports:
+The current build supports:
 
-- sign in as an admin or as Year 1 to Year 6 teacher users
-- open role-based dashboards
-- enter Maths, Reading, SPaG, and Writing results for the logged-in teacher's class
-- keep teacher-editable subject settings directly on each teacher subject page
-- open GAP / question analysis pages for Maths, Reading, and SPaG
-- save question metadata, question-level scores, totals, and simple GAP summaries
-- auto-flag the closest 6 pupils below the pass threshold for interventions
-- manage intervention notes and active / inactive status
-- use a real Year 6 SATs tracker with 4 assessment points plus writing judgements
-- import pupils, subject results, and writing results from CSV
-- download CSV templates and export assessment data back to CSV
-- manage teacher users and class-to-teacher assignments from admin pages
-- use richer admin class overview pages, class detail pages, intervention views, and Year 6 SATs overviews
+- role-based admin and teacher dashboards
+- spreadsheet-style result entry for Maths, Reading, SPaG, and Writing
+- teacher-editable subject settings on the teacher subject pages
+- GAP / QLA pages for Maths, Reading, and SPaG
+- intervention suggestions and manual intervention management
+- Year 6 operating in either **Usual tracker** mode or **SATs tracker** mode
+- flexible SATs columns with editable name, subject, max marks, pass percentage, order, and visibility
+- admin SATs visibility with whole-cohort and class-level views
+- admin creation/editing/archive of classes and clearer class-to-teacher mapping
+- admin creation/editing of teacher users plus password resets and class reassignment
+- academic-year snapshot and promotion tooling that preserves historic class membership
+- CSV imports plus class, pupil, SATs, intervention, subject, writing, and history exports
 
 ## Tech stack
 
@@ -80,25 +79,23 @@ $env:SECRET_KEY = 'change-this-in-production'
 flask db upgrade
 ```
 
-Run this once after cloning the repo and again whenever new migrations are added.
+Run this after cloning and whenever a new migration is added.
 
-### 5) Seed development data
+### 5) Seed or refresh development data
 
-Normal reseed / refresh:
+Normal refresh:
 
 ```bash
 python seed.py
 ```
 
-Optional hard reset for local development:
+Optional hard reset:
 
 ```bash
 python seed.py --reset
 ```
 
-The seed script is safe to rerun in normal local development. It now updates the documented default users in place, resets their passwords to the expected development defaults, relinks each teacher to the matching `Year 1` to `Year 6` class, and recreates the sample data without requiring manual database deletion.
-
-Use `--reset` only when you explicitly want to wipe the current development data and rebuild the default local dataset from scratch.
+The seed refresh is safe to rerun during development. It updates the documented default users in place, resets the expected dev passwords, relinks `teacher1` to `teacher6` to `Year 1` to `Year 6`, ensures Year 6 SATs mode defaults exist, and rebuilds sample data.
 
 ### 6) Run the application
 
@@ -123,70 +120,93 @@ The development server starts on `http://0.0.0.0:8080/`.
 - Year 5: `teacher5` / `teacher5`
 - Year 6: `teacher6` / `teacher6`
 
-Each teacher is linked to the matching `Year 1` to `Year 6` class in the seed data.
+Each teacher is linked to the matching Year 1 to Year 6 class. The admin users page also includes a **Repair default logins** action to refresh this mapping safely without requiring a reset seed.
 
-## GAP / QLA pages
+## Year 6 mode toggle
 
-Teacher score pages for Maths, Reading, and SPaG now include a **GAP Analysis** / **Question Analysis** link.
+Year 6 can operate in one of two modes:
 
-Routes:
-
-- `/teacher/maths/gap`
-- `/teacher/reading/gap`
-- `/teacher/spag/gap`
-
-How GAP works:
-
-- one row per pupil
-- one column per question
-- teachers can edit question labels such as `1`, `2`, `3a`, `3b`
-- teachers can edit question type / topic and max score
-- totals calculate across the row
-- the page shows max total plus simple summary cards for question averages, lowest-performing questions, and weakest topics
-
-### GAP sync rule
-
-When GAP totals are saved:
-
-- if a pupil has no main subject result yet for that subject / term / year, the combined score is populated from GAP and the source becomes `gap`
-- if a saved manual or CSV result already exists, the app does **not** silently overwrite it
-- if the GAP total differs from an existing manual or CSV result, the page shows a warning flash message
-
-## Intervention suggestions
-
-Teacher subject pages and the teacher interventions page use the current pass threshold from the teacher-editable settings strip.
-
-The app:
-
-- finds pupils below the pass threshold
-- sorts them by highest score still below the threshold, so the closest pupils are prioritised
-- auto-flags the closest 6 pupils
-- stores intervention records with subject, term, academic year, reason, note, auto/manual state, and active state
-
-Routes:
-
-- `/teacher/interventions`
-- `/admin/interventions`
-
-Teachers can add extra pupils manually and mark interventions inactive when complete.
-
-## Year 6 SATs tracker
+- **Usual tracker**: use the normal Maths / Reading / SPaG / Writing pages like other year groups.
+- **SATs tracker**: use the dedicated SATs tracker page.
 
 Routes:
 
 - `/teacher/sats`
 - `/admin/sats`
+- `/admin/classes/<class_id>/sats`
 
-The Year 6 SATs tracker includes:
+The selected Year 6 mode is stored in the database, shown on the teacher and admin SATs pages, and can be changed without affecting other year groups.
 
-- Reading, Maths, and SPaG
-- 4 assessment points for raw and scaled scores
-- automatic most-recent scaled score display
-- writing judgements stored separately from the raw/scaled subjects
-- spreadsheet-style bulk save
-- admin cohort overview for Year 6
+## Flexible SATs columns
 
-Only the Year 6 teacher meaningfully uses the teacher-facing SATs page, while admin can always view the cohort.
+When Year 6 is in SATs mode, SATs columns are loaded dynamically from the database.
+
+Each SATs column stores:
+
+- name
+- subject
+- max marks
+- pass percentage
+- display order
+- visible / hidden status
+
+Example columns:
+
+- `Autumn Reading 1`
+- `Autumn SPaG 1`
+- `Autumn Arithmetic 1`
+- `Spring Mock Reading`
+- `Spring Mock SPaG`
+- `Pre-SATs Arithmetic`
+
+Teachers and admins can add new columns, hide/show them, and reorder them with display order numbers from the SATs page.
+
+## Promotion and history workflow
+
+Admin promotion tools live at:
+
+- `/admin/promotion`
+
+Workflow:
+
+1. Use **Archive current year snapshot** to save the current pupil-to-class mapping for the selected academic year.
+2. Use **Promote active pupils** to move active pupils into the next year-group class.
+3. Year 6 pupils are marked inactive instead of being deleted.
+4. Historical assessment data remains in place because result tables keep their academic year values.
+5. Historic class placement can be reviewed on the promotion/history page or exported to CSV.
+
+## Reporting and exports
+
+Admin export routes now include:
+
+- class overview CSV
+- pupil overview CSV
+- SATs CSV
+- interventions CSV
+- subject results CSV
+- writing results CSV
+- promotion/history CSV
+
+Use the export buttons on the classes, SATs, and promotion pages for the most common workflows.
+
+## Admin setup and management
+
+Routes:
+
+- `/admin/classes`
+- `/admin/users`
+
+Admin users can now:
+
+- create classes
+- edit class name, year group, active state, and assigned teacher
+- archive classes
+- create teacher users
+- edit usernames
+- reset passwords
+- activate/deactivate logins
+- assign or reassign teachers to classes
+- refresh the documented default dev logins and class links safely
 
 ## CSV import / export
 
@@ -200,40 +220,7 @@ Included tools:
 - subject result import template download
 - writing import template download
 - CSV upload for pupils, subject results, and writing results
-- CSV export for subject results and writing results
-
-Import rules:
-
-- rows are validated and reported through flash messages
-- manual subject results are not silently overwritten by CSV imports
-- imported subject result rows use source `csv`
-- the workflow is intentionally simple and admin-friendly rather than heavily automated
-
-## Admin management pages
-
-Routes:
-
-- `/admin/users`
-- `/admin/classes`
-
-Admin users can:
-
-- create teacher users
-- edit usernames
-- reset passwords by entering a new password
-- assign or reassign teachers to classes
-- create new classes
-- view class-to-teacher mapping in the main class table
-
-## Admin overview improvements
-
-The admin dashboard and class pages now include:
-
-- stronger class overview links
-- filters for year group, class, teacher, and pupil subgroup views (`PP`, `LAPS`, `service child`)
-- sortable class overview tables
-- active intervention counts by class
-- class detail pages with pupil lists, subject summaries, intervention summaries, and Year 6 SATs summary blocks
+- CSV export for the main overview/reporting routes listed above
 
 ## Typical development commands
 
@@ -243,13 +230,13 @@ The admin dashboard and class pages now include:
 flask db upgrade
 ```
 
-### Seed or refresh development data
+### Refresh development data safely
 
 ```bash
 python seed.py
 ```
 
-### Hard reset and reseed development data
+### Hard reset and reseed local development data
 
 ```bash
 python seed.py --reset
@@ -261,11 +248,11 @@ python seed.py --reset
 python run.py
 ```
 
-## Recommended next Phase 4 ideas
+## Manual notes after migrating
 
-- add a safe “use GAP total” overwrite action for manual review
-- add CSV preview screens before commit
-- add richer admin export filtering with downloadable subgroup summaries
-- add intervention review dates and impact tracking
-- add printable parent / staff reports for Year 6 SATs and term summaries
-- add automated tests for service-layer logic and route workflows
+Recommended manual checks after `flask db upgrade`:
+
+1. Sign in as `admin` / `admin123`.
+2. Open **Users** and confirm `teacher1` to `teacher6` are linked to `Year 1` to `Year 6`.
+3. Open **Year 6 SATs** and confirm the tracker mode and default SATs columns look correct.
+4. Open **Promotion & history** before end-of-year testing if you want a snapshot/export first.
