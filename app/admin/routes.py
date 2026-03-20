@@ -6,34 +6,53 @@ from flask import Response, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 
 from app.extensions import db
-from app.models import AssessmentSetting, Intervention, Pupil, SatsResult, SatsWritingResult, SchoolClass, SubjectResult, User
+from app.models import AssessmentSetting, Pupil, SchoolClass, User
 from app.services import (
     CLASS_SORT_OPTIONS,
     CORE_SUBJECTS,
-    SATS_ASSESSMENT_POINTS,
-    SATS_SUBJECTS,
+    SATS_COLUMN_SUBJECTS,
+    SATS_TRACKER_MODES,
     SUBGROUP_FILTERS,
     TERMS,
     AssessmentValidationError,
     CsvImportError,
+    SatsColumnValidationError,
     build_class_overview_row,
+    build_sats_tracker_rows,
+    build_subject_overview_cards,
+    build_year6_sats_overview,
+    build_next_academic_year,
     build_intervention_filters,
-    build_year6_sats_summary,
+    ensure_academic_year,
+    ensure_default_logins_and_classes,
+    export_class_overview_csv,
+    export_history_csv,
+    export_interventions_csv,
+    export_pupil_overview_csv,
+    export_sats_results_csv,
     export_subject_results_csv,
     export_writing_results_csv,
     format_subject_name,
     generate_csv,
     get_class_detail_context,
     get_current_academic_year,
+    get_history_rows,
     get_or_create_assessment_setting,
+    get_sats_columns,
     get_setting_defaults,
-    get_sats_subject_summary,
-    get_sats_writing_summary,
+    get_tracker_mode,
+    get_tracker_mode_label,
     import_pupils,
     import_subject_results,
     import_writing_results,
     parse_uploaded_csv,
+    promote_pupils_to_next_year,
+    save_sats_column,
+    set_tracker_mode,
+    snapshot_pupil_history,
     sort_class_rows,
+    sort_teacher_accounts,
+    toggle_sats_column,
     update_assessment_setting,
     validate_setting_payload,
 )
@@ -43,33 +62,54 @@ from . import admin_bp
 from .forms import AssessmentSettingForm
 
 
+def _active_class_query():
+    return SchoolClass.query.filter_by(is_active=True)
+
+
+def _teacher_options():
+    teachers = User.query.filter_by(role='teacher').all()
+    return sort_teacher_accounts(teachers)
+
+
 @admin_bp.route('/classes', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def classes():
-    """List available classes and handle teacher assignment updates."""
-
     if request.method == 'POST':
-        action = request.form.get('action', 'assign_teacher')
+        action = request.form.get('action', 'create_class')
         try:
-            if action == 'assign_teacher':
-                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
-                teacher_id_raw = request.form.get('teacher_id', '').strip()
-                school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
-                db.session.add(school_class)
-                flash(f'Teacher assignment updated for {school_class.name}.', 'success')
-            elif action == 'create_class':
+            if action == 'create_class':
                 name = request.form.get('name', '').strip()
                 year_group = int(request.form.get('year_group', '0'))
                 teacher_id_raw = request.form.get('teacher_id', '').strip()
                 if not name:
                     raise ValueError('Class name is required.')
-                existing = SchoolClass.query.filter_by(name=name).first()
-                if existing:
-                    raise ValueError('A class with that name already exists.')
-                school_class = SchoolClass(name=name, year_group=year_group, teacher_id=int(teacher_id_raw) if teacher_id_raw else None)
+                school_class = SchoolClass(name=name, year_group=year_group)
+                school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
+                school_class.is_active = True
                 db.session.add(school_class)
                 flash(f'Created class {name}.', 'success')
+            elif action == 'update_class':
+                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
+                new_name = request.form.get(f'name_{school_class.id}', '').strip()
+                new_year_group = int(request.form.get(f'year_group_{school_class.id}', school_class.year_group))
+                teacher_id_raw = request.form.get(f'teacher_id_{school_class.id}', '').strip()
+                if not new_name:
+                    raise ValueError('Class name is required.')
+                existing = SchoolClass.query.filter(SchoolClass.name == new_name, SchoolClass.id != school_class.id).first()
+                if existing:
+                    raise ValueError('A class with that name already exists.')
+                school_class.name = new_name
+                school_class.year_group = new_year_group
+                school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
+                school_class.is_active = request.form.get(f'is_active_{school_class.id}') == 'on'
+                db.session.add(school_class)
+                flash(f'Updated class {school_class.name}.', 'success')
+            elif action == 'archive_class':
+                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
+                school_class.is_active = False
+                db.session.add(school_class)
+                flash(f'Archived class {school_class.name}.', 'success')
             db.session.commit()
             return redirect(url_for('admin.classes'))
         except ValueError as exc:
@@ -83,7 +123,7 @@ def classes():
     subgroup = request.args.get('subgroup', 'all').strip() or 'all'
     sort = request.args.get('sort', 'year_group')
 
-    query = SchoolClass.query.filter_by(is_active=True)
+    query = SchoolClass.query
     if filter_year_group:
         query = query.filter(SchoolClass.year_group == int(filter_year_group))
     if filter_teacher:
@@ -94,9 +134,6 @@ def classes():
     classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
     rows = [build_class_overview_row(school_class, academic_year, subgroup) for school_class in classes]
     rows = sort_class_rows(rows, sort)
-
-    teacher_options = User.query.filter_by(role='teacher', is_active=True).order_by(User.username).all()
-    class_options = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
     return render_template(
         'admin/classes.html',
         classes=rows,
@@ -108,8 +145,8 @@ def classes():
         subgroup=subgroup,
         subgroup_filters=SUBGROUP_FILTERS,
         sort_options=CLASS_SORT_OPTIONS,
-        teacher_options=teacher_options,
-        class_options=class_options,
+        teacher_options=_teacher_options(),
+        class_options=SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all(),
     )
 
 
@@ -123,6 +160,31 @@ def class_detail(class_id: int):
     return render_template('admin/class_detail.html', academic_year=academic_year, **context)
 
 
+@admin_bp.route('/classes/<int:class_id>/sats')
+@login_required
+@admin_required
+def class_sats(class_id: int):
+    school_class = SchoolClass.query.get_or_404(class_id)
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, active_only=True)
+    return render_template(
+        'admin/sats.html',
+        academic_year=academic_year,
+        tracker_mode=get_tracker_mode(6),
+        tracker_mode_label=get_tracker_mode_label(6),
+        tracker_mode_options=SATS_TRACKER_MODES,
+        class_options=SchoolClass.query.filter_by(year_group=6).order_by(SchoolClass.name).all(),
+        selected_class_id=school_class.id,
+        columns=columns,
+        all_columns=get_sats_columns(6, active_only=False),
+        rows=rows,
+        overview=overview,
+        class_summaries=[{'class': school_class, 'rows': rows, 'subject_totals': overview}],
+        sats_subject_choices=SATS_COLUMN_SUBJECTS,
+    )
+
+
 @admin_bp.route('/users', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -133,33 +195,52 @@ def users():
             if action == 'create':
                 username = request.form.get('username', '').strip()
                 password = request.form.get('password', '').strip()
+                class_id_raw = request.form.get('class_id', '').strip()
                 if not username or not password:
                     raise ValueError('Username and password are required.')
                 if User.query.filter_by(username=username).first():
                     raise ValueError('That username already exists.')
-                user = User(username=username, role='teacher')
+                user = User(username=username, role='teacher', is_active=True)
                 user.set_password(password)
                 db.session.add(user)
+                db.session.flush()
+                if class_id_raw:
+                    school_class = SchoolClass.query.get_or_404(int(class_id_raw))
+                    school_class.teacher_id = user.id
+                    db.session.add(school_class)
                 flash(f'Created teacher user {username}.', 'success')
             elif action == 'update':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
                 username = request.form.get(f'username_{user.id}', '').strip()
                 password = request.form.get(f'password_{user.id}', '').strip()
+                class_id_raw = request.form.get(f'class_id_{user.id}', '').strip()
                 if username and username != user.username:
                     if User.query.filter(User.username == username, User.id != user.id).first():
                         raise ValueError('That username is already in use.')
                     user.username = username
+                user.is_active = request.form.get(f'is_active_{user.id}') == 'on'
                 if password:
                     user.set_password(password)
+                for school_class in user.classes.all():
+                    if not class_id_raw or school_class.id != int(class_id_raw):
+                        school_class.teacher_id = None
+                        db.session.add(school_class)
+                if class_id_raw:
+                    school_class = SchoolClass.query.get_or_404(int(class_id_raw))
+                    school_class.teacher_id = user.id
+                    db.session.add(school_class)
                 db.session.add(user)
                 flash(f'Updated {user.username}.', 'success')
+            elif action == 'sync_defaults':
+                ensure_default_logins_and_classes()
+                flash('Default admin, teacher logins, and Year 1–6 classes were refreshed.', 'success')
             db.session.commit()
             return redirect(url_for('admin.users'))
         except ValueError as exc:
             db.session.rollback()
             flash(f'User changes could not be saved: {exc}', 'danger')
 
-    teachers = User.query.order_by(User.role.desc(), User.username).all()
+    teachers = sort_teacher_accounts(User.query.order_by(User.role.desc(), User.username).all())
     classes = SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all()
     return render_template('admin/users.html', teachers=teachers, classes=classes)
 
@@ -274,6 +355,8 @@ def settings():
 @login_required
 @admin_required
 def interventions():
+    from app.models import Intervention
+
     academic_year = request.args.get('academic_year', get_current_academic_year())
     year_group = request.args.get('year_group', '').strip()
     class_id = request.args.get('class_id', '').strip()
@@ -298,20 +381,82 @@ def interventions():
     )
 
 
-@admin_bp.route('/sats')
+@admin_bp.route('/sats', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def sats():
-    academic_year = request.args.get('academic_year', get_current_academic_year())
-    year6_classes = SchoolClass.query.filter_by(year_group=6, is_active=True).order_by(SchoolClass.name).all()
-    pupils = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True)).order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all()
-    rows = []
-    for pupil in pupils:
-        subjects = {subject: get_sats_subject_summary(SatsResult.query.filter_by(pupil_id=pupil.id, subject=subject, academic_year=academic_year).all()) for subject in SATS_SUBJECTS}
-        writing = get_sats_writing_summary(SatsWritingResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year).all())
-        rows.append({'pupil': pupil, 'subjects': subjects, 'writing': writing})
-    class_summaries = [build_year6_sats_summary(school_class, academic_year) for school_class in year6_classes]
-    return render_template('admin/sats.html', academic_year=academic_year, rows=rows, class_summaries=class_summaries, assessment_points=SATS_ASSESSMENT_POINTS, sats_subjects=SATS_SUBJECTS)
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    selected_class_id = request.values.get('class_id', '').strip()
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'update_mode')
+        try:
+            if action == 'update_mode':
+                set_tracker_mode(6, request.form.get('tracker_mode', 'sats'))
+                flash(f'Year 6 tracker mode changed to {get_tracker_mode_label(6)}.', 'success')
+            elif action == 'save_column':
+                column_id = int(request.form.get('column_id', '0')) or None
+                save_sats_column(6, {
+                    'name': request.form.get('name', ''),
+                    'subject': request.form.get('subject', ''),
+                    'max_marks': request.form.get('max_marks', '0'),
+                    'pass_percentage': request.form.get('pass_percentage', '0'),
+                    'display_order': request.form.get('display_order', '1'),
+                    'is_active': request.form.get('is_active') == 'on',
+                }, column_id=column_id)
+                flash('SATs column saved.', 'success')
+            elif action == 'toggle_column':
+                column = toggle_sats_column(int(request.form.get('column_id', '0')))
+                flash(f"{column.name} is now {'shown' if column.is_active else 'hidden'}.", 'success')
+            db.session.commit()
+            return redirect(url_for('admin.sats', academic_year=academic_year, class_id=selected_class_id or None))
+        except (ValueError, SatsColumnValidationError) as exc:
+            db.session.rollback()
+            flash(f'SATs changes could not be saved: {exc}', 'danger')
+
+    overview = build_year6_sats_overview(academic_year, class_id=int(selected_class_id) if selected_class_id else None)
+    return render_template(
+        'admin/sats.html',
+        academic_year=academic_year,
+        tracker_mode=get_tracker_mode(6),
+        tracker_mode_label=get_tracker_mode_label(6),
+        tracker_mode_options=SATS_TRACKER_MODES,
+        class_options=SchoolClass.query.filter_by(year_group=6).order_by(SchoolClass.name).all(),
+        selected_class_id=int(selected_class_id) if selected_class_id else None,
+        columns=overview['columns'],
+        all_columns=get_sats_columns(6, active_only=False),
+        rows=overview['rows'],
+        overview=overview['class_summaries'][0]['subject_totals'] if len(overview['class_summaries']) == 1 else {},
+        class_summaries=overview['class_summaries'],
+        sats_subject_choices=SATS_COLUMN_SUBJECTS,
+    )
+
+
+@admin_bp.route('/promotion', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def promotion():
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    next_year = build_next_academic_year(academic_year)
+    if request.method == 'POST':
+        action = request.form.get('action', 'snapshot')
+        try:
+            if action == 'snapshot':
+                count = snapshot_pupil_history(academic_year)
+                ensure_academic_year(academic_year, mark_current=True)
+                db.session.commit()
+                flash(f'Archived {count} pupil class history record(s) for {academic_year}.', 'success')
+            elif action == 'promote':
+                outcome = promote_pupils_to_next_year(academic_year)
+                db.session.commit()
+                flash(f"Promotion complete. Moved {outcome['moved']} pupil(s), marked {outcome['leavers']} Year 6 leavers, and set {outcome['target_year']} as current.", 'success')
+            return redirect(url_for('admin.promotion', academic_year=academic_year))
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f'Promotion changes could not be saved: {exc}', 'danger')
+
+    history_rows = get_history_rows(academic_year)
+    return render_template('admin/promotion.html', academic_year=academic_year, next_year=next_year, history_rows=history_rows)
 
 
 @admin_bp.route('/imports', methods=['GET', 'POST'])
@@ -377,3 +522,48 @@ def export_writing_results():
         term=request.args.get('term') or None,
     )
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=writing_results_export.csv'})
+
+
+@admin_bp.route('/exports/class-overview')
+@login_required
+@admin_required
+def export_class_overview():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    csv_text = export_class_overview_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=class_overview_export.csv'})
+
+
+@admin_bp.route('/exports/pupil-overview')
+@login_required
+@admin_required
+def export_pupil_overview():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    csv_text = export_pupil_overview_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=pupil_overview_export.csv'})
+
+
+@admin_bp.route('/exports/sats')
+@login_required
+@admin_required
+def export_sats():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    csv_text = export_sats_results_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=sats_export.csv'})
+
+
+@admin_bp.route('/exports/interventions')
+@login_required
+@admin_required
+def export_interventions():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    csv_text = export_interventions_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=interventions_export.csv'})
+
+
+@admin_bp.route('/exports/history')
+@login_required
+@admin_required
+def export_history():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    csv_text = export_history_csv(academic_year)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=promotion_history_export.csv'})

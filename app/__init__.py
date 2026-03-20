@@ -6,7 +6,7 @@ from flask import Flask, redirect, render_template, request, url_for
 
 from config import config_by_name
 from .extensions import db, login_manager, migrate
-from .services import format_subject_name, get_term_label, get_writing_band_label
+from .services import format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -82,6 +82,7 @@ def register_template_helpers(app: Flask) -> None:
         format_subject_name=format_subject_name,
         get_term_label=get_term_label,
         get_writing_band_label=get_writing_band_label,
+        get_tracker_mode_label=get_tracker_mode_label,
     )
 
 def register_shell_context(app: Flask) -> None:

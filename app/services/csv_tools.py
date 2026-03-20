@@ -7,8 +7,9 @@ import io
 from dataclasses import dataclass
 
 from app.extensions import db
-from app.models import Pupil, SchoolClass, SubjectResult, WritingResult
-from .assessments import CsvImportError, WRITING_BAND_LABELS, compute_subject_result_values, get_subject_setting
+from app.models import Intervention, Pupil, PupilClassHistory, SatsColumnResult, SatsColumnSetting, SchoolClass, SubjectResult, WritingResult
+from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
+from .sats_tracker import build_sats_tracker_rows, get_sats_columns
 
 
 @dataclass
@@ -199,4 +200,78 @@ def export_writing_results_csv(class_id: int | None = None, academic_year: str |
         query = query.filter(WritingResult.term == term)
     for row in query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
         writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, row.band, row.notes])
+    return output.getvalue()
+
+
+
+def export_class_overview_csv(academic_year: str, class_id: int | None = None) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['class_name', 'year_group', 'teacher', 'pupil_count', 'active_interventions', 'maths_on_track_plus', 'reading_on_track_plus', 'spag_on_track_plus', 'writing_on_track_plus'])
+    query = SchoolClass.query.filter_by(is_active=True)
+    if class_id:
+        query = query.filter(SchoolClass.id == class_id)
+    for school_class in query.order_by(SchoolClass.year_group, SchoolClass.name).all():
+        row = build_class_overview_row(school_class, academic_year)
+        writer.writerow([
+            row['class_name'],
+            row['year_group'],
+            row['teacher_name'],
+            row['pupil_count'],
+            row['active_interventions'],
+            row['subjects']['maths']['on_track_plus'],
+            row['subjects']['reading']['on_track_plus'],
+            row['subjects']['spag']['on_track_plus'],
+            row['subjects']['writing']['on_track_plus'],
+        ])
+    return output.getvalue()
+
+
+def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'academic_year'])
+    query = Pupil.query.join(Pupil.school_class)
+    if class_id:
+        query = query.filter(Pupil.class_id == class_id)
+    for pupil in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
+        writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, academic_year or 'current'])
+    return output.getvalue()
+
+
+def export_sats_results_csv(academic_year: str, class_id: int | None = None) -> str:
+    output = io.StringIO()
+    columns = get_sats_columns(6, active_only=True)
+    header = ['pupil_name', 'class_name'] + [column.name for column in columns]
+    writer = csv.writer(output)
+    writer.writerow(header)
+    query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True))
+    if class_id:
+        query = query.filter(Pupil.class_id == class_id)
+    pupils = query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all()
+    _, rows, _ = build_sats_tracker_rows(pupils, academic_year, 6, active_only=True)
+    for row in rows:
+        writer.writerow([row['pupil'].full_name, row['pupil'].school_class.name] + [row['results'][column.id].raw_score if row['results'][column.id] else '' for column in columns])
+    return output.getvalue()
+
+
+def export_interventions_csv(academic_year: str, class_id: int | None = None) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'is_active', 'auto_flagged', 'reason', 'note'])
+    query = Intervention.query.join(Intervention.pupil).join(Pupil.school_class).filter(Intervention.academic_year == academic_year)
+    if class_id:
+        query = query.filter(Pupil.class_id == class_id)
+    for row in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
+        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.subject, row.term, row.is_active, row.auto_flagged, row.reason, row.note])
+    return output.getvalue()
+
+
+def export_history_csv(academic_year: str) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['pupil_name', 'academic_year', 'class_name', 'year_group', 'teacher_username', 'promoted_to_year_group'])
+    rows = PupilClassHistory.query.join(PupilClassHistory.pupil).filter(PupilClassHistory.academic_year == academic_year).order_by(PupilClassHistory.year_group, PupilClassHistory.class_name, Pupil.last_name, Pupil.first_name).all()
+    for row in rows:
+        writer.writerow([row.pupil.full_name, row.academic_year, row.class_name, row.year_group, row.teacher_username, row.promoted_to_year_group or ''])
     return output.getvalue()

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Promotion & History{% endblock %}
+{% set page_heading = 'Promotion and academic-year history' %}
+{% block content %}
+<div class="row g-4 mb-4">
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white"><strong>Promotion tools</strong></div>
+      <div class="card-body">
+        <p class="text-muted">Current working academic year: <strong>{{ academic_year }}</strong>. Next year: <strong>{{ next_year }}</strong>.</p>
+        <div class="d-flex gap-2 flex-wrap">
+          <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary">Archive current year snapshot</button></form>
+          <form method="post"><input type="hidden" name="action" value="promote"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-primary">Promote active pupils</button></form>
+          <a class="btn btn-outline-secondary" href="{{ url_for('admin.export_history', academic_year=academic_year) }}">Export history CSV</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white"><strong>What this does</strong></div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>Stores a class snapshot for the selected academic year.</li>
+          <li>Moves active pupils into the next year-group class.</li>
+          <li>Marks Year 6 pupils inactive instead of deleting data.</li>
+          <li>Keeps historic assessment and class data available through academic-year filters.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Archived class history for {{ academic_year }}</strong><span class="badge text-bg-light border">{{ history_rows|length }} rows</span></div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Pupil</th><th>Class</th><th>Year group</th><th>Teacher</th><th>Promoted to</th></tr></thead><tbody>{% for row in history_rows %}<tr><td>{{ row.pupil.full_name }}</td><td>{{ row.class_name }}</td><td>Year {{ row.year_group }}</td><td>{{ row.teacher_username or 'Unassigned' }}</td><td>{{ 'Year ' ~ row.promoted_to_year_group if row.promoted_to_year_group else 'Left school / inactive' }}</td></tr>{% else %}<tr><td colspan="5" class="text-center py-4 text-muted">No history snapshot saved for this academic year yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

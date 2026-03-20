@@ -27,7 +27,9 @@ class Pupil(db.Model):
     interventions = db.relationship('Intervention', back_populates='pupil', cascade='all, delete-orphan')
     sats_results = db.relationship('SatsResult', back_populates='pupil', cascade='all, delete-orphan')
     sats_writing_results = db.relationship('SatsWritingResult', back_populates='pupil', cascade='all, delete-orphan')
+    sats_column_results = db.relationship('SatsColumnResult', back_populates='pupil', cascade='all, delete-orphan')
     gap_scores = db.relationship('GapScore', back_populates='pupil', cascade='all, delete-orphan')
+    class_history = db.relationship('PupilClassHistory', back_populates='pupil', cascade='all, delete-orphan')
 
     @property
     def full_name(self) -> str:
