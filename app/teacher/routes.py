@@ -8,24 +8,35 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.models import GapQuestion, Intervention, Pupil, SubjectResult, WritingResult
 from app.services import (
+    AUTO_REASON,
     SATS_ASSESSMENT_POINTS,
+    SATS_COLUMN_SUBJECTS,
     SATS_SUBJECTS,
-    SORT_OPTIONS,
+    SATS_TRACKER_MODES,
     TERMS,
     WRITING_BAND_CHOICES,
     AssessmentValidationError,
-    AUTO_REASON,
+    apply_admin_pupil_filters,
     build_academic_year_options,
+    build_admin_pupil_filter_state,
     build_gap_page_context,
+    build_sort_indicator,
+    build_table_sort_state,
+    build_sats_tracker_rows,
     compute_subject_result_values,
     format_subject_name,
     get_current_academic_year,
     get_current_term,
+    get_gender_filter_options,
+    get_next_sort_direction,
     get_or_create_gap_template,
+    get_result_outcome_theme,
     get_sats_columns,
     get_subject_setting,
     get_tracker_mode,
     get_tracker_mode_label,
+    get_writing_band_label,
+    get_writing_outcome_theme,
     parse_question_columns,
     recalculate_subject_results_for_scope,
     save_gap_scores,
@@ -36,10 +47,9 @@ from app.services import (
     toggle_sats_column,
     update_assessment_setting,
     validate_setting_payload,
-    build_sats_tracker_rows,
-    SATS_COLUMN_SUBJECTS,
-    SATS_TRACKER_MODES,
     SatsColumnValidationError,
+    sort_subject_result_rows,
+    sort_writing_result_rows,
 )
 from app.utils import get_primary_class_for_user, teacher_required
 
@@ -335,23 +345,19 @@ def _build_setting_payload(subject_key: str) -> dict:
     }
 
 
-def _sort_subject_rows(rows: list[dict], sort_key: str) -> list[dict]:
-    if sort_key == 'name_desc':
-        return sorted(rows, key=lambda row: (row['pupil'].last_name.lower(), row['pupil'].first_name.lower()), reverse=True)
-    if sort_key == 'percent_desc':
-        return sorted(rows, key=lambda row: (row['combined_percent'] is None, -(row['combined_percent'] or 0), row['pupil'].last_name.lower()))
-    if sort_key == 'percent_asc':
-        return sorted(rows, key=lambda row: (row['combined_percent'] is None, row['combined_percent'] or 0, row['pupil'].last_name.lower()))
-    if sort_key == 'band_asc':
-        return sorted(rows, key=lambda row: ((row.get('band_display') or 'ZZZ'), row['pupil'].last_name.lower(), row['pupil'].first_name.lower()))
-    return sorted(rows, key=lambda row: (row['pupil'].last_name.lower(), row['pupil'].first_name.lower(), row['pupil'].id))
+SUBJECT_SORTABLE_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label'}
+WRITING_SORTABLE_COLUMNS = {'name', 'band_label', 'notes'}
 
 
-def _filter_pupils(pupils: list[Pupil], search: str) -> list[Pupil]:
-    if not search:
-        return pupils
-    search_value = search.lower()
-    return [pupil for pupil in pupils if search_value in pupil.full_name.lower()]
+def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
+    return {
+        column: {
+            'indicator': build_sort_indicator(column, sort_state),
+            'next_direction': get_next_sort_direction(column, sort_state),
+            'active': sort_state['column'] == column,
+        }
+        for column in allowed_columns
+    }
 
 
 def _base_subject_context(subject_key: str) -> dict:
@@ -359,10 +365,15 @@ def _base_subject_context(subject_key: str) -> dict:
     current_year = get_current_academic_year()
     academic_year = request.values.get('academic_year', current_year)
     term = request.values.get('term', get_current_term())
-    search = request.values.get('search', '').strip()
-    sort = request.values.get('sort', 'name_asc')
-    pupils = school_class.pupils.filter_by(is_active=True).all() if school_class else []
-    pupils = _filter_pupils(pupils, search)
+    filters = build_admin_pupil_filter_state(request.values)
+    sort_state = build_table_sort_state(
+        request.values,
+        allowed_columns=WRITING_SORTABLE_COLUMNS if subject_key == 'writing' else SUBJECT_SORTABLE_COLUMNS,
+        default_column='name',
+    )
+    pupils = []
+    if school_class:
+        pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).all()
     return {
         'subject_key': subject_key,
         'page_title': SUBJECT_META[subject_key]['title'],
@@ -370,11 +381,11 @@ def _base_subject_context(subject_key: str) -> dict:
         'current_year': current_year,
         'academic_year': academic_year,
         'term': term,
-        'search': search,
-        'sort': sort,
+        'filters': filters,
+        'sort_state': sort_state,
         'pupils': pupils,
         'academic_year_options': build_academic_year_options(academic_year),
-        'sort_options': {key: label for key, label in SORT_OPTIONS.items() if key in {'name_asc', 'name_desc', 'percent_desc', 'percent_asc'}},
+        'gender_options': get_gender_filter_options(class_id=school_class.id) if school_class else [],
         'terms': TERMS,
     }
 
@@ -393,6 +404,7 @@ def _build_subject_rows(pupils: list[Pupil], existing_by_pupil: dict[int, Subjec
                 'band_label': existing.band_label if existing else None,
                 'notes': existing.notes if existing else '',
                 'source': existing.source if existing else None,
+                'outcome_theme': get_result_outcome_theme(existing.band_label if existing else None),
             }
         )
     return rows
@@ -419,7 +431,20 @@ def render_subject_page(subject_key: str):
                 f"{format_subject_name(subject_key)} settings saved for Year {school_class.year_group} {context['term'].title()}. Recalculated {recalculated_count} saved result(s).",
                 'success',
             )
-            return redirect(url_for(f'teacher.{subject_key}', academic_year=context['academic_year'], term=context['term'], search=context['search'], sort=context['sort']))
+            return redirect(
+                url_for(
+                    f'teacher.{subject_key}',
+                    academic_year=context['academic_year'],
+                    term=context['term'],
+                    search=context['filters']['search'],
+                    gender=context['filters']['gender'],
+                    pupil_premium=context['filters']['pupil_premium'],
+                    laps=context['filters']['laps'],
+                    service_child=context['filters']['service_child'],
+                    sort=context['sort_state']['column'],
+                    direction=context['sort_state']['direction'],
+                )
+            )
         except (ValueError, AssessmentValidationError) as exc:
             db.session.rollback()
             flash(f'Settings could not be saved: {exc}', 'danger')
@@ -454,6 +479,7 @@ def render_subject_page(subject_key: str):
                 'combined_percent': existing.combined_percent if existing else None,
                 'band_label': existing.band_label if existing else None,
                 'source': existing.source if existing else None,
+                'outcome_theme': get_result_outcome_theme(existing.band_label if existing else None),
             }
             try:
                 paper_1_score = _parse_int(paper_1_raw)
@@ -473,7 +499,15 @@ def render_subject_page(subject_key: str):
                     result.source = 'manual'
                     result.notes = notes or None
                     db.session.add(result)
-                    row.update({'paper_1_score': '' if paper_1_score is None else paper_1_score, 'paper_2_score': '' if paper_2_score is None else paper_2_score, 'combined_score': result.combined_score, 'combined_percent': result.combined_percent, 'band_label': result.band_label, 'source': result.source})
+                    row.update({
+                        'paper_1_score': '' if paper_1_score is None else paper_1_score,
+                        'paper_2_score': '' if paper_2_score is None else paper_2_score,
+                        'combined_score': result.combined_score,
+                        'combined_percent': result.combined_percent,
+                        'band_label': result.band_label,
+                        'source': result.source,
+                        'outcome_theme': get_result_outcome_theme(result.band_label),
+                    })
             except ValueError:
                 errors.append(f'{pupil.full_name}: scores must be whole numbers.')
             except AssessmentValidationError as exc:
@@ -488,19 +522,38 @@ def render_subject_page(subject_key: str):
             sync_auto_interventions(school_class, subject_key, context['term'], context['academic_year'], setting.below_are_threshold_percent)
             db.session.commit()
             flash(f'{format_subject_name(subject_key)} results saved for {school_class.name}.', 'success')
-            return redirect(url_for(f'teacher.{subject_key}', academic_year=context['academic_year'], term=context['term'], search=context['search'], sort=context['sort']))
+            return redirect(
+                url_for(
+                    f'teacher.{subject_key}',
+                    academic_year=context['academic_year'],
+                    term=context['term'],
+                    search=context['filters']['search'],
+                    gender=context['filters']['gender'],
+                    pupil_premium=context['filters']['pupil_premium'],
+                    laps=context['filters']['laps'],
+                    service_child=context['filters']['service_child'],
+                    sort=context['sort_state']['column'],
+                    direction=context['sort_state']['direction'],
+                )
+            )
     else:
         rows = _build_subject_rows(context['pupils'], existing_by_pupil)
 
     active_interventions = sync_auto_interventions(school_class, subject_key, context['term'], context['academic_year'], setting.below_are_threshold_percent)
     db.session.commit()
-    rows = _sort_subject_rows(rows, context['sort'])
-    return render_template('teacher/subject_scores.html', rows=rows, setting=setting, active_interventions=active_interventions, **context)
+    rows = sort_subject_result_rows(rows, context['sort_state']['column'], context['sort_state']['direction'])
+    return render_template(
+        'teacher/subject_scores.html',
+        rows=rows,
+        setting=setting,
+        active_interventions=active_interventions,
+        header_state=_table_header_state(context['sort_state'], SUBJECT_SORTABLE_COLUMNS),
+        **context,
+    )
 
 
 def render_writing_page():
     context = _base_subject_context('writing')
-    context['sort_options'] = {key: label for key, label in SORT_OPTIONS.items() if key in {'name_asc', 'name_desc', 'band_asc'}}
     school_class = context['school_class']
     if not school_class:
         flash('No active class is assigned to your account yet.', 'warning')
@@ -538,11 +591,36 @@ def render_writing_page():
         else:
             db.session.commit()
             flash(f'Writing results saved for {school_class.name}.', 'success')
-            return redirect(url_for('teacher.writing', academic_year=context['academic_year'], term=context['term'], search=context['search'], sort=context['sort']))
+            return redirect(
+                url_for(
+                    'teacher.writing',
+                    academic_year=context['academic_year'],
+                    term=context['term'],
+                    search=context['filters']['search'],
+                    gender=context['filters']['gender'],
+                    pupil_premium=context['filters']['pupil_premium'],
+                    laps=context['filters']['laps'],
+                    service_child=context['filters']['service_child'],
+                    sort=context['sort_state']['column'],
+                    direction=context['sort_state']['direction'],
+                )
+            )
 
     rows = []
     for pupil in context['pupils']:
         existing = existing_by_pupil.get(pupil.id)
-        rows.append({'pupil': pupil, 'band': existing.band if existing else '', 'notes': existing.notes if existing else ''})
-    rows = _sort_subject_rows(rows, context['sort'])
-    return render_template('teacher/writing_results.html', rows=rows, writing_band_choices=WRITING_BAND_CHOICES, **context)
+        rows.append({
+            'pupil': pupil,
+            'band': existing.band if existing else '',
+            'band_label': get_writing_band_label(existing.band) if existing else '—',
+            'notes': existing.notes if existing else '',
+            'outcome_theme': get_writing_outcome_theme(existing.band if existing else None),
+        })
+    rows = sort_writing_result_rows(rows, context['sort_state']['column'], context['sort_state']['direction'])
+    return render_template(
+        'teacher/writing_results.html',
+        rows=rows,
+        writing_band_choices=WRITING_BAND_CHOICES,
+        header_state=_table_header_state(context['sort_state'], WRITING_SORTABLE_COLUMNS),
+        **context,
+    )

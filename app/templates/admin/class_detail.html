@@ -12,6 +12,16 @@
     <span class="segment segment-ex" style="width: {{ summary.exceeding_percent }}%"></span>
   </div>
 {%- endmacro %}
+{% macro sort_link(column, label) -%}
+  {% set state = header_state[column] %}
+  <a
+    href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject, term=selected_term if selected_subject != 'sats' else None, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search, sort=column, direction=state.next_direction) }}"
+    class="table-sort-link{% if state.active %} active{% endif %}"
+  >
+    <span>{{ label }}</span>
+    <span class="sort-indicator">{{ state.indicator or '↕' }}</span>
+  </a>
+{%- endmacro %}
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
   <div>
@@ -59,11 +69,11 @@
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Filters</strong></div>
   <div class="card-body">
-    <form method="get" class="row g-3 align-items-end">
+    <form method="get" class="row g-2 align-items-end compact-filter-row">
       {{ filter_hidden_fields() }}
       <div class="col-md-2">
         <label class="form-label">Gender</label>
-        <select name="gender" class="form-select">
+        <select name="gender" class="form-select form-select-sm">
           <option value="all" {% if filters.gender == 'all' %}selected{% endif %}>All</option>
           {% for gender in gender_options %}
             <option value="{{ gender }}" {% if filters.gender == gender %}selected{% endif %}>{{ gender }}</option>
@@ -72,7 +82,7 @@
       </div>
       <div class="col-md-2">
         <label class="form-label">Pupil Premium</label>
-        <select name="pupil_premium" class="form-select">
+        <select name="pupil_premium" class="form-select form-select-sm">
           {% for value, label in boolean_filter_choices.items() %}
             <option value="{{ value }}" {% if filters.pupil_premium == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -80,7 +90,7 @@
       </div>
       <div class="col-md-2">
         <label class="form-label">LAPS</label>
-        <select name="laps" class="form-select">
+        <select name="laps" class="form-select form-select-sm">
           {% for value, label in boolean_filter_choices.items() %}
             <option value="{{ value }}" {% if filters.laps == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -88,7 +98,7 @@
       </div>
       <div class="col-md-2">
         <label class="form-label">Service child</label>
-        <select name="service_child" class="form-select">
+        <select name="service_child" class="form-select form-select-sm">
           {% for value, label in boolean_filter_choices.items() %}
             <option value="{{ value }}" {% if filters.service_child == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -96,21 +106,23 @@
       </div>
       <div class="col-md-2">
         <label class="form-label">Pupil search</label>
-        <input type="text" name="search" class="form-control" value="{{ filters.search }}" placeholder="Name">
+        <input type="text" name="search" class="form-control form-control-sm" value="{{ filters.search }}" placeholder="Name">
       </div>
       {% if selected_subject != 'sats' %}
-        <div class="col-md-2">
+        <div class="col-md-1">
           <label class="form-label">Term</label>
-          <select name="term" class="form-select">
+          <select name="term" class="form-select form-select-sm">
             {% for term_value, term_label in available_terms %}
               <option value="{{ term_value }}" {% if selected_term == term_value %}selected{% endif %}>{{ term_label }}</option>
             {% endfor %}
           </select>
         </div>
       {% endif %}
+      <input type="hidden" name="sort" value="{{ sort_state.column }}">
+      <input type="hidden" name="direction" value="{{ sort_state.direction }}">
       <div class="col-12 d-flex justify-content-end gap-2">
-        <button class="btn btn-primary">Apply filters</button>
-        <a class="btn btn-outline-secondary" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject) }}">Clear</a>
+        <button class="btn btn-primary btn-sm">Apply filters</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject) }}">Clear</a>
       </div>
     </form>
   </div>
@@ -128,33 +140,33 @@
   <div class="card shadow-sm">
     <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
       <strong>{{ subject_label }} pupil table</strong>
-      <span class="small text-muted">Showing {{ pupil_rows|length }} pupils · {{ selected_term|title }} term</span>
+      <span class="small text-muted">Showing {{ pupil_rows|length }} pupils · {{ selected_term|title }} term · click headings to sort</span>
     </div>
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0 admin-class-table">
         <thead class="table-light">
           <tr>
-            <th>Pupil</th>
+            <th>{{ sort_link('name', 'Pupil') }}</th>
             <th>Gender</th>
             <th>PP</th>
             <th>LAPS</th>
             <th>Service</th>
             {% if selected_subject in ['maths', 'reading', 'spag'] %}
-              <th>Paper 1</th>
-              <th>Paper 2</th>
-              <th>Combined</th>
-              <th>%</th>
-              <th>Band</th>
+              <th>{{ sort_link('paper_1_score', 'Paper 1') }}</th>
+              <th>{{ sort_link('paper_2_score', 'Paper 2') }}</th>
+              <th>{{ sort_link('combined_score', 'Combined') }}</th>
+              <th>{{ sort_link('combined_percent', '%') }}</th>
+              <th>{{ sort_link('band_label', 'Band') }}</th>
               <th>Source</th>
             {% else %}
-              <th>Writing judgement</th>
-              <th>Notes</th>
+              <th>{{ sort_link('band_label', 'Writing judgement') }}</th>
+              <th>{{ sort_link('notes', 'Notes') }}</th>
             {% endif %}
           </tr>
         </thead>
         <tbody>
           {% for row in pupil_rows %}
-            <tr>
+            <tr class="result-row{% if row.outcome_theme %} result-row-{{ row.outcome_theme }}{% endif %}">
               <td>
                 <div class="fw-semibold">{{ row.name }}</div>
                 <div class="small text-muted">{{ row.flags }}</div>
@@ -166,12 +178,24 @@
               {% if selected_subject in ['maths', 'reading', 'spag'] %}
                 <td>{{ row.paper_1_score if row.paper_1_score is not none else '—' }}</td>
                 <td>{{ row.paper_2_score if row.paper_2_score is not none else '—' }}</td>
-                <td>{{ row.combined_score if row.combined_score is not none else '—' }}</td>
-                <td>{{ '%.1f%%'|format(row.combined_percent) if row.combined_percent is not none else '—' }}</td>
-                <td>{{ row.band_label or '—' }}</td>
+                <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">{{ row.combined_score if row.combined_score is not none else '—' }}</td>
+                <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">{{ '%.1f%%'|format(row.combined_percent) if row.combined_percent is not none else '—' }}</td>
+                <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">
+                  {% if row.band_label %}
+                    <span class="result-badge{% if row.outcome_theme %} result-badge-{{ row.outcome_theme }}{% endif %}">{{ row.band_label }}</span>
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
                 <td>{{ row.source or '—' }}</td>
               {% else %}
-                <td>{{ row.band_label or '—' }}</td>
+                <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">
+                  {% if row.band_label %}
+                    <span class="result-badge{% if row.outcome_theme %} result-badge-{{ row.outcome_theme }}{% endif %}">{{ row.band_label }}</span>
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
                 <td>{{ row.notes or '—' }}</td>
               {% endif %}
             </tr>
