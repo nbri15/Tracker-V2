@@ -88,6 +88,7 @@ from .csv_tools import (
     export_subject_results_csv,
     export_writing_results_csv,
     generate_csv,
+    import_combined_results,
     import_pupils,
     import_subject_results,
     import_writing_results,

@@ -48,6 +48,7 @@ from app.services import (
     get_setting_defaults,
     get_tracker_mode,
     get_tracker_mode_label,
+    import_combined_results,
     import_pupils,
     import_subject_results,
     import_writing_results,
@@ -511,35 +512,59 @@ def promotion():
 @login_required
 @admin_required
 def imports():
+    summary = None
+    selected_import_type = 'combined'
     if request.method == 'POST':
-        import_type = request.form.get('import_type', 'pupils')
+        selected_import_type = request.form.get('import_type', 'combined')
         try:
             rows = parse_uploaded_csv(request.files.get('csv_file'))
-            if import_type == 'pupils':
+            if selected_import_type == 'combined':
+                summary = import_combined_results(rows)
+            elif selected_import_type == 'pupils':
                 summary = import_pupils(rows)
-            elif import_type == 'subject_results':
+            elif selected_import_type == 'subject_results':
                 summary = import_subject_results(rows)
             else:
                 summary = import_writing_results(rows)
+            db.session.commit()
             if summary.errors:
                 for error in summary.errors[:20]:
                     flash(error, 'warning')
-            db.session.commit()
-            flash(f'Import finished: created {summary.created}, updated {summary.updated}, skipped {summary.skipped}, errors {len(summary.errors)}.', 'success')
-            return redirect(url_for('admin.imports'))
+            if selected_import_type == 'combined':
+                flash(
+                    f'Import finished: pupils created {summary.pupils_created}, pupils updated {summary.pupils_updated}, '
+                    f'subject results created {summary.subject_results_created}, subject results updated {summary.subject_results_updated}, '
+                    f'writing results created {summary.writing_results_created}, writing results updated {summary.writing_results_updated}, '
+                    f'manual/protected results skipped {summary.manual_results_skipped}, rows skipped {summary.rows_skipped}, '
+                    f'validation errors {summary.validation_errors}.',
+                    'success',
+                )
+            else:
+                flash(
+                    f'Import finished: created {summary.created}, updated {summary.updated}, skipped {summary.skipped}, '
+                    f'manual/protected results skipped {summary.manual_results_skipped}, validation errors {summary.validation_errors}.',
+                    'success',
+                )
         except CsvImportError as exc:
             db.session.rollback()
             flash(f'Import failed: {exc}', 'danger')
 
     overview = {'teachers': User.query.filter_by(role='teacher').count(), 'classes': SchoolClass.query.count(), 'pupils': Pupil.query.count()}
-    return render_template('admin/imports.html', overview=overview, class_options=SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all(), current_year=get_current_academic_year())
+    return render_template(
+        'admin/imports.html',
+        overview=overview,
+        class_options=SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        current_year=get_current_academic_year(),
+        summary=summary,
+        selected_import_type=selected_import_type,
+    )
 
 
 @admin_bp.route('/imports/template/<template_type>')
 @login_required
 @admin_required
 def download_import_template(template_type: str):
-    template_map = {'pupils', 'subject_results', 'writing_results'}
+    template_map = {'combined', 'pupils', 'subject_results', 'writing_results'}
     if template_type not in template_map:
         flash('Unknown template type.', 'warning')
         return redirect(url_for('admin.imports'))

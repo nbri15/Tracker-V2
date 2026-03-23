@@ -582,6 +582,7 @@ def render_writing_page():
             result = existing or WritingResult(pupil_id=pupil.id, academic_year=context['academic_year'], term=context['term'], band=band or 'working_towards')
             result.band = band or 'working_towards'
             result.notes = notes or None
+            result.source = 'manual'
             db.session.add(result)
 
         if errors:
