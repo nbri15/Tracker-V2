@@ -214,12 +214,32 @@ Admin import page:
 
 - `/admin/imports`
 
-Included tools:
+Main combined import workflow:
+
+- download the recommended combined template from the imports page
+- complete one row per pupil
+- required pupil columns: `first_name`, `last_name`, `gender`, `pupil_premium`, `laps`, `service_child`, `class_name`, `academic_year`
+- optional subject columns: `maths_autumn_paper1`, `maths_autumn_paper2`, `maths_spring_paper1`, `maths_spring_paper2`, `maths_summer_paper1`, `maths_summer_paper2`, `reading_autumn_paper1`, `reading_autumn_paper2`, `reading_spring_paper1`, `reading_spring_paper2`, `reading_summer_paper1`, `reading_summer_paper2`, `spag_autumn_paper1`, `spag_autumn_paper2`, `spag_spring_paper1`, `spag_spring_paper2`, `spag_summer_paper1`, `spag_summer_paper2`
+- optional writing columns: `writing_autumn_band`, `writing_autumn_notes`, `writing_spring_band`, `writing_spring_notes`, `writing_summer_band`, `writing_summer_notes`
+
+Combined import behaviour:
+
+- pupils are matched by `first_name + last_name + class_name`
+- missing pupils are created automatically
+- existing pupils are updated in place
+- subject results are only processed when at least one score column for that subject/term is filled in
+- if both score cells for a subject/term are blank, that subject result is ignored safely
+- writing rows are only processed when the matching writing band column is filled in
+- existing manual/protected results are not overwritten by CSV imports by default
+- existing CSV results can be updated by a later CSV upload
+- the import page shows counts for pupils created/updated, subject results created/updated, writing results created/updated, protected results skipped, rows skipped, and row-level validation messages
+
+Legacy tools still available:
 
 - pupil import template download
 - subject result import template download
 - writing import template download
-- CSV upload for pupils, subject results, and writing results
+- legacy CSV upload for pupils, subject results, and writing results
 - CSV export for the main overview/reporting routes listed above
 
 ## Typical development commands

@@ -19,6 +19,7 @@ class WritingResult(db.Model):
     term = db.Column(db.String(20), nullable=False)
     band = db.Column(db.String(50), nullable=False)
     notes = db.Column(db.Text, nullable=True)
+    source = db.Column(db.String(20), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     pupil = db.relationship('Pupil', back_populates='writing_results')
