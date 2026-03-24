@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from app.extensions import db
 from app.models import Intervention, Pupil, PupilClassHistory, SatsColumnResult, SatsColumnSetting, SchoolClass, SubjectResult, WritingResult
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
-from .sats_tracker import build_sats_tracker_rows, get_sats_columns
+from .sats_tracker import build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
 
 COMBINED_PUPIL_COLUMNS = [
     'first_name',
@@ -569,19 +569,23 @@ def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | 
     return output.getvalue()
 
 
-def export_sats_results_csv(academic_year: str, class_id: int | None = None) -> str:
+def export_sats_results_csv(academic_year: str, class_id: int | None = None, exam_tab_id: int | None = None) -> str:
     output = io.StringIO()
-    columns = get_sats_columns(6, active_only=True)
-    header = ['pupil_name', 'class_name'] + [column.name for column in columns]
+    tabs = get_sats_exam_tabs(6, include_inactive=True)
+    selected_tab = next((tab for tab in tabs if tab.id == exam_tab_id), None)
+    if not selected_tab:
+        selected_tab = next((tab for tab in tabs if tab.is_active), tabs[0] if tabs else None)
+    columns = get_sats_columns(6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=True)
+    header = ['pupil_name', 'class_name', 'exam_tab'] + [column.name for column in columns]
     writer = csv.writer(output)
     writer.writerow(header)
     query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True))
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     pupils = query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all()
-    _, rows, _ = build_sats_tracker_rows(pupils, academic_year, 6, active_only=True)
+    _, rows, _ = build_sats_tracker_rows(pupils, academic_year, 6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=True)
     for row in rows:
-        writer.writerow([row['pupil'].full_name, row['pupil'].school_class.name] + [row['results'][column.id].raw_score if row['results'][column.id] else '' for column in columns])
+        writer.writerow([row['pupil'].full_name, row['pupil'].school_class.name, selected_tab.name if selected_tab else ''] + [row['results'][column.id].raw_score if row['results'][column.id] else '' for column in columns])
     return output.getvalue()
 
 

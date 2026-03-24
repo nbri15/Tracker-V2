@@ -64,17 +64,22 @@ from .admin_ops import (
 )
 from .sats_tracker import (
     SATS_COLUMN_SUBJECTS,
+    SATS_SCORE_TYPES,
     SATS_TRACKER_MODES,
     SatsColumnValidationError,
     build_sats_tracker_rows,
+    create_exam_tab_with_defaults,
     build_year6_sats_overview,
     ensure_default_sats_columns,
     get_sats_columns,
+    get_sats_exam_tabs,
     get_tracker_mode,
     get_tracker_mode_label,
     save_sats_column,
+    save_sats_tab,
     save_sats_tracker_results,
     set_tracker_mode,
+    toggle_sats_tab,
     toggle_sats_column,
     validate_sats_column_payload,
 )

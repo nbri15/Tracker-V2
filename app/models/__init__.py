@@ -4,7 +4,7 @@ from .assessment import AssessmentSetting, GapQuestion, GapScore, GapTemplate, S
 from .history import AcademicYear, PupilClassHistory
 from .intervention import Intervention
 from .pupil import Pupil
-from .sats import SatsColumnResult, SatsColumnSetting, SatsResult, SatsWritingResult, TrackerModeSetting
+from .sats import SatsColumnResult, SatsColumnSetting, SatsExamTab, SatsResult, SatsWritingResult, TrackerModeSetting
 from .school import SchoolClass
 from .user import User
 from .writing import WritingResult
@@ -20,6 +20,7 @@ __all__ = [
     'PupilClassHistory',
     'SatsColumnResult',
     'SatsColumnSetting',
+    'SatsExamTab',
     'SatsResult',
     'SatsWritingResult',
     'SchoolClass',
