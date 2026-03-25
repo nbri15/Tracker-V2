@@ -104,6 +104,34 @@ body {
   overflow-x: auto;
 }
 
+.sats-sheet-table {
+  font-size: 0.88rem;
+}
+
+.sats-sheet-table th,
+.sats-sheet-table td {
+  white-space: nowrap;
+  padding: 0.35rem 0.45rem;
+}
+
+.sats-sheet-table .form-control {
+  min-width: 84px;
+  padding: 0.2rem 0.35rem;
+}
+
+.sats-name-col {
+  min-width: 220px;
+  left: 0;
+}
+
+.sats-col {
+  min-width: 110px;
+}
+
+.sats-tab-strip .btn {
+  border-radius: 999px;
+}
+
 .gap-paper-tabs {
   display: flex;
   flex-wrap: wrap;

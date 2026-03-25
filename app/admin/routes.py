@@ -12,6 +12,7 @@ from app.services import (
     CLASS_SORT_OPTIONS,
     CORE_SUBJECTS,
     SATS_COLUMN_SUBJECTS,
+    SATS_SCORE_TYPES,
     SATS_TRACKER_MODES,
     SUBGROUP_FILTERS,
     TERMS,
@@ -45,6 +46,7 @@ from app.services import (
     get_history_rows,
     get_or_create_assessment_setting,
     get_sats_columns,
+    get_sats_exam_tabs,
     get_setting_defaults,
     get_tracker_mode,
     get_tracker_mode_label,
@@ -55,11 +57,13 @@ from app.services import (
     parse_uploaded_csv,
     promote_pupils_to_next_year,
     save_sats_column,
+    save_sats_tab,
     set_tracker_mode,
     snapshot_pupil_history,
     sort_class_rows,
     sort_teacher_accounts,
     toggle_sats_column,
+    toggle_sats_tab,
     update_assessment_setting,
     validate_setting_payload,
 )
@@ -215,8 +219,11 @@ def class_detail(class_id: int):
 def class_sats(class_id: int):
     school_class = SchoolClass.query.get_or_404(class_id)
     academic_year = request.args.get('academic_year', get_current_academic_year())
+    selected_tab_id_raw = request.args.get('exam_tab_id', '').strip()
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
-    columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, active_only=True)
+    columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, exam_tab_id=int(selected_tab_id_raw) if selected_tab_id_raw else None, active_only=True)
+    selected_tab = overview.pop('_selected_tab', None)
+    tabs = overview.pop('_tabs', get_sats_exam_tabs(6, include_inactive=True))
     return render_template(
         'admin/sats.html',
         academic_year=academic_year,
@@ -226,11 +233,14 @@ def class_sats(class_id: int):
         class_options=SchoolClass.query.filter_by(year_group=6).order_by(SchoolClass.name).all(),
         selected_class_id=school_class.id,
         columns=columns,
-        all_columns=get_sats_columns(6, active_only=False),
+        all_columns=get_sats_columns(6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=False),
+        tabs=tabs,
+        selected_tab=selected_tab,
         rows=rows,
         overview=overview,
         class_summaries=[{'class': school_class, 'rows': rows, 'subject_totals': overview}],
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
+        sats_score_type_choices=SATS_SCORE_TYPES,
     )
 
 
@@ -436,6 +446,7 @@ def interventions():
 def sats():
     academic_year = request.values.get('academic_year', get_current_academic_year())
     selected_class_id = request.values.get('class_id', '').strip()
+    selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
 
     if request.method == 'POST':
         action = request.form.get('action', 'update_mode')
@@ -443,27 +454,49 @@ def sats():
             if action == 'update_mode':
                 set_tracker_mode(6, request.form.get('tracker_mode', 'sats'))
                 flash(f'Year 6 tracker mode changed to {get_tracker_mode_label(6)}.', 'success')
+            elif action == 'save_tab':
+                tab_id = int(request.form.get('tab_id', '0')) or None
+                tab = save_sats_tab({
+                    'year_group': 6,
+                    'name': request.form.get('tab_name', ''),
+                    'display_order': request.form.get('tab_display_order', '1'),
+                    'is_active': request.form.get('tab_is_active') == 'on',
+                }, tab_id=tab_id)
+                selected_tab_id_raw = str(tab.id)
+                flash('SATs exam tab saved.', 'success')
+            elif action == 'toggle_tab':
+                tab = toggle_sats_tab(int(request.form.get('tab_id', '0')))
+                selected_tab_id_raw = str(tab.id)
+                flash(f"{tab.name} is now {'shown' if tab.is_active else 'hidden'}.", 'success')
             elif action == 'save_column':
                 column_id = int(request.form.get('column_id', '0')) or None
+                exam_tab_id = int(request.form.get('exam_tab_id', '0') or selected_tab_id_raw or '0')
                 save_sats_column(6, {
                     'name': request.form.get('name', ''),
                     'subject': request.form.get('subject', ''),
+                    'score_type': request.form.get('score_type', 'paper'),
                     'max_marks': request.form.get('max_marks', '0'),
                     'pass_percentage': request.form.get('pass_percentage', '0'),
                     'display_order': request.form.get('display_order', '1'),
                     'is_active': request.form.get('is_active') == 'on',
-                }, column_id=column_id)
+                }, exam_tab_id=exam_tab_id, column_id=column_id)
+                selected_tab_id_raw = str(exam_tab_id)
                 flash('SATs column saved.', 'success')
             elif action == 'toggle_column':
                 column = toggle_sats_column(int(request.form.get('column_id', '0')))
+                selected_tab_id_raw = str(column.exam_tab_id)
                 flash(f"{column.name} is now {'shown' if column.is_active else 'hidden'}.", 'success')
             db.session.commit()
-            return redirect(url_for('admin.sats', academic_year=academic_year, class_id=selected_class_id or None))
+            return redirect(url_for('admin.sats', academic_year=academic_year, class_id=selected_class_id or None, exam_tab_id=selected_tab_id_raw or None))
         except (ValueError, SatsColumnValidationError) as exc:
             db.session.rollback()
             flash(f'SATs changes could not be saved: {exc}', 'danger')
 
-    overview = build_year6_sats_overview(academic_year, class_id=int(selected_class_id) if selected_class_id else None)
+    overview = build_year6_sats_overview(
+        academic_year,
+        class_id=int(selected_class_id) if selected_class_id else None,
+        exam_tab_id=int(selected_tab_id_raw) if selected_tab_id_raw else None,
+    )
     return render_template(
         'admin/sats.html',
         academic_year=academic_year,
@@ -473,11 +506,14 @@ def sats():
         class_options=SchoolClass.query.filter_by(year_group=6).order_by(SchoolClass.name).all(),
         selected_class_id=int(selected_class_id) if selected_class_id else None,
         columns=overview['columns'],
-        all_columns=get_sats_columns(6, active_only=False),
+        all_columns=get_sats_columns(6, exam_tab_id=overview['selected_tab'].id if overview.get('selected_tab') else None, active_only=False),
+        tabs=overview['tabs'],
+        selected_tab=overview['selected_tab'],
         rows=overview['rows'],
         overview=overview['class_summaries'][0]['subject_totals'] if len(overview['class_summaries']) == 1 else {},
         class_summaries=overview['class_summaries'],
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
+        sats_score_type_choices=SATS_SCORE_TYPES,
     )
 
 
@@ -620,7 +656,11 @@ def export_pupil_overview():
 @admin_required
 def export_sats():
     academic_year = request.args.get('academic_year', get_current_academic_year())
-    csv_text = export_sats_results_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
+    csv_text = export_sats_results_csv(
+        academic_year,
+        class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
+        exam_tab_id=int(request.args['exam_tab_id']) if request.args.get('exam_tab_id') else None,
+    )
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=sats_export.csv'})
 
 

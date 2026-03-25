@@ -22,6 +22,28 @@ class TrackerModeSetting(db.Model):
         return f'<TrackerModeSetting Y{self.year_group} {self.tracker_mode}>'
 
 
+class SatsExamTab(db.Model):
+    """Configurable SATs exam tabs (Autumn 1, Spring 1, Mock, etc.)."""
+
+    __tablename__ = 'sats_exam_tabs'
+    __table_args__ = (
+        db.Index('ix_sats_exam_tabs_year_order', 'year_group', 'display_order'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    year_group = db.Column(db.Integer, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    display_order = db.Column(db.Integer, nullable=False, default=1)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    columns = db.relationship('SatsColumnSetting', back_populates='exam_tab', cascade='all, delete-orphan', lazy='dynamic')
+
+    def __repr__(self) -> str:
+        return f'<SatsExamTab Y{self.year_group} {self.name}>'
+
+
 class SatsColumnSetting(db.Model):
     """Configurable Year 6 SATs assessment columns."""
 
@@ -32,8 +54,11 @@ class SatsColumnSetting(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
+    exam_tab_id = db.Column(db.Integer, db.ForeignKey('sats_exam_tabs.id'), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
     subject = db.Column(db.String(40), nullable=False, index=True)
+    score_type = db.Column(db.String(20), nullable=False, default='paper')
+    column_key = db.Column(db.String(60), nullable=True)
     max_marks = db.Column(db.Integer, nullable=False, default=40)
     pass_percentage = db.Column(db.Float, nullable=False, default=60.0)
     display_order = db.Column(db.Integer, nullable=False, default=1)
@@ -41,6 +66,7 @@ class SatsColumnSetting(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+    exam_tab = db.relationship('SatsExamTab', back_populates='columns')
     results = db.relationship('SatsColumnResult', back_populates='column', cascade='all, delete-orphan', lazy='dynamic')
 
     def __repr__(self) -> str:

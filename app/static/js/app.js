@@ -97,4 +97,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateGapTotals();
   });
+
+  document.querySelectorAll('.js-sats-sheet-form').forEach((form) => {
+    const calcSources = {
+      maths_raw_total: ['maths_arithmetic', 'maths_reasoning_1', 'maths_reasoning_2'],
+      reading_raw_total: ['reading_paper'],
+      spag_raw_total: ['spag_paper_1', 'spag_paper_2'],
+    };
+
+    const computeRowTotals = (pupilId) => {
+      Object.entries(calcSources).forEach(([targetKey, sourceKeys]) => {
+        const sourceInputs = sourceKeys
+          .map((key) => form.querySelector(`input[data-pupil-id="${pupilId}"][data-column-key="${key}"]`))
+          .filter((node) => node);
+        const target = form.querySelector(`input.js-sats-calc-output[data-pupil-id="${pupilId}"][data-column-key="${targetKey}"]`);
+        if (!target || !sourceInputs.length) return;
+
+        const numericValues = sourceInputs
+          .map((input) => (input.value === '' ? null : Number.parseFloat(input.value)))
+          .filter((value) => value !== null && !Number.isNaN(value));
+
+        target.value = numericValues.length ? `${numericValues.reduce((sum, value) => sum + value, 0)}` : '';
+      });
+    };
+
+    const pupilIds = new Set(
+      Array.from(form.querySelectorAll('input[data-pupil-id]')).map((input) => input.dataset.pupilId).filter((value) => value),
+    );
+    pupilIds.forEach((pupilId) => computeRowTotals(pupilId));
+
+    form.querySelectorAll('.js-sats-paper-input').forEach((input) => {
+      input.addEventListener('input', () => {
+        if (input.dataset.pupilId) {
+          computeRowTotals(input.dataset.pupilId);
+        }
+      });
+    });
+  });
 });

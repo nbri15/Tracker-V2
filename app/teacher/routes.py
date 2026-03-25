@@ -11,6 +11,7 @@ from app.services import (
     AUTO_REASON,
     SATS_ASSESSMENT_POINTS,
     SATS_COLUMN_SUBJECTS,
+    SATS_SCORE_TYPES,
     SATS_SUBJECTS,
     SATS_TRACKER_MODES,
     TERMS,
@@ -32,6 +33,7 @@ from app.services import (
     get_or_create_gap_template,
     get_result_outcome_theme,
     get_sats_columns,
+    get_sats_exam_tabs,
     get_subject_setting,
     get_tracker_mode,
     get_tracker_mode_label,
@@ -41,10 +43,12 @@ from app.services import (
     recalculate_subject_results_for_scope,
     save_gap_scores,
     save_sats_column,
+    save_sats_tab,
     save_sats_tracker_results,
     set_tracker_mode,
     sync_auto_interventions,
     toggle_sats_column,
+    toggle_sats_tab,
     update_assessment_setting,
     validate_setting_payload,
     SatsColumnValidationError,
@@ -248,6 +252,7 @@ def interventions():
 def sats_tracker():
     school_class = get_primary_class_for_user(current_user)
     academic_year = request.values.get('academic_year', get_current_academic_year())
+    selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
 
     if not school_class or school_class.year_group != 6:
         flash('The SATs tracker is only available for the Year 6 teacher.', 'warning')
@@ -262,32 +267,55 @@ def sats_tracker():
             if action == 'update_mode':
                 set_tracker_mode(6, request.form.get('tracker_mode', 'sats'))
                 flash(f'Year 6 tracker mode changed to {get_tracker_mode_label(6)}.', 'success')
+            elif action == 'save_tab':
+                tab_id = int(request.form.get('tab_id', '0')) or None
+                tab = save_sats_tab({
+                    'year_group': 6,
+                    'name': request.form.get('tab_name', ''),
+                    'display_order': request.form.get('tab_display_order', '1'),
+                    'is_active': request.form.get('tab_is_active') == 'on',
+                }, tab_id=tab_id)
+                selected_tab_id_raw = str(tab.id)
+                flash('SATs exam tab saved.', 'success')
+            elif action == 'toggle_tab':
+                tab = toggle_sats_tab(int(request.form.get('tab_id', '0')))
+                selected_tab_id_raw = str(tab.id)
+                flash(f"{tab.name} is now {'shown' if tab.is_active else 'hidden'}.", 'success')
             elif action == 'save_column':
                 column_id = int(request.form.get('column_id', '0')) or None
+                exam_tab_id = int(request.form.get('exam_tab_id', '0') or selected_tab_id_raw or '0')
                 save_sats_column(6, {
                     'name': request.form.get('name', ''),
                     'subject': request.form.get('subject', ''),
+                    'score_type': request.form.get('score_type', 'paper'),
                     'max_marks': request.form.get('max_marks', '0'),
                     'pass_percentage': request.form.get('pass_percentage', '0'),
                     'display_order': request.form.get('display_order', '1'),
                     'is_active': request.form.get('is_active') == 'on',
-                }, column_id=column_id)
+                }, exam_tab_id=exam_tab_id, column_id=column_id)
+                selected_tab_id_raw = str(exam_tab_id)
                 flash('SATs column saved.', 'success')
             elif action == 'toggle_column':
                 column = toggle_sats_column(int(request.form.get('column_id', '0')))
+                selected_tab_id_raw = str(column.exam_tab_id)
                 state = 'shown' if column.is_active else 'hidden'
                 flash(f'{column.name} is now {state}.', 'success')
             else:
-                columns = get_sats_columns(6, active_only=True)
+                exam_tab_id = int(request.form.get('exam_tab_id', '0') or selected_tab_id_raw or '0')
+                columns = get_sats_columns(6, exam_tab_id=exam_tab_id, active_only=True)
                 save_sats_tracker_results(pupils, academic_year, columns, request.form)
+                selected_tab_id_raw = str(exam_tab_id)
                 flash('SATs tracker saved.', 'success')
             db.session.commit()
-            return redirect(url_for('teacher.sats_tracker', academic_year=academic_year))
+            return redirect(url_for('teacher.sats_tracker', academic_year=academic_year, exam_tab_id=selected_tab_id_raw or None))
         except (ValueError, SatsColumnValidationError) as exc:
             db.session.rollback()
             flash(f'SATs changes could not be saved: {exc}', 'danger')
 
-    columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, active_only=True)
+    selected_tab_id = int(selected_tab_id_raw) if selected_tab_id_raw else None
+    columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, exam_tab_id=selected_tab_id, active_only=True)
+    selected_tab = overview.pop('_selected_tab', None)
+    tabs = overview.pop('_tabs', get_sats_exam_tabs(6, include_inactive=True))
     return render_template(
         'teacher/sats_tracker.html',
         school_class=school_class,
@@ -297,10 +325,13 @@ def sats_tracker():
         tracker_mode_label=get_tracker_mode_label(6),
         tracker_mode_options=SATS_TRACKER_MODES,
         columns=columns,
-        all_columns=get_sats_columns(6, active_only=False),
+        all_columns=get_sats_columns(6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=False),
+        tabs=tabs,
+        selected_tab=selected_tab,
         rows=rows,
         overview=overview,
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
+        sats_score_type_choices=SATS_SCORE_TYPES,
     )
 
 
