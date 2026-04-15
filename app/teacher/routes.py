@@ -213,7 +213,7 @@ def interventions():
                 db.session.add(record)
                 flash('Manual intervention added.', 'success')
             else:
-                for record in Intervention.query.join(Intervention.pupil).filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id).all():
+                for record in Intervention.query.join(Intervention.pupil).filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True)).all():
                     record.note = request.form.get(f'note_{record.id}', '').strip() or None
                     record.is_active = request.form.get(f'active_{record.id}') == 'on'
                     db.session.add(record)
@@ -226,7 +226,7 @@ def interventions():
 
     interventions = (
         Intervention.query.join(Intervention.pupil)
-        .filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id)
+        .filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True))
         .order_by(Intervention.is_active.desc(), Intervention.auto_flagged.desc(), Pupil.last_name, Pupil.first_name)
         .all()
     )

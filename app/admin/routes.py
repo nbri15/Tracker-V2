@@ -6,7 +6,20 @@ from flask import Response, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 
 from app.extensions import db
-from app.models import AssessmentSetting, Pupil, SchoolClass, User
+from app.models import (
+    AssessmentSetting,
+    GapScore,
+    Intervention,
+    Pupil,
+    PupilClassHistory,
+    SatsColumnResult,
+    SatsResult,
+    SatsWritingResult,
+    SchoolClass,
+    SubjectResult,
+    User,
+    WritingResult,
+)
 from app.services import (
     BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
@@ -19,6 +32,7 @@ from app.services import (
     AssessmentValidationError,
     CsvImportError,
     SatsColumnValidationError,
+    apply_admin_pupil_filters,
     build_admin_pupil_filter_state,
     build_sort_indicator,
     build_table_sort_state,
@@ -84,6 +98,38 @@ def _teacher_options():
 
 CLASS_DETAIL_SUBJECT_SORT_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label'}
 CLASS_DETAIL_WRITING_SORT_COLUMNS = {'name', 'band_label', 'notes'}
+PUPIL_STATUS_FILTER_CHOICES = (
+    ('active', 'Active pupils only'),
+    ('all', 'Include archived pupils'),
+    ('archived', 'Archived pupils only'),
+)
+PUPIL_LINKED_MODELS = (
+    ('subject results', SubjectResult),
+    ('writing results', WritingResult),
+    ('GAP scores', GapScore),
+    ('interventions', Intervention),
+    ('SATs results', SatsResult),
+    ('SATs writing results', SatsWritingResult),
+    ('SATs column results', SatsColumnResult),
+    ('class history records', PupilClassHistory),
+)
+
+
+def _linked_pupil_record_counts(pupil_id: int) -> dict[str, int]:
+    return {
+        label: model.query.filter_by(pupil_id=pupil_id).count()
+        for label, model in PUPIL_LINKED_MODELS
+    }
+
+
+def _linked_record_summary(linked_counts: dict[str, int]) -> str:
+    populated = [f'{label}: {count}' for label, count in linked_counts.items() if count]
+    return ', '.join(populated)
+
+
+def _pupil_action_redirect():
+    next_url = request.form.get('next', '').strip()
+    return redirect(next_url or url_for('admin.pupils'))
 
 
 def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
@@ -206,7 +252,11 @@ def class_detail(class_id: int):
         'admin/class_detail.html',
         academic_year=academic_year,
         boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
-        gender_options=get_gender_filter_options(class_id=school_class.id),
+        gender_options=get_gender_filter_options(
+            class_id=school_class.id,
+            include_inactive=pupil_filters.get('pupil_status') != 'active',
+        ),
+        pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
         sort_state=sort_state,
         header_state=header_state,
         **context,
@@ -308,8 +358,60 @@ def users():
 @login_required
 @admin_required
 def pupils():
-    pupils = Pupil.query.order_by(Pupil.last_name, Pupil.first_name).all()
-    return render_template('admin/pupils.html', pupils=pupils)
+    pupil_filters = build_admin_pupil_filter_state(request.args)
+    class_id_raw = request.args.get('class_id', '').strip()
+
+    query = apply_admin_pupil_filters(Pupil.query, pupil_filters)
+    if class_id_raw:
+        query = query.filter(Pupil.class_id == int(class_id_raw))
+    pupils = query.order_by(Pupil.last_name, Pupil.first_name).all()
+    return render_template(
+        'admin/pupils.html',
+        pupils=pupils,
+        pupil_filters=pupil_filters,
+        pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
+        class_id_filter=class_id_raw,
+        class_options=SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all(),
+    )
+
+
+@admin_bp.route('/pupils/manage', methods=['POST'])
+@login_required
+@admin_required
+def manage_pupil():
+    pupil = Pupil.query.get_or_404(int(request.form.get('pupil_id', '0')))
+    action = request.form.get('action', '').strip()
+    linked_counts = _linked_pupil_record_counts(pupil.id)
+    has_linked_data = any(linked_counts.values())
+
+    try:
+        if action == 'archive':
+            pupil.is_active = False
+            db.session.add(pupil)
+            db.session.commit()
+            flash(f'Archived {pupil.full_name}. They are now hidden from active lists.', 'success')
+        elif action == 'restore':
+            pupil.is_active = True
+            db.session.add(pupil)
+            db.session.commit()
+            flash(f'Restored {pupil.full_name}. They are active again.', 'success')
+        elif action == 'delete':
+            if has_linked_data:
+                summary = _linked_record_summary(linked_counts)
+                flash(
+                    f'Permanent delete blocked for {pupil.full_name}. Linked data exists ({summary}). Archive this pupil instead.',
+                    'danger',
+                )
+                return _pupil_action_redirect()
+            db.session.delete(pupil)
+            db.session.commit()
+            flash(f'Permanently deleted {pupil.full_name}.', 'success')
+        else:
+            flash('Unknown pupil action.', 'warning')
+    except ValueError as exc:
+        db.session.rollback()
+        flash(f'Pupil action failed: {exc}', 'danger')
+    return _pupil_action_redirect()
 
 
 def _parse_setting_form(prefix: str = '') -> dict:

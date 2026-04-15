@@ -4,10 +4,43 @@
 {% set page_heading = 'Pupils' %}
 
 {% block content %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>Pupil filters</strong></div>
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Pupil status</label>
+        <select name="pupil_status" class="form-select form-select-sm">
+          {% for value, label in pupil_status_filter_choices %}
+            <option value="{{ value }}" {% if pupil_filters.pupil_status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Class</label>
+        <select name="class_id" class="form-select form-select-sm">
+          <option value="">All classes</option>
+          {% for school_class in class_options %}
+            <option value="{{ school_class.id }}" {% if class_id_filter == school_class.id|string %}selected{% endif %}>Year {{ school_class.year_group }} · {{ school_class.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Pupil search</label>
+        <input type="text" name="search" class="form-control form-control-sm" value="{{ pupil_filters.search }}" placeholder="First or last name">
+      </div>
+      <div class="col-md-3 d-flex gap-2 justify-content-md-end">
+        <button class="btn btn-primary btn-sm">Apply</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils') }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="card shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <strong>Pupil directory</strong>
-    <span class="badge text-bg-secondary">Phase 1 placeholder</span>
+    <span class="small text-muted">{{ pupils|length }} record(s)</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
@@ -15,10 +48,12 @@
         <tr>
           <th>Name</th>
           <th>Class</th>
+          <th>Status</th>
           <th>Gender</th>
           <th>PP</th>
           <th>LAPS</th>
           <th>Service child</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -26,13 +61,28 @@
           <tr>
             <td>{{ pupil.full_name }}</td>
             <td>{{ pupil.school_class.name }}</td>
+            <td>{{ 'Active' if pupil.is_active else 'Archived' }}</td>
             <td>{{ pupil.gender }}</td>
             <td>{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
             <td>{{ 'Yes' if pupil.laps else 'No' }}</td>
             <td>{{ 'Yes' if pupil.service_child else 'No' }}</td>
+            <td class="text-nowrap">
+              <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
+                <input type="hidden" name="pupil_id" value="{{ pupil.id }}">
+                <input type="hidden" name="action" value="{{ 'archive' if pupil.is_active else 'restore' }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button class="btn btn-outline-secondary btn-sm" onclick="return confirm('{{ 'Archive' if pupil.is_active else 'Restore' }} {{ pupil.full_name }}? {{ 'Archive keeps all historical data and hides the pupil from active lists.' if pupil.is_active else 'Restore returns the pupil to active lists.' }}');">{{ 'Archive' if pupil.is_active else 'Restore' }}</button>
+              </form>
+              <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
+                <input type="hidden" name="pupil_id" value="{{ pupil.id }}">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanently delete {{ pupil.full_name }}? This cannot be undone. Delete only succeeds when no linked records exist; otherwise archive instead.');">Delete</button>
+              </form>
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-center py-4 text-muted">No pupils available.</td></tr>
+          <tr><td colspan="8" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
         {% endfor %}
       </tbody>
     </table>

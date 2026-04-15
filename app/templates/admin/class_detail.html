@@ -15,7 +15,7 @@
 {% macro sort_link(column, label) -%}
   {% set state = header_state[column] %}
   <a
-    href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject, term=selected_term if selected_subject != 'sats' else None, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search, sort=column, direction=state.next_direction) }}"
+    href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject, term=selected_term if selected_subject != 'sats' else None, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search, sort=column, direction=state.next_direction) }}"
     class="table-sort-link{% if state.active %} active{% endif %}"
   >
     <span>{{ label }}</span>
@@ -72,6 +72,14 @@
     <form method="get" class="row g-2 align-items-end compact-filter-row">
       {{ filter_hidden_fields() }}
       <div class="col-md-2">
+        <label class="form-label">Pupil status</label>
+        <select name="pupil_status" class="form-select form-select-sm">
+          {% for value, label in pupil_status_filter_choices %}
+            <option value="{{ value }}" {% if filters.pupil_status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
         <label class="form-label">Gender</label>
         <select name="gender" class="form-select form-select-sm">
           <option value="all" {% if filters.gender == 'all' %}selected{% endif %}>All</option>
@@ -104,7 +112,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-2">
+      <div class="col-md-1">
         <label class="form-label">Pupil search</label>
         <input type="text" name="search" class="form-control form-control-sm" value="{{ filters.search }}" placeholder="Name">
       </div>
@@ -131,7 +139,7 @@
 <ul class="nav nav-tabs mb-3">
   {% for subject in available_subjects %}
     <li class="nav-item">
-      <a class="nav-link {% if selected_subject == subject %}active{% endif %}" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=subject, term=selected_term if subject != 'sats' else None, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search) }}">{{ 'SATs' if subject == 'sats' else ('SPaG' if subject == 'spag' else subject|replace('_', ' ')|title) }}</a>
+      <a class="nav-link {% if selected_subject == subject %}active{% endif %}" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=subject, term=selected_term if subject != 'sats' else None, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search) }}">{{ 'SATs' if subject == 'sats' else ('SPaG' if subject == 'spag' else subject|replace('_', ' ')|title) }}</a>
     </li>
   {% endfor %}
 </ul>
@@ -147,6 +155,7 @@
         <thead class="table-light">
           <tr>
             <th>{{ sort_link('name', 'Pupil') }}</th>
+            <th>Status</th>
             <th>Gender</th>
             <th>PP</th>
             <th>LAPS</th>
@@ -162,6 +171,7 @@
               <th>{{ sort_link('band_label', 'Writing judgement') }}</th>
               <th>{{ sort_link('notes', 'Notes') }}</th>
             {% endif %}
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -171,6 +181,7 @@
                 <div class="fw-semibold">{{ row.name }}</div>
                 <div class="small text-muted">{{ row.flags }}</div>
               </td>
+              <td>{{ 'Active' if row.pupil.is_active else 'Archived' }}</td>
               <td>{{ row.gender }}</td>
               <td>{{ 'Yes' if row.pupil_premium else 'No' }}</td>
               <td>{{ 'Yes' if row.laps else 'No' }}</td>
@@ -198,10 +209,24 @@
                 </td>
                 <td>{{ row.notes or '—' }}</td>
               {% endif %}
+              <td class="text-nowrap">
+                <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
+                  <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
+                  <input type="hidden" name="action" value="{{ 'archive' if row.pupil.is_active else 'restore' }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <button class="btn btn-outline-secondary btn-sm" onclick="return confirm('{{ 'Archive' if row.pupil.is_active else 'Restore' }} {{ row.name }}? {{ 'This will hide them from active lists but keep historical data.' if row.pupil.is_active else 'This will return them to active lists.' }}');">{{ 'Archive' if row.pupil.is_active else 'Restore' }}</button>
+                </form>
+                <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
+                  <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanent delete {{ row.name }}? This cannot be undone. Delete only works when no linked records exist; otherwise archive should be used.');">Delete</button>
+                </form>
+              </td>
             </tr>
           {% else %}
             <tr>
-              <td colspan="{% if selected_subject in ['maths', 'reading', 'spag'] %}11{% else %}7{% endif %}" class="text-center py-4 text-muted">No pupils match the current filters.</td>
+              <td colspan="{% if selected_subject in ['maths', 'reading', 'spag'] %}13{% else %}9{% endif %}" class="text-center py-4 text-muted">No pupils match the current filters.</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -219,6 +244,7 @@
         <thead class="table-light">
           <tr>
             <th>Pupil</th>
+            <th>Status</th>
             <th>Gender</th>
             <th>PP</th>
             <th>LAPS</th>
@@ -227,6 +253,7 @@
             <th>Maths latest</th>
             <th>SPaG latest</th>
             <th>Writing latest</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -236,6 +263,7 @@
                 <div class="fw-semibold">{{ row.name }}</div>
                 <div class="small text-muted">{{ row.flags }}</div>
               </td>
+              <td>{{ 'Active' if row.pupil.is_active else 'Archived' }}</td>
               <td>{{ row.gender }}</td>
               <td>{{ 'Yes' if row.pupil_premium else 'No' }}</td>
               <td>{{ 'Yes' if row.laps else 'No' }}</td>
@@ -244,10 +272,24 @@
               <td>{{ row.subjects.maths.latest_scaled if row.subjects.maths.latest_scaled is not none else '—' }}</td>
               <td>{{ row.subjects.spag.latest_scaled if row.subjects.spag.latest_scaled is not none else '—' }}</td>
               <td>{{ row.writing.latest_band }}</td>
+              <td class="text-nowrap">
+                <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
+                  <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
+                  <input type="hidden" name="action" value="{{ 'archive' if row.pupil.is_active else 'restore' }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <button class="btn btn-outline-secondary btn-sm" onclick="return confirm('{{ 'Archive' if row.pupil.is_active else 'Restore' }} {{ row.name }}?');">{{ 'Archive' if row.pupil.is_active else 'Restore' }}</button>
+                </form>
+                <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
+                  <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="next" value="{{ request.full_path }}">
+                  <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanent delete {{ row.name }}? This cannot be undone and is blocked if linked records exist.');">Delete</button>
+                </form>
+              </td>
             </tr>
           {% else %}
             <tr>
-              <td colspan="9" class="text-center py-4 text-muted">No SATs records match the current filters.</td>
+              <td colspan="11" class="text-center py-4 text-muted">No SATs records match the current filters.</td>
             </tr>
           {% endfor %}
         </tbody>
