@@ -272,6 +272,12 @@ def apply_pupil_subgroup(query, subgroup: str):
 def apply_admin_pupil_filters(query, filters: dict | None = None):
     filters = filters or {}
 
+    pupil_status = (filters.get('pupil_status') or 'active').strip().lower()
+    if pupil_status == 'active':
+        query = query.filter(Pupil.is_active.is_(True))
+    elif pupil_status == 'archived':
+        query = query.filter(Pupil.is_active.is_(False))
+
     gender = (filters.get('gender') or '').strip()
     if gender and gender != 'all':
         query = query.filter(Pupil.gender == gender)
@@ -302,6 +308,7 @@ def apply_pupil_filters(query, *, subgroup: str = 'all', filters: dict | None = 
 
 def build_admin_pupil_filter_state(args) -> dict:
     return {
+        'pupil_status': (args.get('pupil_status', 'active') or 'active').strip() or 'active',
         'gender': (args.get('gender', 'all') or 'all').strip() or 'all',
         'pupil_premium': (args.get('pupil_premium', 'all') or 'all').strip() or 'all',
         'laps': (args.get('laps', 'all') or 'all').strip() or 'all',
@@ -406,8 +413,10 @@ def sort_writing_result_rows(rows: list[dict], sort_column: str, sort_direction:
     return sorted(rows, key=_name_sort_key)
 
 
-def get_gender_filter_options(*, class_id: int | None = None) -> list[str]:
-    query = db.session.query(Pupil.gender).filter(Pupil.is_active.is_(True))
+def get_gender_filter_options(*, class_id: int | None = None, include_inactive: bool = False) -> list[str]:
+    query = db.session.query(Pupil.gender)
+    if not include_inactive:
+        query = query.filter(Pupil.is_active.is_(True))
     if class_id is not None:
         query = query.filter(Pupil.class_id == class_id)
     genders = [value for (value,) in query.distinct().order_by(Pupil.gender).all() if value]
@@ -702,7 +711,7 @@ def _build_class_detail_subject_rows(
     sort_direction: str = 'asc',
 ) -> tuple[list[Pupil], list[dict]]:
     pupils = apply_admin_pupil_filters(
-        school_class.pupils.filter_by(is_active=True),
+        school_class.pupils,
         filters,
     ).order_by(Pupil.last_name, Pupil.first_name).all()
 
@@ -768,7 +777,7 @@ def _build_class_detail_subject_rows(
 
 def _build_class_detail_sats_rows(school_class: SchoolClass, academic_year: str, filters: dict | None = None) -> list[dict]:
     pupils = apply_admin_pupil_filters(
-        school_class.pupils.filter_by(is_active=True),
+        school_class.pupils,
         filters,
     ).order_by(Pupil.last_name, Pupil.first_name).all()
     rows = []
@@ -826,7 +835,7 @@ def get_class_detail_context(
     active_subject = subject if subject in available_subjects else 'maths'
 
     filtered_pupils = apply_admin_pupil_filters(
-        school_class.pupils.filter_by(is_active=True),
+        school_class.pupils,
         filters,
     ).order_by(Pupil.last_name, Pupil.first_name).all()
 

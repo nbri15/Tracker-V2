@@ -49,7 +49,7 @@ def teacher_dashboard():
     summary_rows = build_dashboard_summary(school_class.id if school_class else None, academic_year)
     active_interventions = (
         Intervention.query.join(Intervention.pupil)
-        .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.class_id == school_class.id)
+        .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True))
         .order_by(Pupil.last_name, Pupil.first_name)
         .all()
         if school_class
