@@ -44,6 +44,23 @@ CALCULATION_KEY_MAP = {
 }
 
 
+def _sync_raw_column_max_marks(year_group: int, exam_tab_id: int) -> None:
+    """Keep raw total max marks aligned to the sum of their source paper columns."""
+    columns = get_sats_columns(year_group, exam_tab_id=exam_tab_id, active_only=False)
+    keyed = {column.column_key: column for column in columns if column.column_key}
+    for raw_key, source_keys in CALCULATION_KEY_MAP.items():
+        raw_column = keyed.get(raw_key)
+        if not raw_column:
+            continue
+        source_columns = [keyed[source_key] for source_key in source_keys if keyed.get(source_key)]
+        if not source_columns:
+            continue
+        recalculated_max = sum(column.max_marks for column in source_columns)
+        if raw_column.max_marks != recalculated_max:
+            raw_column.max_marks = recalculated_max
+            db.session.add(raw_column)
+
+
 class SatsColumnValidationError(ValueError):
     """Raised when a SATs column payload is invalid."""
 
@@ -176,7 +193,7 @@ def validate_sats_column_payload(payload: dict) -> dict:
     return cleaned
 
 
-def save_sats_column(year_group: int, exam_tab_id: int, payload: dict, column_id: int | None = None) -> SatsColumnSetting:
+def save_sats_column(year_group: int, payload: dict, *, exam_tab_id: int, column_id: int | None = None) -> SatsColumnSetting:
     cleaned = validate_sats_column_payload(payload)
     column = SatsColumnSetting.query.get(column_id) if column_id else None
     if column_id and not column:
@@ -192,6 +209,7 @@ def save_sats_column(year_group: int, exam_tab_id: int, payload: dict, column_id
         column.column_key = None
     db.session.add(column)
     db.session.flush()
+    _sync_raw_column_max_marks(year_group, exam_tab_id)
     return column
 
 

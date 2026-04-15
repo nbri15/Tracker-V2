@@ -121,6 +121,22 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     };
 
+    const applyScaledTheme = (input) => {
+      const cell = input.closest('td');
+      if (!cell) return;
+      cell.classList.remove('sats-scaled-low', 'sats-scaled-pass', 'sats-scaled-high');
+      if (input.value === '') return;
+      const value = Number.parseFloat(input.value);
+      if (Number.isNaN(value)) return;
+      if (value < 100) {
+        cell.classList.add('sats-scaled-low');
+      } else if (value >= 110) {
+        cell.classList.add('sats-scaled-high');
+      } else {
+        cell.classList.add('sats-scaled-pass');
+      }
+    };
+
     const pupilIds = new Set(
       Array.from(form.querySelectorAll('input[data-pupil-id]')).map((input) => input.dataset.pupilId).filter((value) => value),
     );
@@ -132,6 +148,11 @@ document.addEventListener('DOMContentLoaded', () => {
           computeRowTotals(input.dataset.pupilId);
         }
       });
+    });
+
+    form.querySelectorAll('.js-sats-scaled-input').forEach((input) => {
+      applyScaledTheme(input);
+      input.addEventListener('input', () => applyScaledTheme(input));
     });
   });
 });

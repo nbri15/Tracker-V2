@@ -85,6 +85,50 @@
       <div class="col-md-1"><label class="form-label">Order</label><input type="number" min="1" class="form-control" name="display_order" value="{{ all_columns|length + 1 }}" required></div>
       <div class="col-md-1"><button class="btn btn-outline-primary w-100">Add</button></div>
     </form>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr><th>Name</th><th>Type</th><th>Max score</th><th>Order</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for column in all_columns %}
+            <tr>
+              <td>{{ column.name }}</td>
+              <td>{{ sats_score_type_choices[column.score_type] }}</td>
+              <td>
+                <form method="post" class="d-flex gap-2 align-items-center">
+                  <input type="hidden" name="action" value="save_column">
+                  <input type="hidden" name="column_id" value="{{ column.id }}">
+                  <input type="hidden" name="academic_year" value="{{ academic_year }}">
+                  <input type="hidden" name="exam_tab_id" value="{{ selected_tab.id }}">
+                  <input type="hidden" name="name" value="{{ column.name }}">
+                  <input type="hidden" name="subject" value="{{ column.subject }}">
+                  <input type="hidden" name="score_type" value="{{ column.score_type }}">
+                  <input type="hidden" name="pass_percentage" value="{{ column.pass_percentage }}">
+                  <input type="hidden" name="display_order" value="{{ column.display_order }}">
+                  <label for="teacher_max_{{ column.id }}" class="visually-hidden">Max score for {{ column.name }}</label>
+                  <input id="teacher_max_{{ column.id }}" type="number" min="1" class="form-control form-control-sm" name="max_marks" value="{{ column.max_marks }}" aria-label="Max score for {{ column.name }}">
+                  <button class="btn btn-outline-primary btn-sm">Save</button>
+                </form>
+              </td>
+              <td>{{ column.display_order }}</td>
+              <td>{{ 'Visible' if column.is_active else 'Hidden' }}</td>
+              <td>
+                <form method="post">
+                  <input type="hidden" name="action" value="toggle_column">
+                  <input type="hidden" name="column_id" value="{{ column.id }}">
+                  <input type="hidden" name="academic_year" value="{{ academic_year }}">
+                  {% if selected_tab %}<input type="hidden" name="exam_tab_id" value="{{ selected_tab.id }}">{% endif %}
+                  <button class="btn btn-outline-secondary btn-sm">{{ 'Hide' if column.is_active else 'Show' }}</button>
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-3">No columns in this tab yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% endif %}
   </div>
 </div>
@@ -121,11 +165,22 @@
                 {% for column in columns %}
                   {% set result = row.results[column.id] %}
                   {% set calc_value = row.calculated_values.get(column.column_key) %}
-                  <td class="sats-col">
+                  {% set scaled_value = result.raw_score if result else none %}
+                  {% set scaled_theme = '' %}
+                  {% if column.score_type == 'scaled' and scaled_value is not none %}
+                    {% if scaled_value < 100 %}
+                      {% set scaled_theme = 'sats-scaled-low' %}
+                    {% elif scaled_value >= 110 %}
+                      {% set scaled_theme = 'sats-scaled-high' %}
+                    {% else %}
+                      {% set scaled_theme = 'sats-scaled-pass' %}
+                    {% endif %}
+                  {% endif %}
+                  <td class="sats-col {% if column.score_type == 'scaled' %}sats-scaled-cell{% endif %} {{ scaled_theme }}">
                     {% if column.score_type == 'raw' %}
                       <input type="number" class="form-control form-control-sm js-sats-calc-output" value="{{ calc_value if calc_value is not none else (result.raw_score if result else '') }}" readonly data-column-key="{{ column.column_key or '' }}" data-pupil-id="{{ row.pupil.id }}">
                     {% else %}
-                      <input type="number" min="0" max="{{ column.max_marks }}" class="form-control form-control-sm {% if column.score_type == 'paper' %}js-sats-paper-input{% endif %}" name="column_{{ column.id }}_{{ row.pupil.id }}" value="{{ result.raw_score if result else '' }}" data-column-key="{{ column.column_key or '' }}" data-pupil-id="{{ row.pupil.id }}">
+                      <input type="number" min="0" max="{{ column.max_marks }}" class="form-control form-control-sm {% if column.score_type == 'paper' %}js-sats-paper-input{% endif %}{% if column.score_type == 'scaled' %} js-sats-scaled-input{% endif %}" name="column_{{ column.id }}_{{ row.pupil.id }}" value="{{ result.raw_score if result else '' }}" data-column-key="{{ column.column_key or '' }}" data-pupil-id="{{ row.pupil.id }}">
                     {% endif %}
                   </td>
                 {% endfor %}
