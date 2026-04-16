@@ -14,12 +14,17 @@ from app.services import (
     SATS_COLUMN_SUBJECTS,
     SATS_SCORE_TYPES,
     SATS_SUBJECTS,
+    RECEPTION_AREAS,
+    RECEPTION_STATUS_CHOICES,
+    RECEPTION_TRACKING_POINTS,
     SATS_TRACKER_MODES,
     TERMS,
     WRITING_BAND_CHOICES,
     AssessmentValidationError,
     apply_admin_pupil_filters,
     build_academic_year_options,
+    build_reception_summary,
+    build_reception_tracker_rows,
     build_admin_pupil_filter_state,
     build_gap_page_context,
     build_sort_indicator,
@@ -32,16 +37,19 @@ from app.services import (
     get_gender_filter_options,
     get_next_sort_direction,
     get_or_create_gap_template,
+    get_reception_class,
     get_result_outcome_theme,
     get_sats_columns,
     get_sats_exam_tabs,
     get_subject_setting,
+    get_tracking_point_key,
     get_tracker_mode,
     get_tracker_mode_label,
     get_writing_band_label,
     get_writing_outcome_theme,
     parse_question_columns,
     recalculate_subject_results_for_scope,
+    save_reception_tracker_entries,
     save_gap_scores,
     save_sats_column,
     save_sats_tab,
@@ -52,6 +60,7 @@ from app.services import (
     toggle_sats_tab,
     update_assessment_setting,
     validate_setting_payload,
+    ReceptionTrackerValidationError,
     SatsColumnValidationError,
     sort_subject_result_rows,
     sort_writing_result_rows,
@@ -345,6 +354,47 @@ def sats_tracker():
         overview=overview,
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
         sats_score_type_choices=SATS_SCORE_TYPES,
+    )
+
+
+@teacher_bp.route('/reception', methods=['GET', 'POST'])
+@login_required
+@teacher_required
+def reception_tracker():
+    school_class = get_primary_class_for_user(current_user)
+    reception_class = get_reception_class()
+    if not reception_class or not school_class or school_class.id != reception_class.id:
+        flash('The Reception tracker is only available for the Reception teacher.', 'warning')
+        return redirect(url_for('dashboards.teacher_dashboard'))
+
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    tracking_point = get_tracking_point_key(request.values.get('tracking_point'))
+    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+
+    if request.method == 'POST':
+        tracking_point = get_tracking_point_key(request.form.get('tracking_point'))
+        try:
+            save_reception_tracker_entries(pupils, academic_year, tracking_point, request.form)
+            db.session.commit()
+            flash(f'Reception tracker saved for {dict(RECEPTION_TRACKING_POINTS)[tracking_point]}.', 'success')
+            return redirect(url_for('teacher.reception_tracker', academic_year=academic_year, tracking_point=tracking_point))
+        except ReceptionTrackerValidationError as exc:
+            db.session.rollback()
+            flash(f'Reception tracker could not be saved: {exc}', 'danger')
+
+    rows = build_reception_tracker_rows(pupils, academic_year, tracking_point)
+    summary = build_reception_summary(rows)
+    return render_template(
+        'teacher/reception_tracker.html',
+        school_class=school_class,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        tracking_points=RECEPTION_TRACKING_POINTS,
+        selected_tracking_point=tracking_point,
+        areas=RECEPTION_AREAS,
+        status_choices=RECEPTION_STATUS_CHOICES,
+        rows=rows,
+        summary=summary,
     )
 
 

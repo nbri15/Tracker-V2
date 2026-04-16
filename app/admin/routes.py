@@ -28,6 +28,9 @@ from app.services import (
     CLASS_SORT_OPTIONS,
     CORE_SUBJECTS,
     SATS_COLUMN_SUBJECTS,
+    RECEPTION_AREAS,
+    RECEPTION_STATUS_CHOICES,
+    RECEPTION_TRACKING_POINTS,
     SATS_SCORE_TYPES,
     SATS_TRACKER_MODES,
     SUBGROUP_FILTERS,
@@ -36,11 +39,14 @@ from app.services import (
     CsvImportError,
     SatsColumnValidationError,
     apply_admin_pupil_filters,
+    build_academic_year_options,
     build_admin_pupil_filter_state,
     build_sort_indicator,
     build_table_sort_state,
     build_class_overview_row,
     build_headline_report,
+    build_reception_summary,
+    build_reception_tracker_rows,
     build_sats_tracker_rows,
     build_subject_overview_cards,
     build_year6_sats_overview,
@@ -63,9 +69,11 @@ from app.services import (
     get_next_sort_direction,
     get_history_rows,
     get_or_create_assessment_setting,
+    get_reception_class,
     get_sats_columns,
     get_sats_exam_tabs,
     get_setting_defaults,
+    get_tracking_point_key,
     get_tracker_mode,
     get_tracker_mode_label,
     import_combined_results,
@@ -75,6 +83,7 @@ from app.services import (
     parse_uploaded_csv,
     promote_pupils_to_next_year,
     save_sats_column,
+    save_reception_tracker_entries,
     save_sats_tab,
     set_tracker_mode,
     snapshot_pupil_history,
@@ -83,6 +92,7 @@ from app.services import (
     toggle_sats_column,
     toggle_sats_tab,
     update_assessment_setting,
+    ReceptionTrackerValidationError,
     validate_setting_payload,
 )
 from app.utils import admin_required
@@ -295,6 +305,46 @@ def class_sats(class_id: int):
         class_summaries=[{'class': school_class, 'rows': rows, 'subject_totals': overview}],
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
         sats_score_type_choices=SATS_SCORE_TYPES,
+    )
+
+
+@admin_bp.route('/reception', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def reception_tracker():
+    school_class = get_reception_class()
+    if not school_class:
+        flash('Reception class has not been created yet. Open Users and run Sync defaults or create Reception class.', 'warning')
+        return redirect(url_for('admin.classes'))
+
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    tracking_point = get_tracking_point_key(request.values.get('tracking_point'))
+    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+
+    if request.method == 'POST':
+        tracking_point = get_tracking_point_key(request.form.get('tracking_point'))
+        try:
+            save_reception_tracker_entries(pupils, academic_year, tracking_point, request.form)
+            db.session.commit()
+            flash(f'Reception tracker saved for {dict(RECEPTION_TRACKING_POINTS)[tracking_point]}.', 'success')
+            return redirect(url_for('admin.reception_tracker', academic_year=academic_year, tracking_point=tracking_point))
+        except ReceptionTrackerValidationError as exc:
+            db.session.rollback()
+            flash(f'Reception tracker could not be saved: {exc}', 'danger')
+
+    rows = build_reception_tracker_rows(pupils, academic_year, tracking_point)
+    summary = build_reception_summary(rows)
+    return render_template(
+        'admin/reception_tracker.html',
+        school_class=school_class,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        tracking_points=RECEPTION_TRACKING_POINTS,
+        selected_tracking_point=tracking_point,
+        areas=RECEPTION_AREAS,
+        status_choices=RECEPTION_STATUS_CHOICES,
+        rows=rows,
+        summary=summary,
     )
 
 

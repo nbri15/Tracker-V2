@@ -2,7 +2,54 @@
 {% block title %}Teacher dashboard{% endblock %}
 {% set page_heading = 'Teacher dashboard' %}
 {% block content %}
-<div class="row g-4 mb-4"><div class="col-lg-4"><div class="card shadow-sm h-100"><div class="card-body"><p class="text-muted mb-2">Assigned class</p><h3 class="h4">{{ school_class.name if school_class else 'No class assigned' }}</h3><p class="mb-1">Pupil count: <strong>{{ pupil_count }}</strong></p><p class="mb-1">Tracker mode: <strong>{{ tracker_mode_label }}</strong></p><p class="text-muted mb-0 small">Summary year: {{ academic_year }}</p></div></div></div>{% for subject in ['maths', 'reading', 'spag', 'writing'] %}<div class="col-sm-6 col-lg-2"><div class="card shadow-sm h-100 quick-link-card"><div class="card-body"><p class="text-muted small mb-2">{{ format_subject_name(subject) }}</p><h3 class="h5">Open entry page</h3><a href="{{ url_for('teacher.' ~ subject) }}" class="stretched-link text-decoration-none">Go to {{ format_subject_name(subject) }}</a></div></div></div>{% endfor %}<div class="col-sm-6 col-lg-2"><div class="card shadow-sm h-100 quick-link-card"><div class="card-body"><p class="text-muted small mb-2">Year 6 SATs</p><h3 class="h5">Open tracker</h3><a href="{{ url_for('teacher.sats_tracker') }}" class="stretched-link text-decoration-none">Open SATs page</a></div></div></div></div>
+{% set is_reception = school_class and school_class.year_group == 0 %}
+<div class="row g-4 mb-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <p class="text-muted mb-2">Assigned class</p>
+        <h3 class="h4">{{ school_class.name if school_class else 'No class assigned' }}</h3>
+        <p class="mb-1">Pupil count: <strong>{{ pupil_count }}</strong></p>
+        <p class="mb-1">Tracker mode: <strong>{{ tracker_mode_label }}</strong></p>
+        <p class="text-muted mb-0 small">Summary year: {{ academic_year }}</p>
+      </div>
+    </div>
+  </div>
+  {% if is_reception %}
+    <div class="col-sm-6 col-lg-3">
+      <div class="card shadow-sm h-100 quick-link-card">
+        <div class="card-body">
+          <p class="text-muted small mb-2">Reception EYFS</p>
+          <h3 class="h5">Open tracker</h3>
+          <a href="{{ url_for('teacher.reception_tracker') }}" class="stretched-link text-decoration-none">Open Reception tracker</a>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    {% for subject in ['maths', 'reading', 'spag', 'writing'] %}
+      <div class="col-sm-6 col-lg-2">
+        <div class="card shadow-sm h-100 quick-link-card">
+          <div class="card-body">
+            <p class="text-muted small mb-2">{{ format_subject_name(subject) }}</p>
+            <h3 class="h5">Open entry page</h3>
+            <a href="{{ url_for('teacher.' ~ subject) }}" class="stretched-link text-decoration-none">Go to {{ format_subject_name(subject) }}</a>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+    <div class="col-sm-6 col-lg-2">
+      <div class="card shadow-sm h-100 quick-link-card">
+        <div class="card-body">
+          <p class="text-muted small mb-2">Year 6 SATs</p>
+          <h3 class="h5">Open tracker</h3>
+          <a href="{{ url_for('teacher.sats_tracker') }}" class="stretched-link text-decoration-none">Open SATs page</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% if not is_reception %}
 <div class="row g-4 mb-4">{% for row in chart_cards %}<div class="col-md-6 col-xl-3"><div class="card shadow-sm h-100"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>{{ row.subject_label }}</strong><span class="badge text-bg-light border">{{ row.term_label }}</span></div><div class="card-body"><div class="dashboard-stat-grid"><div><div class="text-muted small">Working Towards</div><div class="display-6 fw-semibold">{{ row.working_towards }}</div></div><div><div class="text-muted small">On Track</div><div class="display-6 fw-semibold">{{ row.on_track }}</div></div><div><div class="text-muted small">Exceeding</div><div class="display-6 fw-semibold">{{ row.exceeding }}</div></div><div><div class="text-muted small">On Track+</div><div class="display-6 fw-semibold">{{ row.on_track_plus }}</div></div></div></div></div></div>{% endfor %}</div>
 <div class="row g-4"><div class="col-lg-7"><div class="card shadow-sm"><div class="card-header bg-white"><strong>Most recent subject summary</strong></div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Subject</th><th>Most recent term</th><th class="text-end">Working Towards</th><th class="text-end">On Track</th><th class="text-end">Exceeding</th><th class="text-end">On Track+</th></tr></thead><tbody>{% for row in summary_rows %}<tr><td>{{ row.subject_label }}</td><td>{{ row.term_label }}</td><td class="text-end">{{ row.working_towards }}</td><td class="text-end">{{ row.on_track }}</td><td class="text-end">{{ row.exceeding }}</td><td class="text-end fw-semibold">{{ row.on_track_plus }}</td></tr>{% endfor %}</tbody></table></div></div></div><div class="col-lg-5"><div class="card shadow-sm h-100"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Active interventions</strong><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.interventions') }}">Open</a></div><div class="list-group list-group-flush">{% for record in active_interventions %}<div class="list-group-item"><div class="fw-semibold">{{ record.pupil.full_name }} · {{ format_subject_name(record.subject) }}</div><div class="small text-muted">{{ get_term_label(record.term) }} · {{ record.reason }}{% if record.note %} · {{ record.note }}{% endif %}</div></div>{% else %}<div class="list-group-item text-muted">No active interventions yet.</div>{% endfor %}</div></div></div></div>
+{% endif %}
 {% endblock %}

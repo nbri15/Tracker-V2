@@ -30,6 +30,7 @@ class Pupil(db.Model):
     sats_column_results = db.relationship('SatsColumnResult', back_populates='pupil', cascade='all, delete-orphan')
     gap_scores = db.relationship('GapScore', back_populates='pupil', cascade='all, delete-orphan')
     class_history = db.relationship('PupilClassHistory', back_populates='pupil', cascade='all, delete-orphan')
+    reception_tracker_entries = db.relationship('ReceptionTrackerEntry', back_populates='pupil', cascade='all, delete-orphan')
 
     @property
     def full_name(self) -> str:
