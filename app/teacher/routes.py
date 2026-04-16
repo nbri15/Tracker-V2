@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy import func
 
 from app.extensions import db
 from app.models import GapQuestion, Intervention, Pupil, SubjectResult, WritingResult
@@ -263,6 +264,18 @@ def sats_tracker():
 
     if request.method == 'POST':
         action = request.form.get('action', 'save_results')
+        if action == 'add_pupil':
+            return _handle_quick_add_pupil(
+                school_class,
+                redirect_endpoint='teacher.sats_tracker',
+                context={
+                    'academic_year': academic_year,
+                    'term': get_current_term(),
+                    'filters': build_admin_pupil_filter_state({}),
+                    'sort_state': {'column': 'name', 'direction': 'asc'},
+                },
+                exam_tab_id=selected_tab_id_raw or None,
+            )
         try:
             if action == 'update_mode':
                 set_tracker_mode(6, request.form.get('tracker_mode', 'sats'))
@@ -391,6 +404,62 @@ def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
     }
 
 
+def _quick_add_redirect(endpoint: str, context: dict, **extra_params):
+    params = {
+        'academic_year': context['academic_year'],
+        'term': context['term'],
+        'search': context['filters']['search'],
+        'gender': context['filters']['gender'],
+        'pupil_premium': context['filters']['pupil_premium'],
+        'laps': context['filters']['laps'],
+        'service_child': context['filters']['service_child'],
+        'sort': context['sort_state']['column'],
+        'direction': context['sort_state']['direction'],
+    }
+    params.update(extra_params)
+    return redirect(url_for(endpoint, **params))
+
+
+def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: dict, **extra_params):
+    if not school_class:
+        flash('No active class is assigned to your account yet.', 'warning')
+        return _quick_add_redirect(redirect_endpoint, context, **extra_params)
+
+    first_name = request.form.get('first_name', '').strip()
+    last_name = request.form.get('last_name', '').strip()
+    gender = request.form.get('gender', '').strip() or 'Unknown'
+    if not first_name or not last_name:
+        flash('Enter both first and last name before adding a pupil.', 'danger')
+        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
+
+    duplicate = Pupil.query.filter(
+        Pupil.class_id == school_class.id,
+        func.lower(Pupil.first_name) == first_name.lower(),
+        func.lower(Pupil.last_name) == last_name.lower(),
+    ).first()
+    if duplicate:
+        flash(
+            f'{duplicate.full_name} already exists in {school_class.name}. Check names before creating a duplicate record.',
+            'warning',
+        )
+        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
+
+    pupil = Pupil(
+        first_name=first_name,
+        last_name=last_name,
+        gender=gender,
+        pupil_premium=request.form.get('pupil_premium') == 'on',
+        laps=request.form.get('laps') == 'on',
+        service_child=request.form.get('service_child') == 'on',
+        class_id=school_class.id,
+        is_active=True,
+    )
+    db.session.add(pupil)
+    db.session.commit()
+    flash(f'Added {pupil.full_name} to {school_class.name}.', 'success')
+    return _quick_add_redirect(redirect_endpoint, context, **extra_params)
+
+
 def _base_subject_context(subject_key: str) -> dict:
     school_class = get_primary_class_for_user(current_user)
     current_year = get_current_academic_year()
@@ -480,6 +549,12 @@ def render_subject_page(subject_key: str):
             db.session.rollback()
             flash(f'Settings could not be saved: {exc}', 'danger')
             setting = get_subject_setting(school_class.year_group, subject_key, context['term'])
+    elif request.method == 'POST' and request.form.get('form_name') == 'add_pupil':
+        return _handle_quick_add_pupil(
+            school_class,
+            redirect_endpoint=f'teacher.{subject_key}',
+            context=context,
+        )
 
     result_rows = (
         SubjectResult.query.join(SubjectResult.pupil)
@@ -598,6 +673,12 @@ def render_writing_page():
     existing_by_pupil = {row.pupil_id: row for row in existing_rows}
 
     if request.method == 'POST':
+        if request.form.get('form_name') == 'add_pupil':
+            return _handle_quick_add_pupil(
+                school_class,
+                redirect_endpoint='teacher.writing',
+                context=context,
+            )
         errors = []
         for pupil in context['pupils']:
             band = request.form.get(f'band_{pupil.id}', '').strip()
