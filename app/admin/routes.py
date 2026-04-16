@@ -771,22 +771,23 @@ def export_headline_report():
     writer.writerow(['Year group', f"Year {year_group}" if year_group else 'Whole school'])
     writer.writerow(['Subgroup', SUBGROUP_FILTERS.get(subgroup, subgroup.title())])
     writer.writerow([])
-    writer.writerow(['Year group', 'Autumn', 'Spring', 'Summer', 'Summer vs Autumn (pp)'])
+    header = ['Year group']
+    for term in report['terms']:
+        term_label = report['term_labels'][term]
+        for measure_key in report['measure_keys']:
+            header.append(f"{term_label} {report['measure_labels'][measure_key]}")
+    writer.writerow(header)
     for row in report['rows']:
-        writer.writerow([
-            f"Year {row['year_group']}",
-            row['terms']['autumn']['display'],
-            row['terms']['spring']['display'],
-            row['terms']['summer']['display'],
-            f"{row['progress']:+.1f}" if row['progress'] is not None else '—',
-        ])
-    writer.writerow([
-        'Whole school',
-        report['totals']['autumn']['display'],
-        report['totals']['spring']['display'],
-        report['totals']['summer']['display'],
-        '—',
-    ])
+        row_data = [f"Year {row['year_group']}"]
+        for term in report['terms']:
+            for measure_key in report['measure_keys']:
+                row_data.append(row['terms'][term][measure_key]['display'])
+        writer.writerow(row_data)
+    total_row = ['Whole school']
+    for term in report['terms']:
+        for measure_key in report['measure_keys']:
+            total_row.append(report['totals'][term][measure_key]['display'])
+    writer.writerow(total_row)
     csv_text = output.getvalue()
     filename_subject = subject if subject in {'maths', 'reading', 'spag', 'writing'} else 'headline'
     return Response(

@@ -259,6 +259,31 @@ body {
   color: var(--bs-primary);
 }
 
+.headline-report-table {
+  font-size: 0.9rem;
+}
+
+.headline-report-table th,
+.headline-report-table td {
+  white-space: nowrap;
+  padding: 0.55rem 0.6rem;
+}
+
+.headline-report-table .sticky-col {
+  min-width: 110px;
+}
+
+.headline-report-thead tr:first-child th {
+  border-bottom: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.headline-report-thead tr:nth-child(2) th {
+  font-size: 0.76rem;
+}
+
 .sort-indicator {
   font-size: 0.75rem;
   color: #6c7a89;
