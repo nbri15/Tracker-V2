@@ -59,7 +59,9 @@ from app.services import (
     export_history_csv,
     export_interventions_csv,
     export_pupil_overview_csv,
+    export_reception_tracker_csv,
     export_sats_results_csv,
+    export_sats_tracker_csv,
     export_subject_results_csv,
     export_writing_results_csv,
     format_subject_name,
@@ -79,6 +81,8 @@ from app.services import (
     get_tracker_mode_label,
     import_combined_results,
     import_pupils,
+    import_reception_tracker,
+    import_sats_tracker_results,
     import_subject_results,
     import_writing_results,
     parse_uploaded_csv,
@@ -723,27 +727,23 @@ def imports():
                 summary = import_pupils(rows)
             elif selected_import_type == 'subject_results':
                 summary = import_subject_results(rows)
+            elif selected_import_type == 'reception':
+                summary = import_reception_tracker(rows)
+            elif selected_import_type == 'sats_tracker':
+                summary = import_sats_tracker_results(rows)
             else:
                 summary = import_writing_results(rows)
             db.session.commit()
             if summary.errors:
                 for error in summary.errors[:20]:
                     flash(error, 'warning')
-            if selected_import_type == 'combined':
-                flash(
-                    f'Import finished: pupils created {summary.pupils_created}, pupils updated {summary.pupils_updated}, '
-                    f'subject results created {summary.subject_results_created}, subject results updated {summary.subject_results_updated}, '
-                    f'writing results created {summary.writing_results_created}, writing results updated {summary.writing_results_updated}, '
-                    f'manual/protected results skipped {summary.manual_results_skipped}, rows skipped {summary.rows_skipped}, '
-                    f'validation errors {summary.validation_errors}.',
-                    'success',
-                )
-            else:
-                flash(
-                    f'Import finished: created {summary.created}, updated {summary.updated}, skipped {summary.skipped}, '
-                    f'manual/protected results skipped {summary.manual_results_skipped}, validation errors {summary.validation_errors}.',
-                    'success',
-                )
+            flash(
+                f'Import finished: rows processed {summary.rows_processed}, pupils matched {summary.pupils_matched}, '
+                f'rows skipped {summary.rows_skipped}, tracker entries created {summary.tracker_entries_created}, '
+                f'tracker entries updated {summary.tracker_entries_updated}, created {summary.created}, updated {summary.updated}, '
+                f'manual/protected results skipped {summary.manual_results_skipped}, validation errors {summary.validation_errors}.',
+                'success',
+            )
         except CsvImportError as exc:
             db.session.rollback()
             flash(f'Import failed: {exc}', 'danger')
@@ -754,6 +754,8 @@ def imports():
         overview=overview,
         class_options=SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all(),
         current_year=get_current_academic_year(),
+        reception_tracking_points=RECEPTION_TRACKING_POINTS,
+        sats_tabs=get_sats_exam_tabs(6, include_inactive=False),
         summary=summary,
         selected_import_type=selected_import_type,
     )
@@ -763,7 +765,7 @@ def imports():
 @login_required
 @admin_required
 def download_import_template(template_type: str):
-    template_map = {'combined', 'pupils', 'subject_results', 'writing_results'}
+    template_map = {'combined', 'pupils', 'subject_results', 'writing_results', 'reception', 'sats_tracker'}
     if template_type not in template_map:
         flash('Unknown template type.', 'warning')
         return redirect(url_for('admin.imports'))
@@ -908,6 +910,33 @@ def export_sats():
         exam_tab_id=int(request.args['exam_tab_id']) if request.args.get('exam_tab_id') else None,
     )
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=sats_export.csv'})
+
+
+@admin_bp.route('/exports/reception-tracker')
+@login_required
+@admin_required
+def export_reception_tracker():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    tracking_point = request.args.get('tracking_point', RECEPTION_TRACKING_POINTS[0][0]).strip().lower()
+    csv_text = export_reception_tracker_csv(academic_year, tracking_point)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=reception_tracker_export.csv'})
+
+
+@admin_bp.route('/exports/sats-tracker')
+@login_required
+@admin_required
+def export_sats_tracker():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    exam_tab = request.args.get('exam_tab', '').strip()
+    if not exam_tab:
+        flash('Choose an exam tab for the SATs tracker export.', 'warning')
+        return redirect(url_for('admin.imports'))
+    try:
+        csv_text = export_sats_tracker_csv(academic_year, exam_tab)
+    except CsvImportError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('admin.imports'))
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=year6_sats_tracker_export.csv'})
 
 
 @admin_bp.route('/exports/interventions')
