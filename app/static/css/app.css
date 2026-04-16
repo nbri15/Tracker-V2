@@ -341,3 +341,35 @@ body {
   background-color: rgba(253, 126, 20, 0.15);
   color: #8a4b08;
 }
+
+.reception-wrap {
+  overflow-x: auto;
+}
+
+.reception-table {
+  font-size: 0.88rem;
+}
+
+.reception-table th,
+.reception-table td {
+  white-space: nowrap;
+  padding: 0.35rem 0.45rem;
+}
+
+.reception-table .form-select {
+  min-width: 128px;
+  padding: 0.2rem 0.35rem;
+}
+
+.reception-name-col {
+  min-width: 220px;
+  left: 0;
+}
+
+.reception-area-col {
+  min-width: 180px;
+}
+
+.reception-tab-strip .btn {
+  border-radius: 999px;
+}

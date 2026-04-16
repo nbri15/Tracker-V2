@@ -81,7 +81,14 @@ def ensure_default_logins_and_classes() -> dict:
         db.session.flush()
         class_lookup[year_group] = school_class
 
-    return {'admin': admin, 'teachers': teachers, 'classes': class_lookup}
+    reception_class = SchoolClass.query.filter_by(name='Reception').first() or SchoolClass(name='Reception', year_group=0)
+    reception_class.name = 'Reception'
+    reception_class.year_group = 0
+    reception_class.is_active = True
+    db.session.add(reception_class)
+    db.session.flush()
+
+    return {'admin': admin, 'teachers': teachers, 'classes': class_lookup, 'reception_class': reception_class}
 
 
 def snapshot_pupil_history(academic_year: str) -> int:

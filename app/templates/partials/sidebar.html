@@ -8,13 +8,19 @@
     <a class="nav-link text-white {% if request.endpoint in ['dashboards.teacher_dashboard', 'dashboards.admin_dashboard'] %}active{% endif %}" href="{{ url_for('dashboards.index') }}">Dashboard</a>
 
     {% if current_user.is_teacher %}
+      {% set assigned_class = current_user.classes.filter_by(is_active=True).order_by('year_group', 'name').first() %}
+      {% set is_reception_teacher = assigned_class and assigned_class.year_group == 0 %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Teacher area</div>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.maths' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'maths') %}active{% endif %}" href="{{ url_for('teacher.maths') }}">Maths</a>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.reading' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'reading') %}active{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.spag' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'spag') %}active{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.writing' %}active{% endif %}" href="{{ url_for('teacher.writing') }}">Writing</a>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.interventions' %}active{% endif %}" href="{{ url_for('teacher.interventions') }}">Interventions</a>
-      <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs / mode</a>
+      {% if is_reception_teacher %}
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.reception_tracker' %}active{% endif %}" href="{{ url_for('teacher.reception_tracker') }}">Reception tracker</a>
+      {% else %}
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.maths' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'maths') %}active{% endif %}" href="{{ url_for('teacher.maths') }}">Maths</a>
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.reading' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'reading') %}active{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.spag' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'spag') %}active{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.writing' %}active{% endif %}" href="{{ url_for('teacher.writing') }}">Writing</a>
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.interventions' %}active{% endif %}" href="{{ url_for('teacher.interventions') }}">Interventions</a>
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs / mode</a>
+      {% endif %}
     {% endif %}
 
     {% if current_user.is_admin %}
@@ -24,6 +30,7 @@
       <a class="nav-link text-white {% if request.endpoint == 'admin.pupils' %}active{% endif %}" href="{{ url_for('admin.pupils') }}">Pupils</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>
       <a class="nav-link text-white {% if request.endpoint in ['admin.sats', 'admin.class_sats'] %}active{% endif %}" href="{{ url_for('admin.sats') }}">Year 6 SATs</a>
+      <a class="nav-link text-white {% if request.endpoint == 'admin.reception_tracker' %}active{% endif %}" href="{{ url_for('admin.reception_tracker') }}">Reception tracker</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.promotion' %}active{% endif %}" href="{{ url_for('admin.promotion') }}">Promotion & history</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
       <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
