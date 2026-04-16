@@ -22,6 +22,8 @@
               <option value="pupils" {% if selected_import_type == 'pupils' %}selected{% endif %}>Legacy pupil-only CSV</option>
               <option value="subject_results" {% if selected_import_type == 'subject_results' %}selected{% endif %}>Legacy subject results CSV</option>
               <option value="writing_results" {% if selected_import_type == 'writing_results' %}selected{% endif %}>Legacy writing CSV</option>
+              <option value="reception" {% if selected_import_type == 'reception' %}selected{% endif %}>Reception tracker CSV</option>
+              <option value="sats_tracker" {% if selected_import_type == 'sats_tracker' %}selected{% endif %}>Year 6 SATs tracker CSV</option>
             </select>
           </div>
           <div class="col-md-5">
@@ -63,7 +65,83 @@
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='pupils') }}">Pupil template</a>
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='subject_results') }}">Subject result template</a>
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='writing_results') }}">Writing template</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='reception') }}">Reception template</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='sats_tracker') }}">SATs template</a>
         </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4 border-primary-subtle">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
+        <strong>Reception CSV workflow</strong>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('admin.download_import_template', template_type='reception') }}">Download Reception template</a>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">Blank cells are ignored. Uploads only update Reception tracker entries for the row's tracking point. A full summary is shown after import.</p>
+        <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end mb-3">
+          <input type="hidden" name="import_type" value="reception">
+          <div class="col-md-8">
+            <label class="form-label">Reception CSV file</label>
+            <input type="file" name="csv_file" class="form-control" accept=".csv" required>
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-primary w-100">Upload Reception CSV</button>
+          </div>
+        </form>
+        <form method="get" action="{{ url_for('admin.export_reception_tracker') }}" class="row g-3 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label">Tracking point</label>
+            <select name="tracking_point" class="form-select">
+              {% for value, label in reception_tracking_points %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Academic year</label>
+            <input type="text" class="form-control" name="academic_year" value="{{ current_year }}">
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-outline-primary w-100">Export Reception CSV</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4 border-primary-subtle">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
+        <strong>Year 6 SATs CSV workflow</strong>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('admin.download_import_template', template_type='sats_tracker') }}">Download SATs template</a>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">Blank cells are ignored. Uploads only update Year 6 SATs tracker values for each row's exam tab. A full summary is shown after import.</p>
+        <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end mb-3">
+          <input type="hidden" name="import_type" value="sats_tracker">
+          <div class="col-md-8">
+            <label class="form-label">SATs CSV file</label>
+            <input type="file" name="csv_file" class="form-control" accept=".csv" required>
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-primary w-100">Upload SATs CSV</button>
+          </div>
+        </form>
+        <form method="get" action="{{ url_for('admin.export_sats_tracker') }}" class="row g-3 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label">Exam tab</label>
+            <select name="exam_tab" class="form-select" required>
+              {% for tab in sats_tabs %}
+                <option value="{{ tab.name }}">{{ tab.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Academic year</label>
+            <input type="text" class="form-control" name="academic_year" value="{{ current_year }}">
+          </div>
+          <div class="col-md-4">
+            <button class="btn btn-outline-primary w-100">Export SATs CSV</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -93,6 +171,10 @@
         {% if summary %}
           <div class="list-group list-group-flush small">
             <div class="list-group-item d-flex justify-content-between px-0"><span>Pupils created</span><strong>{{ summary.pupils_created }}</strong></div>
+            <div class="list-group-item d-flex justify-content-between px-0"><span>Rows processed</span><strong>{{ summary.rows_processed }}</strong></div>
+            <div class="list-group-item d-flex justify-content-between px-0"><span>Pupils matched</span><strong>{{ summary.pupils_matched }}</strong></div>
+            <div class="list-group-item d-flex justify-content-between px-0"><span>Tracker entries created</span><strong>{{ summary.tracker_entries_created }}</strong></div>
+            <div class="list-group-item d-flex justify-content-between px-0"><span>Tracker entries updated</span><strong>{{ summary.tracker_entries_updated }}</strong></div>
             <div class="list-group-item d-flex justify-content-between px-0"><span>Pupils updated</span><strong>{{ summary.pupils_updated }}</strong></div>
             <div class="list-group-item d-flex justify-content-between px-0"><span>Subject results created</span><strong>{{ summary.subject_results_created }}</strong></div>
             <div class="list-group-item d-flex justify-content-between px-0"><span>Subject results updated</span><strong>{{ summary.subject_results_updated }}</strong></div>

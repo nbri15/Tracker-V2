@@ -7,9 +7,21 @@ import io
 from dataclasses import dataclass, field
 
 from app.extensions import db
-from app.models import Intervention, Pupil, PupilClassHistory, SatsColumnResult, SatsColumnSetting, SchoolClass, SubjectResult, WritingResult
+from app.models import (
+    Intervention,
+    Pupil,
+    PupilClassHistory,
+    ReceptionTrackerEntry,
+    SatsColumnResult,
+    SatsColumnSetting,
+    SatsExamTab,
+    SchoolClass,
+    SubjectResult,
+    WritingResult,
+)
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
-from .sats_tracker import build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
+from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
+from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
 
 COMBINED_PUPIL_COLUMNS = [
     'first_name',
@@ -69,6 +81,53 @@ COMBINED_TEMPLATE_COLUMNS = COMBINED_PUPIL_COLUMNS + [
     'writing_summer_band',
     'writing_summer_notes',
 ]
+RECEPTION_TEMPLATE_COLUMNS = [
+    'pupil_first_name',
+    'pupil_last_name',
+    'class_name',
+    'academic_year',
+    'tracking_point',
+    'communication_and_language',
+    'psed',
+    'physical_development',
+    'reading',
+    'writing',
+    'mathematics',
+    'understanding_the_world',
+    'expressive_arts_and_design',
+]
+SATS_STANDARD_COLUMN_MAP = {
+    'arithmetic': 'maths_arithmetic',
+    'reasoning_1': 'maths_reasoning_1',
+    'reasoning_2': 'maths_reasoning_2',
+    'maths_raw_score': 'maths_raw_total',
+    'maths_scaled_score': 'maths_scaled',
+    'reading_paper': 'reading_paper',
+    'reading_raw_score': 'reading_raw_total',
+    'reading_scaled_score': 'reading_scaled',
+    'spag_paper_1': 'spag_paper_1',
+    'spag_paper_2': 'spag_paper_2',
+    'spag_raw_score': 'spag_raw_total',
+    'spag_scaled_score': 'spag_scaled',
+}
+SATS_TEMPLATE_COLUMNS = [
+    'pupil_first_name',
+    'pupil_last_name',
+    'class_name',
+    'academic_year',
+    'exam_tab',
+    *SATS_STANDARD_COLUMN_MAP.keys(),
+]
+RECEPTION_AREA_IMPORT_MAP = {
+    'communication_and_language': 'communication_language',
+    'psed': 'psed',
+    'physical_development': 'physical_development',
+    'reading': 'reading',
+    'writing': 'writing',
+    'mathematics': 'mathematics',
+    'understanding_the_world': 'understanding_world',
+    'expressive_arts_and_design': 'expressive_arts_design',
+}
 
 
 @dataclass
@@ -87,6 +146,9 @@ class CsvImportSummary:
     validation_errors: int = 0
     rows_processed: int = 0
     rows_skipped: int = 0
+    pupils_matched: int = 0
+    tracker_entries_created: int = 0
+    tracker_entries_updated: int = 0
 
     def add_error(self, message: str):
         self.errors.append(message)
@@ -133,6 +195,14 @@ def generate_csv(template_type: str) -> str:
         'writing_results': [
             ['pupil_first_name', 'pupil_last_name', 'class_name', 'academic_year', 'term', 'band', 'notes'],
             ['Ava', 'Brown', 'Year 1', '2025/26', 'autumn', 'expected', 'Teacher moderation'],
+        ],
+        'reception': [
+            RECEPTION_TEMPLATE_COLUMNS,
+            ['Ava', 'Brown', 'Reception', '2025/26', 'baseline', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track'],
+        ],
+        'sats_tracker': [
+            SATS_TEMPLATE_COLUMNS,
+            ['Ava', 'Brown', 'Year 6', '2025/26', 'Autumn 1', '34', '28', '27', '', '106', '41', '', '109', '30', '29', '', '108'],
         ],
     }
     if template_type not in template_rows:
@@ -500,6 +570,163 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
     return summary
 
 
+def _find_exam_tab_by_name(tab_name: str) -> SatsExamTab:
+    clean_name = tab_name.strip().lower()
+    if not clean_name:
+        raise CsvImportError('exam_tab is required.')
+    tab = SatsExamTab.query.filter(SatsExamTab.year_group == 6, db.func.lower(SatsExamTab.name) == clean_name).first()
+    if not tab:
+        raise CsvImportError(f'Year 6 exam tab not found: {tab_name}.')
+    return tab
+
+
+def import_reception_tracker(rows: list[dict]) -> CsvImportSummary:
+    summary = CsvImportSummary()
+    valid_statuses = {status for status, _ in RECEPTION_STATUS_CHOICES}
+    valid_tracking_points = {point for point, _ in RECEPTION_TRACKING_POINTS}
+    processed_pupil_ids: set[int] = set()
+
+    for index, row in enumerate(rows, start=2):
+        summary.rows_processed += 1
+        try:
+            pupil = _find_pupil(row.get('pupil_first_name', ''), row.get('pupil_last_name', ''), row.get('class_name', ''))
+            if pupil.school_class.year_group != RECEPTION_YEAR_GROUP:
+                raise CsvImportError(f'{pupil.full_name} is not in Reception.')
+            processed_pupil_ids.add(pupil.id)
+            academic_year = _require_value(row, 'academic_year', label='academic_year')
+            tracking_point = _require_value(row, 'tracking_point', label='tracking_point').lower()
+            if tracking_point not in valid_tracking_points:
+                raise CsvImportError(f'tracking_point must be one of {", ".join(sorted(valid_tracking_points))}.')
+
+            row_updates = 0
+            for csv_column, area_key in RECEPTION_AREA_IMPORT_MAP.items():
+                status = _clean_value(row.get(csv_column)).lower()
+                if not status:
+                    continue
+                if status not in valid_statuses:
+                    raise CsvImportError(f'{csv_column} must be one of {", ".join(sorted(valid_statuses))}.')
+                existing = ReceptionTrackerEntry.query.filter_by(
+                    pupil_id=pupil.id,
+                    academic_year=academic_year,
+                    tracking_point=tracking_point,
+                    area_key=area_key,
+                ).first()
+                if existing is None:
+                    existing = ReceptionTrackerEntry(
+                        pupil_id=pupil.id,
+                        academic_year=academic_year,
+                        tracking_point=tracking_point,
+                        area_key=area_key,
+                    )
+                    summary.tracker_entries_created += 1
+                    summary.created += 1
+                else:
+                    summary.tracker_entries_updated += 1
+                    summary.updated += 1
+                existing.status = status
+                db.session.add(existing)
+                row_updates += 1
+            if row_updates == 0:
+                summary.rows_skipped += 1
+                summary.skipped += 1
+                summary.add_message(f'Row {index}: no Reception area values supplied; row skipped.')
+        except Exception as exc:
+            summary.rows_skipped += 1
+            summary.skipped += 1
+            summary.add_error(f'Row {index}: {exc}')
+    summary.pupils_matched = len(processed_pupil_ids)
+    return summary
+
+
+def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
+    summary = CsvImportSummary()
+    processed_pupil_ids: set[int] = set()
+
+    for index, row in enumerate(rows, start=2):
+        summary.rows_processed += 1
+        try:
+            pupil = _find_pupil(row.get('pupil_first_name', ''), row.get('pupil_last_name', ''), row.get('class_name', ''))
+            if pupil.school_class.year_group != 6:
+                raise CsvImportError(f'{pupil.full_name} is not in Year 6.')
+            processed_pupil_ids.add(pupil.id)
+            academic_year = _require_value(row, 'academic_year', label='academic_year')
+            tab = _find_exam_tab_by_name(_require_value(row, 'exam_tab', label='exam_tab'))
+            columns = get_sats_columns(6, exam_tab_id=tab.id, active_only=False)
+            column_by_key = {column.column_key: column for column in columns if column.column_key}
+
+            per_row_changes = 0
+            provided_column_ids: set[int] = set()
+            for csv_column, key in SATS_STANDARD_COLUMN_MAP.items():
+                column = column_by_key.get(key)
+                if not column:
+                    continue
+                raw_value = _clean_value(row.get(csv_column))
+                if raw_value == '':
+                    continue
+                score = _parse_optional_int(raw_value, csv_column)
+                if score is None:
+                    continue
+                if score < 0 or score > column.max_marks:
+                    raise CsvImportError(f'{column.name} must be between 0 and {column.max_marks}.')
+                existing = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year).first()
+                if existing is None:
+                    existing = SatsColumnResult(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year)
+                    summary.tracker_entries_created += 1
+                    summary.created += 1
+                else:
+                    summary.tracker_entries_updated += 1
+                    summary.updated += 1
+                existing.raw_score = score
+                db.session.add(existing)
+                provided_column_ids.add(column.id)
+                per_row_changes += 1
+
+            for raw_key, source_keys in CALCULATION_KEY_MAP.items():
+                raw_column = column_by_key.get(raw_key)
+                source_columns = [column_by_key.get(source_key) for source_key in source_keys if column_by_key.get(source_key)]
+                if not raw_column or not source_columns:
+                    continue
+                if not any(column.id in provided_column_ids for column in source_columns):
+                    continue
+                source_values: list[int] = []
+                for source_column in source_columns:
+                    row_value = SatsColumnResult.query.filter_by(
+                        pupil_id=pupil.id,
+                        column_id=source_column.id,
+                        academic_year=academic_year,
+                    ).first()
+                    if row_value and row_value.raw_score is not None:
+                        source_values.append(row_value.raw_score)
+                if not source_values:
+                    continue
+                raw_total = sum(source_values)
+                if raw_total > raw_column.max_marks:
+                    raise CsvImportError(f'{raw_column.name} total exceeds max mark {raw_column.max_marks}.')
+                existing_raw = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year).first()
+                if existing_raw is None:
+                    existing_raw = SatsColumnResult(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year)
+                    summary.tracker_entries_created += 1
+                    summary.created += 1
+                elif raw_column.id not in provided_column_ids:
+                    summary.tracker_entries_updated += 1
+                    summary.updated += 1
+                existing_raw.raw_score = raw_total
+                db.session.add(existing_raw)
+                per_row_changes += 1
+
+            if per_row_changes == 0:
+                summary.rows_skipped += 1
+                summary.skipped += 1
+                summary.add_message(f'Row {index}: no SATs values supplied; row skipped.')
+        except Exception as exc:
+            summary.rows_skipped += 1
+            summary.skipped += 1
+            summary.add_error(f'Row {index}: {exc}')
+
+    summary.pupils_matched = len(processed_pupil_ids)
+    return summary
+
+
 def export_subject_results_csv(class_id: int | None = None, subject: str | None = None, academic_year: str | None = None, term: str | None = None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
@@ -566,6 +793,63 @@ def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | 
         query = query.filter(Pupil.class_id == class_id)
     for pupil in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
         writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, academic_year or 'current'])
+    return output.getvalue()
+
+
+def export_reception_tracker_csv(academic_year: str, tracking_point: str) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(RECEPTION_TEMPLATE_COLUMNS)
+    pupils = (
+        Pupil.query.join(Pupil.school_class)
+        .filter(SchoolClass.year_group == RECEPTION_YEAR_GROUP, Pupil.is_active.is_(True))
+        .order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name)
+        .all()
+    )
+    entries = (
+        ReceptionTrackerEntry.query.filter_by(academic_year=academic_year, tracking_point=tracking_point)
+        .filter(ReceptionTrackerEntry.pupil_id.in_([pupil.id for pupil in pupils] or [0]))
+        .all()
+    )
+    lookup = {(entry.pupil_id, entry.area_key): entry.status for entry in entries}
+    for pupil in pupils:
+        row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, tracking_point]
+        for csv_column, area_key in RECEPTION_AREA_IMPORT_MAP.items():
+            row.append(lookup.get((pupil.id, area_key), ''))
+        writer.writerow(row)
+    return output.getvalue()
+
+
+def export_sats_tracker_csv(academic_year: str, exam_tab: str) -> str:
+    tab = _find_exam_tab_by_name(exam_tab)
+    columns = get_sats_columns(6, exam_tab_id=tab.id, active_only=False)
+    column_by_key = {column.column_key: column for column in columns if column.column_key}
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(SATS_TEMPLATE_COLUMNS)
+    pupils = (
+        Pupil.query.join(Pupil.school_class)
+        .filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True))
+        .order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name)
+        .all()
+    )
+    results = (
+        SatsColumnResult.query.filter(
+            SatsColumnResult.academic_year == academic_year,
+            SatsColumnResult.pupil_id.in_([pupil.id for pupil in pupils] or [0]),
+            SatsColumnResult.column_id.in_([column.id for column in columns] or [0]),
+        ).all()
+        if columns
+        else []
+    )
+    lookup = {(result.pupil_id, result.column_id): result.raw_score for result in results}
+    for pupil in pupils:
+        row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, tab.name]
+        for csv_column, key in SATS_STANDARD_COLUMN_MAP.items():
+            column = column_by_key.get(key)
+            value = lookup.get((pupil.id, column.id)) if column else None
+            row.append('' if value is None else value)
+        writer.writerow(row)
     return output.getvalue()
 
 
