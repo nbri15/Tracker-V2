@@ -132,6 +132,22 @@ body {
   border-radius: 999px;
 }
 
+.sats-scaled-cell {
+  transition: background-color 0.15s ease;
+}
+
+.sats-scaled-low {
+  background-color: rgba(220, 53, 69, 0.14) !important;
+}
+
+.sats-scaled-pass {
+  background-color: rgba(25, 135, 84, 0.13) !important;
+}
+
+.sats-scaled-high {
+  background-color: rgba(253, 126, 20, 0.16) !important;
+}
+
 .gap-paper-tabs {
   display: flex;
   flex-wrap: wrap;
