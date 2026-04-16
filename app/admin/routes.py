@@ -45,6 +45,7 @@ from app.services import (
     build_table_sort_state,
     build_class_overview_row,
     build_headline_report,
+    build_reception_overview,
     build_reception_summary,
     build_reception_tracker_rows,
     build_sats_tracker_rows,
@@ -319,6 +320,9 @@ def reception_tracker():
 
     academic_year = request.values.get('academic_year', get_current_academic_year())
     tracking_point = get_tracking_point_key(request.values.get('tracking_point'))
+    view = (request.values.get('view', 'tracker') or 'tracker').strip().lower()
+    if view not in {'tracker', 'overview'}:
+        view = 'tracker'
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
@@ -327,13 +331,14 @@ def reception_tracker():
             save_reception_tracker_entries(pupils, academic_year, tracking_point, request.form)
             db.session.commit()
             flash(f'Reception tracker saved for {dict(RECEPTION_TRACKING_POINTS)[tracking_point]}.', 'success')
-            return redirect(url_for('admin.reception_tracker', academic_year=academic_year, tracking_point=tracking_point))
+            return redirect(url_for('admin.reception_tracker', academic_year=academic_year, tracking_point=tracking_point, view=view))
         except ReceptionTrackerValidationError as exc:
             db.session.rollback()
             flash(f'Reception tracker could not be saved: {exc}', 'danger')
 
     rows = build_reception_tracker_rows(pupils, academic_year, tracking_point)
     summary = build_reception_summary(rows)
+    overview = build_reception_overview(rows)
     return render_template(
         'admin/reception_tracker.html',
         school_class=school_class,
@@ -345,6 +350,8 @@ def reception_tracker():
         status_choices=RECEPTION_STATUS_CHOICES,
         rows=rows,
         summary=summary,
+        overview=overview,
+        selected_view=view,
     )
 
 

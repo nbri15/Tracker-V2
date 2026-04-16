@@ -355,6 +355,29 @@ def _sort_rows_with_none_last(rows: list[dict], value_func, *, reverse: bool = F
     return populated + empty
 
 
+def _coerce_numeric(value):
+    if value is None or value == '':
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip().replace('%', '')
+        if not cleaned:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
+def _normalized_text(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    return text or None
+
+
 def annotate_subject_result_rows(rows: list[dict]) -> list[dict]:
     annotated = []
     for row in rows:
@@ -379,13 +402,13 @@ def sort_subject_result_rows(rows: list[dict], sort_column: str, sort_direction:
     if sort_column == 'name':
         return sorted(rows, key=_name_sort_key, reverse=reverse)
     if sort_column == 'paper_1_score':
-        return _sort_rows_with_none_last(rows, lambda row: row.get('paper_1_score'), reverse=reverse)
+        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('paper_1_score')), reverse=reverse)
     if sort_column == 'paper_2_score':
-        return _sort_rows_with_none_last(rows, lambda row: row.get('paper_2_score'), reverse=reverse)
+        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('paper_2_score')), reverse=reverse)
     if sort_column == 'combined_score':
-        return _sort_rows_with_none_last(rows, lambda row: row.get('combined_score'), reverse=reverse)
+        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('combined_score')), reverse=reverse)
     if sort_column == 'combined_percent':
-        return _sort_rows_with_none_last(rows, lambda row: row.get('combined_percent'), reverse=reverse)
+        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('combined_percent')), reverse=reverse)
     if sort_column == 'band_label':
         return _sort_rows_with_none_last(
             rows,
@@ -408,7 +431,7 @@ def sort_writing_result_rows(rows: list[dict], sort_column: str, sort_direction:
     if sort_column == 'notes':
         return _sort_rows_with_none_last(
             rows,
-            lambda row: (row.get('notes') or '').strip().lower() or None,
+            lambda row: _normalized_text(row.get('notes')),
             reverse=reverse,
         )
     return sorted(rows, key=_name_sort_key)
