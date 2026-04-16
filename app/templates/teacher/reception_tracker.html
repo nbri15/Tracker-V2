@@ -13,59 +13,101 @@
           {% endfor %}
         </select>
       </div>
+      <input type="hidden" name="tracking_point" value="{{ selected_tracking_point }}">
+      <input type="hidden" name="view" value="{{ selected_view }}">
       <div class="col-auto">
         <button class="btn btn-sm btn-outline-secondary">Load</button>
       </div>
     </form>
   </div>
 </div>
-<form method="post" class="card shadow-sm">
-  <div class="card-body p-0">
-    <div class="reception-wrap">
-      <table class="table table-sm table-bordered mb-0 reception-table align-middle">
-        <thead class="table-light">
-          <tr>
-            <th class="sticky-col reception-name-col">Pupil</th>
-            {% for area_key, area_label in areas %}
-              <th class="reception-area-col">{{ area_label }}</th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in rows %}
+<div class="d-flex gap-2 flex-wrap mb-3">
+  <a class="btn btn-sm {% if selected_view == 'tracker' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('teacher.reception_tracker', academic_year=academic_year, tracking_point=selected_tracking_point, view='tracker') }}">Tracker View</a>
+  <a class="btn btn-sm {% if selected_view == 'overview' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('teacher.reception_tracker', academic_year=academic_year, tracking_point=selected_tracking_point, view='overview') }}">Overview View</a>
+</div>
+{% if selected_view == 'tracker' %}
+  <form method="post" class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="reception-wrap">
+        <table class="table table-sm table-bordered mb-0 reception-table align-middle">
+          <thead class="table-light">
             <tr>
-              <th class="sticky-col reception-name-col">{{ row.pupil.full_name }}</th>
+              <th class="sticky-col reception-name-col">Pupil</th>
               {% for area_key, area_label in areas %}
-                <td>
-                  <select class="form-select form-select-sm" name="status_{{ row.pupil.id }}_{{ area_key }}">
-                    {% for status_key, status_label in status_choices %}
-                      <option value="{{ status_key }}" {% if row.statuses[area_key] == status_key %}selected{% endif %}>{{ status_label }}</option>
-                    {% endfor %}
-                  </select>
-                </td>
+                <th class="reception-area-col">{{ area_label }}</th>
               {% endfor %}
             </tr>
-          {% else %}
-            <tr>
-              <td colspan="{{ areas|length + 1 }}" class="text-center text-muted py-3">No active pupils found in Reception.</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <th class="sticky-col reception-name-col">{{ row.pupil.full_name }}</th>
+                {% for area_key, area_label in areas %}
+                  <td>
+                    <select class="form-select form-select-sm" name="status_{{ row.pupil.id }}_{{ area_key }}">
+                      {% for status_key, status_label in status_choices %}
+                        <option value="{{ status_key }}" {% if row.statuses[area_key] == status_key %}selected{% endif %}>{{ status_label }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                {% endfor %}
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="{{ areas|length + 1 }}" class="text-center text-muted py-3">No active pupils found in Reception.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
+    <div class="card-footer bg-white d-flex flex-wrap gap-2 align-items-center justify-content-between">
+      <div class="d-flex gap-2 flex-wrap reception-tab-strip">
+        {% for point_key, point_label in tracking_points %}
+          <a class="btn btn-sm {% if point_key == selected_tracking_point %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('teacher.reception_tracker', academic_year=academic_year, tracking_point=point_key, view=selected_view) }}">{{ point_label }}</a>
+        {% endfor %}
+      </div>
+      <div>
+        <input type="hidden" name="tracking_point" value="{{ selected_tracking_point }}">
+        <input type="hidden" name="view" value="{{ selected_view }}">
+        <button class="btn btn-primary btn-sm">Save {{ dict(tracking_points)[selected_tracking_point] }}</button>
+      </div>
+    </div>
+  </form>
+{% else %}
+  <div class="d-flex gap-2 flex-wrap reception-tab-strip mb-3">
+    {% for point_key, point_label in tracking_points %}
+      <a class="btn btn-sm {% if point_key == selected_tracking_point %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('teacher.reception_tracker', academic_year=academic_year, tracking_point=point_key, view=selected_view) }}">{{ point_label }}</a>
+    {% endfor %}
   </div>
-  <div class="card-footer bg-white d-flex flex-wrap gap-2 align-items-center justify-content-between">
-    <div class="d-flex gap-2 flex-wrap reception-tab-strip">
-      {% for point_key, point_label in tracking_points %}
-        <a class="btn btn-sm {% if point_key == selected_tracking_point %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('teacher.reception_tracker', academic_year=academic_year, tracking_point=point_key) }}">{{ point_label }}</a>
-      {% endfor %}
-    </div>
-    <div>
-      <input type="hidden" name="tracking_point" value="{{ selected_tracking_point }}">
-      <button class="btn btn-primary btn-sm">Save {{ dict(tracking_points)[selected_tracking_point] }}</button>
-    </div>
+  <div class="row g-3">
+    {% for area_key, area_label in areas %}
+      <div class="col-12 col-lg-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-header bg-white"><strong>{{ area_label }}</strong></div>
+          <div class="card-body py-3">
+            <div class="mb-3">
+              <div class="fw-semibold text-success-emphasis mb-1">On Track ({{ overview[area_key].on_track|length }})</div>
+              {% if overview[area_key].on_track %}
+                <div class="small">{{ overview[area_key].on_track|join(', ') }}</div>
+              {% else %}
+                <div class="small text-muted">No pupils recorded as on track.</div>
+              {% endif %}
+            </div>
+            <div>
+              <div class="fw-semibold text-danger-emphasis mb-1">Not on track ({{ overview[area_key].not_on_track|length }})</div>
+              {% if overview[area_key].not_on_track %}
+                <div class="small">{{ overview[area_key].not_on_track|join(', ') }}</div>
+              {% else %}
+                <div class="small text-muted">No pupils recorded as not on track.</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
   </div>
-</form>
+{% endif %}
 
 <div class="card shadow-sm mt-3">
   <div class="card-header bg-white"><strong>Tracking point summary</strong></div>

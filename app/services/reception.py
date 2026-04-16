@@ -150,3 +150,23 @@ def build_reception_summary(rows: list[dict]) -> dict[str, dict[str, float | int
             'percent_on_track': percent_on_track,
         }
     return summary
+
+
+def build_reception_overview(rows: list[dict]) -> dict[str, dict[str, list[str]]]:
+    """Build per-area pupil name lists grouped by on-track status."""
+
+    overview: dict[str, dict[str, list[str]]] = {}
+    for area_key, _ in RECEPTION_AREAS:
+        on_track_names: list[str] = []
+        not_on_track_names: list[str] = []
+        for row in rows:
+            pupil_name = row['pupil'].full_name
+            if row['statuses'].get(area_key) == 'on_track':
+                on_track_names.append(pupil_name)
+            else:
+                not_on_track_names.append(pupil_name)
+        overview[area_key] = {
+            'on_track': on_track_names,
+            'not_on_track': not_on_track_names,
+        }
+    return overview
