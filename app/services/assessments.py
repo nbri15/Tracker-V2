@@ -1036,7 +1036,15 @@ def get_class_detail_context(
     )
     if active_term is None:
         active_term = get_current_term()
-    pupils, pupil_rows = _build_class_detail_subject_rows(school_class, active_subject, active_term, academic_year, filters)
+    pupils, pupil_rows = _build_class_detail_subject_rows(
+        school_class,
+        active_subject,
+        active_term,
+        academic_year,
+        filters,
+        sort_column=sort_column,
+        sort_direction=sort_direction,
+    )
     context.update({
         'selected_term': active_term,
         'subject_summary': compute_class_subject_summary(
