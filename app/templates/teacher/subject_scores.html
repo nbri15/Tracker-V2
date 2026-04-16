@@ -268,6 +268,27 @@
   </div>
 </div>
 
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <strong>Need to add a new pupil?</strong>
+    <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#quickAddPupilForm" aria-expanded="{{ 'true' if request.args.get('show_add_pupil') == '1' else 'false' }}" aria-controls="quickAddPupilForm">Add Pupil</button>
+  </div>
+  <div class="collapse {% if request.args.get('show_add_pupil') == '1' %}show{% endif %}" id="quickAddPupilForm">
+    <div class="card-body">
+      <form method="post" class="row g-3 align-items-end">
+        <input type="hidden" name="form_name" value="add_pupil">
+        <div class="col-md-2"><label class="form-label">First name</label><input type="text" name="first_name" class="form-control form-control-sm" required></div>
+        <div class="col-md-2"><label class="form-label">Last name</label><input type="text" name="last_name" class="form-control form-control-sm" required></div>
+        <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="Female">Female</option><option value="Male">Male</option><option value="Non-binary">Non-binary</option><option value="Unknown">Unknown</option></select></div>
+        <div class="col-md-1 form-check mt-4"><input class="form-check-input" type="checkbox" name="pupil_premium" id="quick_pp"><label class="form-check-label small" for="quick_pp">PP</label></div>
+        <div class="col-md-1 form-check mt-4"><input class="form-check-input" type="checkbox" name="laps" id="quick_laps"><label class="form-check-label small" for="quick_laps">LAPS</label></div>
+        <div class="col-md-2 form-check mt-4"><input class="form-check-input" type="checkbox" name="service_child" id="quick_service"><label class="form-check-label small" for="quick_service">Service child</label></div>
+        <div class="col-md-2 text-md-end"><button type="submit" class="btn btn-primary btn-sm">Save new pupil</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
   (() => {
     const form = document.querySelector('.js-setting-form');

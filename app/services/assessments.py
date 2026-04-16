@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from sqlalchemy import or_
@@ -636,6 +637,107 @@ def build_subject_overview_cards(class_rows: list[dict]) -> list[dict]:
         )
         cards.append(card)
     return cards
+
+
+def _headline_empty_cell() -> dict:
+    return {
+        'count': 0,
+        'total': 0,
+        'percent': 0.0,
+        'display': '—',
+    }
+
+
+def _headline_term_cell(*, count: int, total: int) -> dict:
+    if total <= 0:
+        return _headline_empty_cell()
+    percent = round((count / total) * 100, 1)
+    return {
+        'count': count,
+        'total': total,
+        'percent': percent,
+        'display': f'{percent:.1f}% ({count}/{total})',
+    }
+
+
+def build_headline_report(
+    *,
+    subject: str,
+    academic_year: str,
+    year_group: int | None = None,
+    subgroup: str = 'all',
+    filters: dict | None = None,
+) -> dict:
+    if subject not in ALL_SUBJECTS:
+        subject = 'maths'
+    filters = filters or {}
+    years = [year_group] if year_group in {1, 2, 3, 4, 5, 6} else [1, 2, 3, 4, 5, 6]
+    terms = [term for term, _ in TERMS]
+
+    if subject in CORE_SUBJECTS:
+        query = (
+            SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)
+            .filter(
+                SubjectResult.subject == subject,
+                SubjectResult.academic_year == academic_year,
+                SchoolClass.year_group.in_(years),
+            )
+        )
+        query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
+        rows = query.all()
+        year_term_counts = defaultdict(lambda: defaultdict(lambda: {'count': 0, 'total': 0}))
+        for row in rows:
+            if row.term not in terms:
+                continue
+            cell = year_term_counts[row.pupil.school_class.year_group][row.term]
+            cell['total'] += 1
+            if row.band_label in {'On Track', 'Exceeding'}:
+                cell['count'] += 1
+    else:
+        query = (
+            WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class)
+            .filter(
+                WritingResult.academic_year == academic_year,
+                SchoolClass.year_group.in_(years),
+            )
+        )
+        query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
+        rows = query.all()
+        year_term_counts = defaultdict(lambda: defaultdict(lambda: {'count': 0, 'total': 0}))
+        for row in rows:
+            if row.term not in terms:
+                continue
+            cell = year_term_counts[row.pupil.school_class.year_group][row.term]
+            cell['total'] += 1
+            if row.band in {'expected', 'greater_depth'}:
+                cell['count'] += 1
+
+    year_rows = []
+    school_totals = {term: {'count': 0, 'total': 0} for term in terms}
+    for year in years:
+        term_cells = {}
+        for term in terms:
+            data = year_term_counts[year][term]
+            term_cells[term] = _headline_term_cell(count=data['count'], total=data['total'])
+            school_totals[term]['count'] += data['count']
+            school_totals[term]['total'] += data['total']
+        progress = None
+        if term_cells['autumn']['total'] and term_cells['summer']['total']:
+            progress = round(term_cells['summer']['percent'] - term_cells['autumn']['percent'], 1)
+        year_rows.append({'year_group': year, 'terms': term_cells, 'progress': progress})
+
+    total_cells = {term: _headline_term_cell(count=value['count'], total=value['total']) for term, value in school_totals.items()}
+    return {
+        'subject': subject,
+        'subject_label': format_subject_name(subject),
+        'academic_year': academic_year,
+        'year_group': year_group,
+        'subgroup': subgroup,
+        'terms': terms,
+        'term_labels': {value: label for value, label in TERMS},
+        'rows': year_rows,
+        'totals': total_cells,
+    }
 
 
 def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_year: str) -> tuple[str, list[dict]]:

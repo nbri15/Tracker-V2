@@ -23,6 +23,7 @@ from .assessments import (
     build_table_sort_state,
     build_class_overview_row,
     build_dashboard_summary,
+    build_headline_report,
     build_subject_overview_cards,
     build_year6_sats_summary,
     compute_class_subject_summary,

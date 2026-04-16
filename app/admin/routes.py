@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+
 from flask import Response, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 
@@ -37,6 +40,7 @@ from app.services import (
     build_sort_indicator,
     build_table_sort_state,
     build_class_overview_row,
+    build_headline_report,
     build_sats_tracker_rows,
     build_subject_overview_cards,
     build_year6_sats_overview,
@@ -708,6 +712,88 @@ def download_import_template(template_type: str):
         return redirect(url_for('admin.imports'))
     csv_text = generate_csv(template_type)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_template.csv'})
+
+
+@admin_bp.route('/reports/headline')
+@login_required
+@admin_required
+def headline_report():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
+    year_group_raw = request.args.get('year_group', '').strip()
+    year_group = int(year_group_raw) if year_group_raw.isdigit() else None
+    subgroup = (request.args.get('subgroup', 'all') or 'all').strip() or 'all'
+    pupil_filters = build_admin_pupil_filter_state(request.args)
+    report = build_headline_report(
+        subject=subject,
+        academic_year=academic_year,
+        year_group=year_group,
+        subgroup=subgroup,
+        filters=pupil_filters,
+    )
+    return render_template(
+        'admin/headline_report.html',
+        report=report,
+        subject=subject,
+        academic_year=academic_year,
+        year_group=year_group_raw,
+        subgroup=subgroup,
+        pupil_filters=pupil_filters,
+        subjects=['writing', 'reading', 'maths', 'spag'],
+        subgroup_filters=SUBGROUP_FILTERS,
+        boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
+    )
+
+
+@admin_bp.route('/reports/headline/export')
+@login_required
+@admin_required
+def export_headline_report():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
+    year_group_raw = request.args.get('year_group', '').strip()
+    year_group = int(year_group_raw) if year_group_raw.isdigit() else None
+    subgroup = (request.args.get('subgroup', 'all') or 'all').strip() or 'all'
+    pupil_filters = build_admin_pupil_filter_state(request.args)
+    report = build_headline_report(
+        subject=subject,
+        academic_year=academic_year,
+        year_group=year_group,
+        subgroup=subgroup,
+        filters=pupil_filters,
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Headline report'])
+    writer.writerow(['Subject', report['subject_label']])
+    writer.writerow(['Academic year', academic_year])
+    writer.writerow(['Year group', f"Year {year_group}" if year_group else 'Whole school'])
+    writer.writerow(['Subgroup', SUBGROUP_FILTERS.get(subgroup, subgroup.title())])
+    writer.writerow([])
+    writer.writerow(['Year group', 'Autumn', 'Spring', 'Summer', 'Summer vs Autumn (pp)'])
+    for row in report['rows']:
+        writer.writerow([
+            f"Year {row['year_group']}",
+            row['terms']['autumn']['display'],
+            row['terms']['spring']['display'],
+            row['terms']['summer']['display'],
+            f"{row['progress']:+.1f}" if row['progress'] is not None else '—',
+        ])
+    writer.writerow([
+        'Whole school',
+        report['totals']['autumn']['display'],
+        report['totals']['spring']['display'],
+        report['totals']['summer']['display'],
+        '—',
+    ])
+    csv_text = output.getvalue()
+    filename_subject = subject if subject in {'maths', 'reading', 'spag', 'writing'} else 'headline'
+    return Response(
+        csv_text,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename=headline_{filename_subject}_{academic_year.replace("/", "-")}.csv'},
+    )
 
 
 @admin_bp.route('/exports/subject-results')
