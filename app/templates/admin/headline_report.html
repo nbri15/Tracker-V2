@@ -6,7 +6,7 @@
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
   <div>
     <h3 class="h4 mb-1">School headline report</h3>
-    <p class="text-muted mb-0">Leadership summary of {{ report.subject_label }} On Track+ by year group and term.</p>
+    <p class="text-muted mb-0">Leadership summary of {{ report.subject_label }} outcomes by year group and term.</p>
   </div>
   <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.export_headline_report', subject=subject, academic_year=academic_year, year_group=year_group or None, subgroup=subgroup, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, search=pupil_filters.search) }}">Download Excel-friendly CSV</a>
 </div>
@@ -55,34 +55,42 @@
     <span class="small text-muted">{{ academic_year }} · {{ ('Year ' ~ year_group) if year_group else 'Whole school' }}</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-striped align-middle mb-0">
-      <thead class="table-light">
+    <table class="table align-middle mb-0 headline-report-table">
+      <thead class="table-light headline-report-thead">
         <tr>
-          <th>Year group</th>
-          <th>Autumn</th>
-          <th>Spring</th>
-          <th>Summer</th>
-          <th>Summer vs Autumn</th>
+          <th rowspan="2" class="sticky-col">Year group</th>
+          {% for term in report.terms %}
+            <th colspan="{{ report.measure_keys|length }}" class="text-center">{{ report.term_labels[term] }}</th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for term in report.terms %}
+            {% for measure_key in report.measure_keys %}
+              <th class="text-center">{{ report.measure_labels[measure_key] }}</th>
+            {% endfor %}
+          {% endfor %}
         </tr>
       </thead>
       <tbody>
         {% for row in report.rows %}
           <tr>
-            <td class="fw-semibold">Year {{ row.year_group }}</td>
-            <td>{{ row.terms.autumn.display }}</td>
-            <td>{{ row.terms.spring.display }}</td>
-            <td>{{ row.terms.summer.display }}</td>
-            <td>{% if row.progress is not none %}<span class="badge {% if row.progress >= 0 %}text-bg-success{% else %}text-bg-danger{% endif %}">{{ '%+.1fpp'|format(row.progress) }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="fw-semibold sticky-col">Year {{ row.year_group }}</td>
+            {% for term in report.terms %}
+              {% for measure_key in report.measure_keys %}
+                <td class="text-center">{{ row.terms[term][measure_key].display }}</td>
+              {% endfor %}
+            {% endfor %}
           </tr>
         {% endfor %}
       </tbody>
       <tfoot class="table-light">
         <tr>
-          <th>Whole school</th>
-          <th>{{ report.totals.autumn.display }}</th>
-          <th>{{ report.totals.spring.display }}</th>
-          <th>{{ report.totals.summer.display }}</th>
-          <th>—</th>
+          <th class="sticky-col">Whole school</th>
+          {% for term in report.terms %}
+            {% for measure_key in report.measure_keys %}
+              <th class="text-center">{{ report.totals[term][measure_key].display }}</th>
+            {% endfor %}
+          {% endfor %}
         </tr>
       </tfoot>
     </table>
