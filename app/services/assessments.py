@@ -347,12 +347,12 @@ def _name_sort_key(row: dict) -> tuple:
     return ((row.get('name') or '').lower(),)
 
 
-def _sort_rows_with_none_last(rows: list[dict], value_func, *, reverse: bool = False) -> list[dict]:
+def _sort_rows(rows: list[dict], value_func, *, direction: str = 'asc') -> list[dict]:
+    descending = direction == 'desc'
     populated = [row for row in rows if value_func(row) is not None]
-    empty = [row for row in rows if value_func(row) is None]
-    populated = sorted(populated, key=lambda row: (value_func(row), _name_sort_key(row)), reverse=reverse)
-    empty = sorted(empty, key=_name_sort_key)
-    return populated + empty
+    empty = sorted([row for row in rows if value_func(row) is None], key=_name_sort_key)
+    populated = sorted(populated, key=lambda row: (value_func(row), _name_sort_key(row)), reverse=descending)
+    return (populated + empty) if descending else (empty + populated)
 
 
 def _coerce_numeric(value):
@@ -402,19 +402,15 @@ def sort_subject_result_rows(rows: list[dict], sort_column: str, sort_direction:
     if sort_column == 'name':
         return sorted(rows, key=_name_sort_key, reverse=reverse)
     if sort_column == 'paper_1_score':
-        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('paper_1_score')), reverse=reverse)
+        return _sort_rows(rows, lambda row: _coerce_numeric(row.get('paper_1_score')), direction=sort_direction)
     if sort_column == 'paper_2_score':
-        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('paper_2_score')), reverse=reverse)
+        return _sort_rows(rows, lambda row: _coerce_numeric(row.get('paper_2_score')), direction=sort_direction)
     if sort_column == 'combined_score':
-        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('combined_score')), reverse=reverse)
+        return _sort_rows(rows, lambda row: _coerce_numeric(row.get('combined_score')), direction=sort_direction)
     if sort_column == 'combined_percent':
-        return _sort_rows_with_none_last(rows, lambda row: _coerce_numeric(row.get('combined_percent')), reverse=reverse)
+        return _sort_rows(rows, lambda row: _coerce_numeric(row.get('combined_percent')), direction=sort_direction)
     if sort_column == 'band_label':
-        return _sort_rows_with_none_last(
-            rows,
-            lambda row: RESULT_THEME_ORDER.get(row.get('outcome_theme')),
-            reverse=reverse,
-        )
+        return _sort_rows(rows, lambda row: _normalized_text(row.get('band_label')), direction=sort_direction)
     return sorted(rows, key=_name_sort_key)
 
 
@@ -423,17 +419,9 @@ def sort_writing_result_rows(rows: list[dict], sort_column: str, sort_direction:
     if sort_column == 'name':
         return sorted(rows, key=_name_sort_key, reverse=reverse)
     if sort_column == 'band_label':
-        return _sort_rows_with_none_last(
-            rows,
-            lambda row: RESULT_THEME_ORDER.get(row.get('outcome_theme')),
-            reverse=reverse,
-        )
+        return _sort_rows(rows, lambda row: _normalized_text(row.get('band_label')), direction=sort_direction)
     if sort_column == 'notes':
-        return _sort_rows_with_none_last(
-            rows,
-            lambda row: _normalized_text(row.get('notes')),
-            reverse=reverse,
-        )
+        return _sort_rows(rows, lambda row: _normalized_text(row.get('notes')), direction=sort_direction)
     return sorted(rows, key=_name_sort_key)
 
 
