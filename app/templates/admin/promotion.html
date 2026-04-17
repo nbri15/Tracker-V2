@@ -3,26 +3,69 @@
 {% set page_heading = 'Promotion and academic-year history' %}
 {% block content %}
 <div class="row g-4 mb-4">
-  <div class="col-lg-5">
+  <div class="col-lg-7">
     <div class="card shadow-sm h-100">
       <div class="card-header bg-white"><strong>Promotion tools</strong></div>
       <div class="card-body">
         <p class="text-muted">Current working academic year: <strong>{{ academic_year }}</strong>. Next year: <strong>{{ next_year }}</strong>.</p>
+        <form method="post" class="mb-3">
+          <input type="hidden" name="action" value="promote">
+          <input type="hidden" name="academic_year" value="{{ academic_year }}">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Current class</th>
+                  <th>Active pupils</th>
+                  <th>Promote into</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in mapping_rows %}
+                  {% set source = row.source_class %}
+                  <tr>
+                    <td>
+                      <strong>{{ source.name }}</strong>
+                      <div class="small text-muted">Year {{ source.year_group }}</div>
+                    </td>
+                    <td>{{ row.active_pupil_count }}</td>
+                    <td style="min-width: 220px;">
+                      {% if row.destination_classes %}
+                        <select class="form-select form-select-sm" name="destination_{{ source.id }}" required>
+                          {% if row.default_destination_id is none %}
+                            <option value="">Choose destination class</option>
+                          {% endif %}
+                          {% for destination in row.destination_classes %}
+                            <option value="{{ destination.id }}" {% if destination.id == row.default_destination_id %}selected{% endif %}>
+                              {{ destination.name }} (Year {{ destination.year_group }})
+                            </option>
+                          {% endfor %}
+                        </select>
+                      {% else %}
+                        <span class="text-muted small">No next-year class available. Pupils will be marked inactive.</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <button class="btn btn-primary">Promote active pupils</button>
+        </form>
         <div class="d-flex gap-2 flex-wrap">
           <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary">Archive current year snapshot</button></form>
-          <form method="post"><input type="hidden" name="action" value="promote"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-primary">Promote active pupils</button></form>
           <a class="btn btn-outline-secondary" href="{{ url_for('admin.export_history', academic_year=academic_year) }}">Export history CSV</a>
         </div>
       </div>
     </div>
   </div>
-  <div class="col-lg-7">
+  <div class="col-lg-5">
     <div class="card shadow-sm h-100">
       <div class="card-header bg-white"><strong>What this does</strong></div>
       <div class="card-body">
         <ul class="mb-0">
           <li>Stores a class snapshot for the selected academic year.</li>
-          <li>Moves active pupils into the next year-group class.</li>
+          <li>Moves active pupils into the destination class you choose for each current class.</li>
           <li>Marks Year 6 pupils inactive instead of deleting data.</li>
           <li>Keeps historic assessment and class data available through academic-year filters.</li>
         </ul>

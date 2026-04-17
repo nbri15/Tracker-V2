@@ -76,6 +76,7 @@ from app.services import (
     get_next_sort_direction,
     get_history_rows,
     get_or_create_assessment_setting,
+    get_promotion_mapping_options,
     get_reception_class,
     get_sats_columns,
     get_sats_exam_tabs,
@@ -842,6 +843,7 @@ def sats():
 def promotion():
     academic_year = request.values.get('academic_year', get_current_academic_year())
     next_year = build_next_academic_year(academic_year)
+    mapping_rows = get_promotion_mapping_options()
     if request.method == 'POST':
         action = request.form.get('action', 'snapshot')
         try:
@@ -851,7 +853,24 @@ def promotion():
                 db.session.commit()
                 flash(f'Archived {count} pupil class history record(s) for {academic_year}.', 'success')
             elif action == 'promote':
-                outcome = promote_pupils_to_next_year(academic_year)
+                class_mapping: dict[int, int | None] = {}
+                for row in mapping_rows:
+                    source_class = row['source_class']
+                    destination_choices = row['destination_classes']
+                    selected_value = (request.form.get(f'destination_{source_class.id}') or '').strip()
+                    if destination_choices:
+                        if not selected_value:
+                            raise ValueError(f'Please choose a destination class for {source_class.name}.')
+                        if not selected_value.isdigit():
+                            raise ValueError(f'Invalid destination class selected for {source_class.name}.')
+                        selected_id = int(selected_value)
+                        valid_ids = {item.id for item in destination_choices}
+                        if selected_id not in valid_ids:
+                            raise ValueError(f'Invalid destination class selected for {source_class.name}.')
+                        class_mapping[source_class.id] = selected_id
+                    else:
+                        class_mapping[source_class.id] = None
+                outcome = promote_pupils_to_next_year(academic_year, class_mapping=class_mapping)
                 db.session.commit()
                 flash(f"Promotion complete. Moved {outcome['moved']} pupil(s), marked {outcome['leavers']} Year 6 leavers, and set {outcome['target_year']} as current.", 'success')
             return redirect(url_for('admin.promotion', academic_year=academic_year))
@@ -860,7 +879,13 @@ def promotion():
             flash(f'Promotion changes could not be saved: {exc}', 'danger')
 
     history_rows = get_history_rows(academic_year)
-    return render_template('admin/promotion.html', academic_year=academic_year, next_year=next_year, history_rows=history_rows)
+    return render_template(
+        'admin/promotion.html',
+        academic_year=academic_year,
+        next_year=next_year,
+        history_rows=history_rows,
+        mapping_rows=mapping_rows,
+    )
 
 
 @admin_bp.route('/imports', methods=['GET', 'POST'])
