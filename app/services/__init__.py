@@ -138,11 +138,8 @@ from .csv_tools import (
     export_writing_results_csv,
     generate_csv,
     import_combined_results,
-    import_pupils,
     import_reception_tracker,
     import_sats_tracker_results,
-    import_subject_results,
-    import_writing_results,
     parse_uploaded_csv,
 )
 from .gap import build_gap_page_context, get_or_create_gap_template, parse_question_columns, save_gap_scores, sync_gap_totals_to_subject_results

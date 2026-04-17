@@ -184,18 +184,6 @@ def generate_csv(template_type: str) -> str:
                 'expected', 'Autumn moderation complete', '', '', '', '',
             ],
         ],
-        'pupils': [
-            ['first_name', 'last_name', 'gender', 'pupil_premium', 'laps', 'service_child', 'class_name'],
-            ['Ava', 'Brown', 'Female', 'false', 'false', 'false', 'Year 1'],
-        ],
-        'subject_results': [
-            ['pupil_first_name', 'pupil_last_name', 'class_name', 'academic_year', 'term', 'subject', 'paper_1_score', 'paper_2_score', 'combined_score', 'notes'],
-            ['Ava', 'Brown', 'Year 1', '2025/26', 'autumn', 'maths', '18', '17', '', 'Imported baseline'],
-        ],
-        'writing_results': [
-            ['pupil_first_name', 'pupil_last_name', 'class_name', 'academic_year', 'term', 'band', 'notes'],
-            ['Ava', 'Brown', 'Year 1', '2025/26', 'autumn', 'expected', 'Teacher moderation'],
-        ],
         'reception': [
             RECEPTION_TEMPLATE_COLUMNS,
             ['Ava', 'Brown', 'Reception', '2025/26', 'baseline', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track', 'on_track'],
@@ -352,110 +340,6 @@ def _write_writing_result(existing: WritingResult | None, *, pupil: Pupil, acade
     result.source = 'csv'
     db.session.add(result)
     return result, None
-
-
-def import_pupils(rows: list[dict]) -> CsvImportSummary:
-    summary = CsvImportSummary()
-    for index, row in enumerate(rows, start=2):
-        try:
-            school_class = _find_class(row['class_name'])
-            pupil = Pupil.query.filter_by(first_name=row['first_name'].strip(), last_name=row['last_name'].strip(), class_id=school_class.id).first()
-            if pupil:
-                pupil.gender = row['gender'].strip() or pupil.gender
-                pupil.pupil_premium = _parse_bool(row.get('pupil_premium'))
-                pupil.laps = _parse_bool(row.get('laps'))
-                pupil.service_child = _parse_bool(row.get('service_child'))
-                summary.updated += 1
-                summary.pupils_updated += 1
-            else:
-                pupil = Pupil(
-                    first_name=row['first_name'].strip(),
-                    last_name=row['last_name'].strip(),
-                    gender=row['gender'].strip() or 'Unknown',
-                    pupil_premium=_parse_bool(row.get('pupil_premium')),
-                    laps=_parse_bool(row.get('laps')),
-                    service_child=_parse_bool(row.get('service_child')),
-                    class_id=school_class.id,
-                )
-                db.session.add(pupil)
-                summary.created += 1
-                summary.pupils_created += 1
-        except Exception as exc:  # validation summary pathway
-            summary.add_error(f'Row {index}: {exc}')
-    return summary
-
-
-def import_subject_results(rows: list[dict]) -> CsvImportSummary:
-    summary = CsvImportSummary()
-    for index, row in enumerate(rows, start=2):
-        try:
-            pupil = _find_pupil(row['pupil_first_name'], row['pupil_last_name'], row['class_name'])
-            subject = row['subject'].strip().lower()
-            setting = get_subject_setting(pupil.school_class.year_group, subject, row['term'].strip().lower())
-            existing = SubjectResult.query.filter_by(
-                pupil_id=pupil.id,
-                academic_year=row['academic_year'].strip(),
-                term=row['term'].strip().lower(),
-                subject=subject,
-            ).first()
-            if existing and existing.source == 'manual':
-                summary.skipped += 1
-                summary.manual_results_skipped += 1
-                summary.add_message(f'Row {index}: skipped manual result for {pupil.full_name} {subject}.')
-                continue
-            paper_1_score = int(row['paper_1_score']) if str(row.get('paper_1_score', '')).strip() else None
-            paper_2_score = int(row['paper_2_score']) if str(row.get('paper_2_score', '')).strip() else None
-            result = existing or SubjectResult(
-                pupil_id=pupil.id,
-                academic_year=row['academic_year'].strip(),
-                term=row['term'].strip().lower(),
-                subject=subject,
-            )
-            result.paper_1_score = paper_1_score
-            result.paper_2_score = paper_2_score
-            computed = compute_subject_result_values(setting, paper_1_score, paper_2_score)
-            result.combined_score = int(row['combined_score']) if str(row.get('combined_score', '')).strip() else computed['combined_score']
-            result.combined_percent = SubjectResult.calculate_percent(result.combined_score, setting.combined_max)
-            result.band_label = SubjectResult.calculate_band_label(result.combined_percent, setting.below_are_threshold_percent, setting.exceeding_threshold_percent)
-            result.source = 'csv'
-            result.notes = row.get('notes', '').strip() or None
-            db.session.add(result)
-            summary.created += 0 if existing else 1
-            summary.updated += 1 if existing else 0
-            summary.subject_results_created += 0 if existing else 1
-            summary.subject_results_updated += 1 if existing else 0
-        except Exception as exc:
-            summary.add_error(f'Row {index}: {exc}')
-    return summary
-
-
-def import_writing_results(rows: list[dict]) -> CsvImportSummary:
-    summary = CsvImportSummary()
-    for index, row in enumerate(rows, start=2):
-        try:
-            pupil = _find_pupil(row['pupil_first_name'], row['pupil_last_name'], row['class_name'])
-            band = row['band'].strip().lower()
-            if band not in WRITING_BAND_LABELS:
-                raise CsvImportError(f'band must be one of {", ".join(WRITING_BAND_LABELS)}.')
-            existing = WritingResult.query.filter_by(pupil_id=pupil.id, academic_year=row['academic_year'].strip(), term=row['term'].strip().lower()).first()
-            existing_source = getattr(existing, 'source', None) if existing else None
-            if existing and existing_source == 'manual':
-                summary.skipped += 1
-                summary.manual_results_skipped += 1
-                summary.add_message(f'Row {index}: skipped existing writing row for {pupil.full_name}.')
-                continue
-            result = existing or WritingResult(pupil_id=pupil.id, academic_year=row['academic_year'].strip(), term=row['term'].strip().lower(), band=band)
-            result.band = band
-            result.notes = row.get('notes', '').strip() or None
-            result.source = 'csv'
-            db.session.add(result)
-            summary.created += 0 if existing else 1
-            summary.updated += 1 if existing else 0
-            summary.writing_results_created += 0 if existing else 1
-            summary.writing_results_updated += 1 if existing else 0
-        except Exception as exc:
-            summary.add_error(f'Row {index}: {exc}')
-    return summary
 
 
 def import_combined_results(rows: list[dict]) -> CsvImportSummary:

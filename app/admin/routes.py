@@ -87,11 +87,8 @@ from app.services import (
     import_combined_results,
     is_ks1_year_group,
     is_times_tables_year_group,
-    import_pupils,
     import_reception_tracker,
     import_sats_tracker_results,
-    import_subject_results,
-    import_writing_results,
     parse_uploaded_csv,
     promote_pupils_to_next_year,
     save_sats_column,
@@ -900,16 +897,12 @@ def imports():
             rows = parse_uploaded_csv(request.files.get('csv_file'))
             if selected_import_type == 'combined':
                 summary = import_combined_results(rows)
-            elif selected_import_type == 'pupils':
-                summary = import_pupils(rows)
-            elif selected_import_type == 'subject_results':
-                summary = import_subject_results(rows)
             elif selected_import_type == 'reception':
                 summary = import_reception_tracker(rows)
             elif selected_import_type == 'sats_tracker':
                 summary = import_sats_tracker_results(rows)
             else:
-                summary = import_writing_results(rows)
+                raise CsvImportError('Unknown import type.')
             db.session.commit()
             if summary.errors:
                 for error in summary.errors[:20]:
@@ -942,7 +935,7 @@ def imports():
 @login_required
 @admin_required
 def download_import_template(template_type: str):
-    template_map = {'combined', 'pupils', 'subject_results', 'writing_results', 'reception', 'sats_tracker'}
+    template_map = {'combined', 'reception', 'sats_tracker'}
     if template_type not in template_map:
         flash('Unknown template type.', 'warning')
         return redirect(url_for('admin.imports'))

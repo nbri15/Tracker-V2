@@ -234,13 +234,11 @@ Combined import behaviour:
 - existing CSV results can be updated by a later CSV upload
 - the import page shows counts for pupils created/updated, subject results created/updated, writing results created/updated, protected results skipped, rows skipped, and row-level validation messages
 
-Legacy tools still available:
+Additional supported CSV workflows:
 
-- pupil import template download
-- subject result import template download
-- writing import template download
-- legacy CSV upload for pupils, subject results, and writing results
-- CSV export for the main overview/reporting routes listed above
+- Reception tracker CSV import and export (from the same imports page)
+- Year 6 SATs tracker CSV import and export (from the same imports page)
+- CSV exports for the main overview/reporting routes listed above
 
 ## Typical development commands
 
