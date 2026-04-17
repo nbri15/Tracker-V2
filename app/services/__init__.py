@@ -110,6 +110,7 @@ from .phonics import (
     is_ks1_year_group,
     save_phonics_columns,
     save_phonics_scores,
+    sort_phonics_tracker_rows,
 )
 from .times_tables import (
     DEFAULT_TIMES_TABLE_COLUMNS,
@@ -121,6 +122,7 @@ from .times_tables import (
     is_times_tables_year_group,
     save_times_tables_columns,
     save_times_tables_scores,
+    sort_times_tables_tracker_rows,
 )
 from .csv_tools import (
     CsvImportSummary,

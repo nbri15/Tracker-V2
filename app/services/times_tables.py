@@ -162,3 +162,57 @@ def save_times_tables_scores(pupils: list[Pupil], columns: list[TimesTableTestCo
             )
             record.score = score
             db.session.add(record)
+
+
+def sort_times_tables_tracker_rows(rows: list[dict], sort_column: str, sort_direction: str) -> list[dict]:
+    reverse = sort_direction == 'desc'
+    if sort_column == 'name':
+        return sorted(
+            rows,
+            key=lambda row: (
+                row['pupil'].last_name.lower(),
+                row['pupil'].first_name.lower(),
+                row['pupil'].id,
+            ),
+            reverse=reverse,
+        )
+    if sort_column.startswith('column_'):
+        try:
+            column_id = int(sort_column.split('_', 1)[1])
+        except (TypeError, ValueError):
+            return sorted(
+                rows,
+                key=lambda row: (
+                    row['pupil'].last_name.lower(),
+                    row['pupil'].first_name.lower(),
+                    row['pupil'].id,
+                ),
+            )
+        populated = [row for row in rows if row['scores'].get(column_id) is not None]
+        empty = sorted(
+            [row for row in rows if row['scores'].get(column_id) is None],
+            key=lambda row: (
+                row['pupil'].last_name.lower(),
+                row['pupil'].first_name.lower(),
+                row['pupil'].id,
+            ),
+        )
+        populated = sorted(
+            populated,
+            key=lambda row: (
+                row['scores'].get(column_id),
+                row['pupil'].last_name.lower(),
+                row['pupil'].first_name.lower(),
+                row['pupil'].id,
+            ),
+            reverse=reverse,
+        )
+        return (populated + empty) if reverse else (empty + populated)
+    return sorted(
+        rows,
+        key=lambda row: (
+            row['pupil'].last_name.lower(),
+            row['pupil'].first_name.lower(),
+            row['pupil'].id,
+        ),
+    )

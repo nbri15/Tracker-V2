@@ -96,8 +96,10 @@ from app.services import (
     save_sats_column,
     save_phonics_columns,
     save_phonics_scores,
+    sort_phonics_tracker_rows,
     save_times_tables_columns,
     save_times_tables_scores,
+    sort_times_tables_tracker_rows,
     save_reception_tracker_entries,
     save_sats_tab,
     set_tracker_mode,
@@ -343,6 +345,17 @@ def class_phonics(class_id: int):
 
     pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
     columns = ensure_phonics_columns(school_class.year_group)
+    active_columns = [column for column in columns if column.is_active]
+    sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
+    sort_state = build_table_sort_state(request.values, allowed_columns=sortable_columns, default_column='name')
+    header_state = {
+        column: {
+            'indicator': build_sort_indicator(column, sort_state),
+            'next_direction': get_next_sort_direction(column, sort_state),
+            'active': sort_state['column'] == column,
+        }
+        for column in sortable_columns
+    }
 
     if request.method == 'POST':
         action = request.form.get('action', 'save_scores')
@@ -357,13 +370,14 @@ def class_phonics(class_id: int):
                 save_phonics_scores(pupils, columns, academic_year, request.form)
                 flash('Phonics scores saved.', 'success')
             db.session.commit()
-            return redirect(url_for('admin.class_phonics', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search']))
+            return redirect(url_for('admin.class_phonics', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Phonics changes could not be saved: {exc}', 'danger')
             columns = ensure_phonics_columns(school_class.year_group)
 
     rows = build_phonics_tracker_rows(pupils, columns, academic_year)
+    rows = sort_phonics_tracker_rows(rows, sort_state['column'], sort_state['direction'])
     return render_template(
         'admin/class_phonics.html',
         school_class=school_class,
@@ -379,6 +393,8 @@ def class_phonics(class_id: int):
             include_inactive=filters.get('pupil_status') != 'active',
         ),
         pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
+        sort_state=sort_state,
+        header_state=header_state,
     )
 
 
@@ -396,6 +412,17 @@ def class_times_tables(class_id: int):
 
     pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
     columns = ensure_times_tables_columns(school_class.year_group)
+    active_columns = [column for column in columns if column.is_active]
+    sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
+    sort_state = build_table_sort_state(request.values, allowed_columns=sortable_columns, default_column='name')
+    header_state = {
+        column: {
+            'indicator': build_sort_indicator(column, sort_state),
+            'next_direction': get_next_sort_direction(column, sort_state),
+            'active': sort_state['column'] == column,
+        }
+        for column in sortable_columns
+    }
 
     if request.method == 'POST':
         action = request.form.get('action', 'save_scores')
@@ -410,13 +437,14 @@ def class_times_tables(class_id: int):
                 save_times_tables_scores(pupils, columns, academic_year, request.form)
                 flash('Times tables scores saved.', 'success')
             db.session.commit()
-            return redirect(url_for('admin.class_times_tables', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search']))
+            return redirect(url_for('admin.class_times_tables', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Times tables changes could not be saved: {exc}', 'danger')
             columns = ensure_times_tables_columns(school_class.year_group)
 
     rows = build_times_tables_tracker_rows(pupils, columns, academic_year)
+    rows = sort_times_tables_tracker_rows(rows, sort_state['column'], sort_state['direction'])
     return render_template(
         'admin/class_times_tables.html',
         school_class=school_class,
@@ -432,6 +460,8 @@ def class_times_tables(class_id: int):
             include_inactive=filters.get('pupil_status') != 'active',
         ),
         pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
+        sort_state=sort_state,
+        header_state=header_state,
     )
 
 
