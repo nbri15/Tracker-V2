@@ -1,4 +1,104 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const serialiseFieldValue = (field) => {
+    if (field.tagName === 'SELECT') {
+      return field.options[field.selectedIndex]?.textContent?.trim() || '';
+    }
+    if (field.type === 'checkbox' || field.type === 'radio') {
+      return field.checked ? '✓' : '';
+    }
+    return field.value;
+  };
+
+  const replaceFormFieldsForPdf = (root) => {
+    root.querySelectorAll('input, select, textarea').forEach((field) => {
+      if (field.type === 'hidden') {
+        field.remove();
+        return;
+      }
+      const value = serialiseFieldValue(field);
+      const replacement = document.createElement('span');
+      replacement.className = 'form-control form-control-sm d-inline-block';
+      replacement.style.minHeight = 'calc(1.5em + .5rem + 2px)';
+      replacement.style.backgroundColor = '#fff';
+      replacement.textContent = value || '—';
+      field.replaceWith(replacement);
+    });
+  };
+
+  const createPdfFromSection = async (button) => {
+    const targetSelector = button.dataset.pdfTarget;
+    const target = targetSelector ? document.querySelector(targetSelector) : null;
+    if (!target) return;
+    const jsPdf = window.jspdf?.jsPDF;
+    if (!jsPdf || !window.html2canvas) {
+      window.alert('PDF export libraries are unavailable. Please refresh and try again.');
+      return;
+    }
+
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Preparing PDF...';
+
+    try {
+      const clone = target.cloneNode(true);
+      clone.querySelectorAll('[data-pdf-exclude], .no-pdf').forEach((node) => node.remove());
+      replaceFormFieldsForPdf(clone);
+
+      const staging = document.createElement('div');
+      staging.style.position = 'fixed';
+      staging.style.left = '-100000px';
+      staging.style.top = '0';
+      staging.style.padding = '16px';
+      staging.style.background = '#fff';
+      staging.style.width = `${Math.max(target.scrollWidth, target.clientWidth)}px`;
+      staging.appendChild(clone);
+      document.body.appendChild(staging);
+
+      const canvas = await window.html2canvas(staging, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+      });
+      staging.remove();
+
+      const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+      const pdf = new jsPdf({ orientation, unit: 'mm', format: 'a4', compress: true });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth - 10;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 5;
+
+      const imgData = canvas.toDataURL('image/png');
+      pdf.addImage(imgData, 'PNG', 5, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pageHeight - 10;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 5;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 5, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pageHeight - 10;
+      }
+
+      const fallbackName = (document.title || 'tracker').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const filename = button.dataset.pdfFilename || `${fallbackName}-snapshot.pdf`;
+      pdf.save(filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('PDF export failed', error);
+      window.alert('Could not generate the PDF from this view. Please try again.');
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  };
+
+  document.querySelectorAll('.js-download-pdf').forEach((button) => {
+    button.addEventListener('click', () => createPdfFromSection(button));
+  });
+
   document.querySelectorAll('.js-subject-table').forEach((table) => {
     const combinedMax = Number.parseFloat(table.dataset.combinedMax || '0');
     const belowThreshold = Number.parseFloat(table.dataset.belowThreshold || '0');

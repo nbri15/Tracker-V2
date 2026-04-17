@@ -155,10 +155,13 @@
 </ul>
 
 {% if selected_subject != 'sats' %}
-  <div class="card shadow-sm">
+  <div class="card shadow-sm" id="admin-class-subject-export">
     <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
       <strong>{{ subject_label }} pupil table</strong>
-      <span class="small text-muted">Showing {{ pupil_rows|length }} pupils · {{ selected_term|title }} term · click headings to sort</span>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="small text-muted">Showing {{ pupil_rows|length }} pupils · {{ selected_term|title }} term · click headings to sort</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#admin-class-subject-export" data-pdf-filename="{{ selected_subject }}-{{ selected_term }}-{{ academic_year }}-class-view.pdf">Download PDF</button>
+      </div>
     </div>
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0 admin-class-table">
@@ -244,10 +247,13 @@
     </div>
   </div>
 {% else %}
-  <div class="card shadow-sm">
+  <div class="card shadow-sm" id="admin-class-sats-export">
     <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
       <strong>Year 6 SATs overview</strong>
-      <span class="small text-muted">Latest saved SATs values for the filtered pupils</span>
+      <div class="d-flex gap-2 align-items-center">
+        <span class="small text-muted">Latest saved SATs values for the filtered pupils</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#admin-class-sats-export" data-pdf-filename="admin-sats-overview-{{ academic_year }}.pdf">Download PDF</button>
+      </div>
     </div>
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0 admin-class-table">
