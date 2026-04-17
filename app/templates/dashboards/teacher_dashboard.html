@@ -48,6 +48,17 @@
         </div>
       </div>
     {% endif %}
+    {% if school_class and school_class.year_group == 4 %}
+      <div class="col-sm-6 col-lg-2">
+        <div class="card shadow-sm h-100 quick-link-card">
+          <div class="card-body">
+            <p class="text-muted small mb-2">Year 4</p>
+            <h3 class="h5">Open times tables</h3>
+            <a href="{{ url_for('teacher.times_tables') }}" class="stretched-link text-decoration-none">Go to Times tables</a>
+          </div>
+        </div>
+      </div>
+    {% endif %}
     <div class="col-sm-6 col-lg-2">
       <div class="card shadow-sm h-100 quick-link-card">
         <div class="card-body">

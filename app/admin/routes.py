@@ -21,6 +21,7 @@ from app.models import (
     SatsWritingResult,
     SchoolClass,
     SubjectResult,
+    TimesTableScore,
     User,
     WritingResult,
 )
@@ -50,6 +51,7 @@ from app.services import (
     build_reception_summary,
     build_reception_tracker_rows,
     build_phonics_tracker_rows,
+    build_times_tables_tracker_rows,
     build_sats_tracker_rows,
     build_subject_overview_cards,
     build_year6_sats_overview,
@@ -83,6 +85,7 @@ from app.services import (
     get_tracker_mode_label,
     import_combined_results,
     is_ks1_year_group,
+    is_times_tables_year_group,
     import_pupils,
     import_reception_tracker,
     import_sats_tracker_results,
@@ -93,6 +96,8 @@ from app.services import (
     save_sats_column,
     save_phonics_columns,
     save_phonics_scores,
+    save_times_tables_columns,
+    save_times_tables_scores,
     save_reception_tracker_entries,
     save_sats_tab,
     set_tracker_mode,
@@ -105,7 +110,9 @@ from app.services import (
     ReceptionTrackerValidationError,
     validate_setting_payload,
     add_phonics_column,
+    add_times_tables_column,
     ensure_phonics_columns,
+    ensure_times_tables_columns,
 )
 from app.utils import admin_required
 
@@ -138,6 +145,7 @@ PUPIL_LINKED_MODELS = (
     ('SATs writing results', SatsWritingResult),
     ('SATs column results', SatsColumnResult),
     ('phonics scores', PhonicsScore),
+    ('times tables scores', TimesTableScore),
     ('class history records', PupilClassHistory),
 )
 
@@ -358,6 +366,59 @@ def class_phonics(class_id: int):
     rows = build_phonics_tracker_rows(pupils, columns, academic_year)
     return render_template(
         'admin/class_phonics.html',
+        school_class=school_class,
+        columns=columns,
+        rows=rows,
+        pupils=pupils,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        filters=filters,
+        boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
+        gender_options=get_gender_filter_options(
+            class_id=school_class.id,
+            include_inactive=filters.get('pupil_status') != 'active',
+        ),
+        pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
+    )
+
+
+@admin_bp.route('/classes/<int:class_id>/times_tables', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def class_times_tables(class_id: int):
+    school_class = SchoolClass.query.get_or_404(class_id)
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    filters = build_admin_pupil_filter_state(request.values)
+
+    if not is_times_tables_year_group(school_class.year_group):
+        flash('The times tables tracker is only available for Year 4 classes.', 'warning')
+        return redirect(url_for('admin.class_detail', class_id=class_id, academic_year=academic_year))
+
+    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    columns = ensure_times_tables_columns(school_class.year_group)
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'save_scores')
+        try:
+            if action == 'save_columns':
+                columns = save_times_tables_columns(school_class.year_group, request.form)
+                flash('Times tables test columns updated.', 'success')
+            elif action == 'add_column':
+                column = add_times_tables_column(school_class.year_group, request.form)
+                flash(f'Added times tables column {column.name}.', 'success')
+            else:
+                save_times_tables_scores(pupils, columns, academic_year, request.form)
+                flash('Times tables scores saved.', 'success')
+            db.session.commit()
+            return redirect(url_for('admin.class_times_tables', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search']))
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f'Times tables changes could not be saved: {exc}', 'danger')
+            columns = ensure_times_tables_columns(school_class.year_group)
+
+    rows = build_times_tables_tracker_rows(pupils, columns, academic_year)
+    return render_template(
+        'admin/class_times_tables.html',
         school_class=school_class,
         columns=columns,
         rows=rows,

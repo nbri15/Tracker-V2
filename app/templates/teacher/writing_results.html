@@ -27,6 +27,9 @@
     {% if school_class and school_class.year_group in [1, 2] %}
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.phonics') }}">Phonics</a>
     {% endif %}
+    {% if school_class and school_class.year_group == 4 %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.times_tables') }}">Times tables</a>
+    {% endif %}
   </div>
 </div>
 

@@ -213,3 +213,47 @@ class PhonicsScore(db.Model):
 
     def __repr__(self) -> str:
         return f'<PhonicsScore pupil={self.pupil_id} column={self.phonics_test_column_id}>'
+
+
+class TimesTableTestColumn(db.Model):
+    """Editable Year 4 times tables test column configuration."""
+
+    __tablename__ = 'times_table_test_columns'
+    __table_args__ = (
+        db.UniqueConstraint('year_group', 'name', name='uq_times_table_test_column_name'),
+        db.Index('ix_times_table_test_columns_scope', 'year_group', 'display_order'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    year_group = db.Column(db.Integer, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    scores = db.relationship('TimesTableScore', back_populates='test_column', cascade='all, delete-orphan')
+
+    def __repr__(self) -> str:
+        return f'<TimesTableTestColumn Y{self.year_group} {self.name}>'
+
+
+class TimesTableScore(db.Model):
+    """Per-pupil Year 4 times tables score for one named test column."""
+
+    __tablename__ = 'times_table_scores'
+    __table_args__ = (
+        db.UniqueConstraint('pupil_id', 'academic_year', 'times_table_test_column_id', name='uq_times_table_score_scope'),
+        db.Index('ix_times_table_scores_lookup', 'academic_year', 'times_table_test_column_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=False, index=True)
+    times_table_test_column_id = db.Column(db.Integer, db.ForeignKey('times_table_test_columns.id'), nullable=False, index=True)
+    score = db.Column(db.Integer, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    pupil = db.relationship('Pupil', back_populates='times_table_scores')
+    test_column = db.relationship('TimesTableTestColumn', back_populates='scores')
+
+    def __repr__(self) -> str:
+        return f'<TimesTableScore pupil={self.pupil_id} column={self.times_table_test_column_id}>'

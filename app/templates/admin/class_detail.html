@@ -147,6 +147,11 @@
       <a class="nav-link" href="{{ url_for('admin.class_phonics', class_id=school_class.id, academic_year=academic_year, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search) }}">Phonics</a>
     </li>
   {% endif %}
+  {% if school_class.year_group == 4 %}
+    <li class="nav-item">
+      <a class="nav-link" href="{{ url_for('admin.class_times_tables', class_id=school_class.id, academic_year=academic_year, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search) }}">Times tables</a>
+    </li>
+  {% endif %}
 </ul>
 
 {% if selected_subject != 'sats' %}
