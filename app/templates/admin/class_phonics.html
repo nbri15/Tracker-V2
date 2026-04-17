@@ -1,4 +1,14 @@
 {% extends 'base.html' %}
+{% macro sort_link(column, label) -%}
+  {% set state = header_state[column] if column in header_state else {'indicator': '', 'next_direction': 'asc', 'active': false} %}
+  <a
+    href="{{ url_for('admin.class_phonics', class_id=school_class.id, academic_year=academic_year, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search, sort=column, direction=state.next_direction) }}"
+    class="table-sort-link{% if state.active %} active{% endif %}"
+  >
+    <span>{{ label }}</span>
+    <span class="sort-indicator">{{ state.indicator or '↕' }}</span>
+  </a>
+{%- endmacro %}
 {% block title %}{{ school_class.name }} phonics{% endblock %}
 {% set page_heading = school_class.name ~ ' phonics tracker' %}
 
@@ -25,6 +35,8 @@
   <div class="card-header bg-white"><strong>Filters</strong></div>
   <div class="card-body">
     <form method="get" class="row g-2 align-items-end compact-filter-row">
+      <input type="hidden" name="sort" value="{{ sort_state.column }}">
+      <input type="hidden" name="direction" value="{{ sort_state.direction }}">
       <div class="col-md-2"><label class="form-label">Academic year</label><select name="academic_year" class="form-select form-select-sm">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
       <div class="col-md-2"><label class="form-label">Pupil status</label><select name="pupil_status" class="form-select form-select-sm">{% for value, label in pupil_status_filter_choices %}<option value="{{ value }}" {% if filters.pupil_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
       <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="all" {% if filters.gender == 'all' %}selected{% endif %}>All</option>{% for gender in gender_options %}<option value="{{ gender }}" {% if filters.gender == gender %}selected{% endif %}>{{ gender }}</option>{% endfor %}</select></div>
@@ -41,6 +53,8 @@
   <form method="post" class="row g-2 align-items-end">
     <input type="hidden" name="action" value="save_columns">
     <input type="hidden" name="academic_year" value="{{ academic_year }}">
+    <input type="hidden" name="sort" value="{{ sort_state.column }}">
+    <input type="hidden" name="direction" value="{{ sort_state.direction }}">
     {% for column in columns %}
       <div class="col-md-4 col-xl-3"><label class="form-label">Name</label><input type="text" class="form-control form-control-sm" name="column_name_{{ column.id }}" value="{{ column.name }}"></div>
       <div class="col-md-2 col-xl-1"><label class="form-label">Order</label><input type="number" class="form-control form-control-sm" name="display_order_{{ column.id }}" value="{{ column.display_order }}"></div>
@@ -52,6 +66,8 @@
   <form method="post" class="row g-2 align-items-end">
     <input type="hidden" name="action" value="add_column">
     <input type="hidden" name="academic_year" value="{{ academic_year }}">
+    <input type="hidden" name="sort" value="{{ sort_state.column }}">
+    <input type="hidden" name="direction" value="{{ sort_state.direction }}">
     <div class="col-md-4"><label class="form-label">New column name</label><input type="text" class="form-control form-control-sm" name="new_column_name"></div>
     <div class="col-md-2"><label class="form-label">Order</label><input type="number" class="form-control form-control-sm" name="new_column_order"></div>
     <div class="col-md-2"><button class="btn btn-outline-secondary btn-sm">Add column</button></div>
@@ -62,11 +78,13 @@
   <form method="post">
     <input type="hidden" name="action" value="save_scores">
     <input type="hidden" name="academic_year" value="{{ academic_year }}">
+    <input type="hidden" name="sort" value="{{ sort_state.column }}">
+    <input type="hidden" name="direction" value="{{ sort_state.direction }}">
     <div class="px-3 py-3 text-end"><button class="btn btn-success btn-sm">Save phonics scores</button></div>
     <div class="table-responsive spreadsheet-wrap">
-      <table class="table table-sm table-hover align-middle mb-0 spreadsheet-table"><thead class="table-light sticky-top"><tr><th>Pupil</th>{% for column in columns if column.is_active %}<th>{{ column.name }}</th>{% endfor %}<th>Latest</th></tr></thead><tbody>
+      <table class="table table-sm table-hover align-middle mb-0 spreadsheet-table"><thead class="table-light sticky-top"><tr><th>{{ sort_link('name', 'Pupil') }}</th>{% for column in columns if column.is_active %}<th>{{ sort_link('column_' ~ column.id, column.name) }}</th>{% endfor %}<th>Latest</th></tr></thead><tbody>
         {% for row in rows %}
-          <tr><td><div class="fw-semibold">{{ row.pupil.full_name }}</div><div class="small text-muted">{{ row.flags if row.flags is defined else '' }}</div></td>{% for column in columns if column.is_active %}<td><input type="number" min="0" step="1" class="form-control form-control-sm" name="score_{{ row.pupil.id }}_{{ column.id }}" value="{{ row.scores[column.id] if row.scores[column.id] is not none else '' }}"></td>{% endfor %}<td>{{ row.latest_score if row.latest_score is not none else '—' }}</td></tr>
+          <tr><td><div class="fw-semibold">{{ row.pupil.full_name }}</div><div class="small text-muted">{{ row.flags if row.flags is defined else '' }}</div></td>{% for column in columns if column.is_active %}{% set score = row.scores[column.id] %}<td class="{% if score is not none and score < 30 %}tracker-score-low{% elif score is not none and score <= 33 %}tracker-score-mid{% elif score is not none %}tracker-score-high{% endif %}"><input type="number" min="0" step="1" class="form-control form-control-sm" name="score_{{ row.pupil.id }}_{{ column.id }}" value="{{ score if score is not none else '' }}"></td>{% endfor %}<td>{{ row.latest_score if row.latest_score is not none else '—' }}</td></tr>
         {% else %}
           <tr><td colspan="99" class="text-center py-4 text-muted">No pupils match current filters.</td></tr>
         {% endfor %}
