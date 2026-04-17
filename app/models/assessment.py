@@ -169,3 +169,47 @@ class GapScore(db.Model):
 
     def __repr__(self) -> str:
         return f'<GapScore pupil={self.pupil_id} question={self.question_id}>'
+
+
+class PhonicsTestColumn(db.Model):
+    """Editable phonics test column configuration by year group."""
+
+    __tablename__ = 'phonics_test_columns'
+    __table_args__ = (
+        db.UniqueConstraint('year_group', 'name', name='uq_phonics_test_column_name'),
+        db.Index('ix_phonics_test_columns_scope', 'year_group', 'display_order'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    year_group = db.Column(db.Integer, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    scores = db.relationship('PhonicsScore', back_populates='test_column', cascade='all, delete-orphan')
+
+    def __repr__(self) -> str:
+        return f'<PhonicsTestColumn Y{self.year_group} {self.name}>'
+
+
+class PhonicsScore(db.Model):
+    """Per-pupil phonics score for one named test column."""
+
+    __tablename__ = 'phonics_scores'
+    __table_args__ = (
+        db.UniqueConstraint('pupil_id', 'academic_year', 'phonics_test_column_id', name='uq_phonics_score_scope'),
+        db.Index('ix_phonics_scores_lookup', 'academic_year', 'phonics_test_column_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=False, index=True)
+    phonics_test_column_id = db.Column(db.Integer, db.ForeignKey('phonics_test_columns.id'), nullable=False, index=True)
+    score = db.Column(db.Integer, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    pupil = db.relationship('Pupil', back_populates='phonics_scores')
+    test_column = db.relationship('PhonicsTestColumn', back_populates='scores')
+
+    def __repr__(self) -> str:
+        return f'<PhonicsScore pupil={self.pupil_id} column={self.phonics_test_column_id}>'

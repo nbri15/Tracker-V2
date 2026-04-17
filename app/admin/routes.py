@@ -13,6 +13,7 @@ from app.models import (
     AssessmentSetting,
     GapScore,
     Intervention,
+    PhonicsScore,
     Pupil,
     PupilClassHistory,
     SatsColumnResult,
@@ -48,6 +49,7 @@ from app.services import (
     build_reception_overview,
     build_reception_summary,
     build_reception_tracker_rows,
+    build_phonics_tracker_rows,
     build_sats_tracker_rows,
     build_subject_overview_cards,
     build_year6_sats_overview,
@@ -80,6 +82,7 @@ from app.services import (
     get_tracker_mode,
     get_tracker_mode_label,
     import_combined_results,
+    is_ks1_year_group,
     import_pupils,
     import_reception_tracker,
     import_sats_tracker_results,
@@ -88,6 +91,8 @@ from app.services import (
     parse_uploaded_csv,
     promote_pupils_to_next_year,
     save_sats_column,
+    save_phonics_columns,
+    save_phonics_scores,
     save_reception_tracker_entries,
     save_sats_tab,
     set_tracker_mode,
@@ -99,6 +104,8 @@ from app.services import (
     update_assessment_setting,
     ReceptionTrackerValidationError,
     validate_setting_payload,
+    add_phonics_column,
+    ensure_phonics_columns,
 )
 from app.utils import admin_required
 
@@ -130,6 +137,7 @@ PUPIL_LINKED_MODELS = (
     ('SATs results', SatsResult),
     ('SATs writing results', SatsWritingResult),
     ('SATs column results', SatsColumnResult),
+    ('phonics scores', PhonicsScore),
     ('class history records', PupilClassHistory),
 )
 
@@ -310,6 +318,59 @@ def class_sats(class_id: int):
         class_summaries=[{'class': school_class, 'rows': rows, 'subject_totals': overview}],
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
         sats_score_type_choices=SATS_SCORE_TYPES,
+    )
+
+
+@admin_bp.route('/classes/<int:class_id>/phonics', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def class_phonics(class_id: int):
+    school_class = SchoolClass.query.get_or_404(class_id)
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    filters = build_admin_pupil_filter_state(request.values)
+
+    if not is_ks1_year_group(school_class.year_group):
+        flash('The phonics tracker is only available for Year 1 and Year 2 classes.', 'warning')
+        return redirect(url_for('admin.class_detail', class_id=class_id, academic_year=academic_year))
+
+    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    columns = ensure_phonics_columns(school_class.year_group)
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'save_scores')
+        try:
+            if action == 'save_columns':
+                columns = save_phonics_columns(school_class.year_group, request.form)
+                flash('Phonics test columns updated.', 'success')
+            elif action == 'add_column':
+                column = add_phonics_column(school_class.year_group, request.form)
+                flash(f'Added phonics column {column.name}.', 'success')
+            else:
+                save_phonics_scores(pupils, columns, academic_year, request.form)
+                flash('Phonics scores saved.', 'success')
+            db.session.commit()
+            return redirect(url_for('admin.class_phonics', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search']))
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f'Phonics changes could not be saved: {exc}', 'danger')
+            columns = ensure_phonics_columns(school_class.year_group)
+
+    rows = build_phonics_tracker_rows(pupils, columns, academic_year)
+    return render_template(
+        'admin/class_phonics.html',
+        school_class=school_class,
+        columns=columns,
+        rows=rows,
+        pupils=pupils,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        filters=filters,
+        boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
+        gender_options=get_gender_filter_options(
+            class_id=school_class.id,
+            include_inactive=filters.get('pupil_status') != 'active',
+        ),
+        pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
     )
 
 

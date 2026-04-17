@@ -100,6 +100,17 @@ from .reception import (
     get_tracking_point_key,
     save_reception_tracker_entries,
 )
+from .phonics import (
+    DEFAULT_PHONICS_COLUMNS,
+    KS1_YEAR_GROUPS,
+    PhonicsValidationError,
+    add_phonics_column,
+    build_phonics_tracker_rows,
+    ensure_phonics_columns,
+    is_ks1_year_group,
+    save_phonics_columns,
+    save_phonics_scores,
+)
 from .csv_tools import (
     CsvImportSummary,
     export_class_overview_csv,

@@ -142,6 +142,11 @@
       <a class="nav-link {% if selected_subject == subject %}active{% endif %}" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=subject, term=selected_term if subject != 'sats' else None, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search) }}">{{ 'SATs' if subject == 'sats' else ('SPaG' if subject == 'spag' else subject|replace('_', ' ')|title) }}</a>
     </li>
   {% endfor %}
+  {% if school_class.year_group in [1, 2] %}
+    <li class="nav-item">
+      <a class="nav-link" href="{{ url_for('admin.class_phonics', class_id=school_class.id, academic_year=academic_year, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search) }}">Phonics</a>
+    </li>
+  {% endif %}
 </ul>
 
 {% if selected_subject != 'sats' %}

@@ -28,6 +28,7 @@ from app.services import (
     build_reception_tracker_rows,
     build_admin_pupil_filter_state,
     build_gap_page_context,
+    build_phonics_tracker_rows,
     build_sort_indicator,
     build_table_sort_state,
     build_sats_tracker_rows,
@@ -47,11 +48,14 @@ from app.services import (
     get_tracker_mode,
     get_tracker_mode_label,
     get_writing_band_label,
+    is_ks1_year_group,
     get_writing_outcome_theme,
     parse_question_columns,
     recalculate_subject_results_for_scope,
     save_reception_tracker_entries,
     save_gap_scores,
+    save_phonics_columns,
+    save_phonics_scores,
     save_sats_column,
     save_sats_tab,
     save_sats_tracker_results,
@@ -61,6 +65,8 @@ from app.services import (
     toggle_sats_tab,
     update_assessment_setting,
     validate_setting_payload,
+    add_phonics_column,
+    ensure_phonics_columns,
     ReceptionTrackerValidationError,
     SatsColumnValidationError,
     sort_subject_result_rows,
@@ -105,6 +111,54 @@ def spag():
 @teacher_required
 def writing():
     return render_writing_page()
+
+
+@teacher_bp.route('/phonics', methods=['GET', 'POST'])
+@login_required
+@teacher_required
+def phonics():
+    school_class = get_primary_class_for_user(current_user)
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    filters = build_admin_pupil_filter_state(request.values)
+
+    if not school_class or not is_ks1_year_group(school_class.year_group):
+        flash('The phonics tracker is only available for Year 1 and Year 2 classes.', 'warning')
+        return redirect(url_for('dashboards.teacher_dashboard'))
+
+    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    columns = ensure_phonics_columns(school_class.year_group)
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'save_scores')
+        try:
+            if action == 'save_columns':
+                columns = save_phonics_columns(school_class.year_group, request.form)
+                flash('Phonics test columns updated.', 'success')
+            elif action == 'add_column':
+                column = add_phonics_column(school_class.year_group, request.form)
+                flash(f'Added phonics column {column.name}.', 'success')
+            else:
+                save_phonics_scores(pupils, columns, academic_year, request.form)
+                flash('Phonics scores saved.', 'success')
+            db.session.commit()
+            return redirect(url_for('teacher.phonics', academic_year=academic_year, search=filters['search'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child']))
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f'Phonics changes could not be saved: {exc}', 'danger')
+            columns = ensure_phonics_columns(school_class.year_group)
+
+    rows = build_phonics_tracker_rows(pupils, columns, academic_year)
+    return render_template(
+        'teacher/phonics_tracker.html',
+        school_class=school_class,
+        pupils=pupils,
+        rows=rows,
+        columns=columns,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        filters=filters,
+        gender_options=get_gender_filter_options(class_id=school_class.id),
+    )
 
 
 @teacher_bp.route('/<subject>/gap', methods=['GET', 'POST'])
