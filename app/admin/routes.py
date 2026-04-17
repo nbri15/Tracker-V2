@@ -931,8 +931,18 @@ def download_import_template(template_type: str):
 def headline_report():
     academic_year = request.args.get('academic_year', get_current_academic_year())
     subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
+    tracker_key = (request.args.get('tracker_key', '') or '').strip()
     year_group_raw = request.args.get('year_group', '').strip()
     year_group = int(year_group_raw) if year_group_raw.isdigit() else None
+    if subject == 'eyfs' and year_group is None:
+        year_group_raw = '0'
+        year_group = 0
+    if subject == 'times_tables' and year_group is None:
+        year_group_raw = '4'
+        year_group = 4
+    if subject == 'sats' and year_group is None:
+        year_group_raw = '6'
+        year_group = 6
     subgroup = (request.args.get('subgroup', 'all') or 'all').strip() or 'all'
     pupil_filters = build_admin_pupil_filter_state(request.args)
     report = build_headline_report(
@@ -941,16 +951,36 @@ def headline_report():
         year_group=year_group,
         subgroup=subgroup,
         filters=pupil_filters,
+        tracker_key=tracker_key or None,
     )
+    tracker_options = []
+    if subject == 'eyfs':
+        tracker_options = [{'value': '', 'label': 'All tracking points'}] + [
+            {'value': key, 'label': label} for key, label in RECEPTION_TRACKING_POINTS
+        ]
+    elif subject == 'phonics':
+        phonics_years = [year_group] if year_group in {1, 2} else [1, 2]
+        for year in phonics_years:
+            for column in ensure_phonics_columns(year):
+                tracker_options.append({'value': str(column.id), 'label': f'Year {year} · {column.name}'})
+    elif subject == 'times_tables':
+        for column in ensure_times_tables_columns(4):
+            tracker_options.append({'value': str(column.id), 'label': column.name})
+    elif subject == 'sats':
+        tracker_options = [{'value': '', 'label': 'Latest active exam tab'}] + [
+            {'value': str(tab.id), 'label': tab.name} for tab in get_sats_exam_tabs(6, include_inactive=False)
+        ]
     return render_template(
         'admin/headline_report.html',
         report=report,
         subject=subject,
+        tracker_key=tracker_key,
+        tracker_options=tracker_options,
         academic_year=academic_year,
         year_group=year_group_raw,
         subgroup=subgroup,
         pupil_filters=pupil_filters,
-        subjects=['writing', 'reading', 'maths', 'spag'],
+        subjects=['writing', 'reading', 'maths', 'spag', 'eyfs', 'phonics', 'times_tables', 'sats'],
         subgroup_filters=SUBGROUP_FILTERS,
         boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
     )
@@ -962,8 +992,15 @@ def headline_report():
 def export_headline_report():
     academic_year = request.args.get('academic_year', get_current_academic_year())
     subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
+    tracker_key = (request.args.get('tracker_key', '') or '').strip()
     year_group_raw = request.args.get('year_group', '').strip()
     year_group = int(year_group_raw) if year_group_raw.isdigit() else None
+    if subject == 'eyfs' and year_group is None:
+        year_group = 0
+    if subject == 'times_tables' and year_group is None:
+        year_group = 4
+    if subject == 'sats' and year_group is None:
+        year_group = 6
     subgroup = (request.args.get('subgroup', 'all') or 'all').strip() or 'all'
     pupil_filters = build_admin_pupil_filter_state(request.args)
     report = build_headline_report(
@@ -972,6 +1009,7 @@ def export_headline_report():
         year_group=year_group,
         subgroup=subgroup,
         filters=pupil_filters,
+        tracker_key=tracker_key or None,
     )
 
     output = io.StringIO()
@@ -982,25 +1020,25 @@ def export_headline_report():
     writer.writerow(['Year group', f"Year {year_group}" if year_group else 'Whole school'])
     writer.writerow(['Subgroup', SUBGROUP_FILTERS.get(subgroup, subgroup.title())])
     writer.writerow([])
-    header = ['Year group']
-    for term in report['terms']:
-        term_label = report['term_labels'][term]
+    header = [report.get('row_header_label', 'Year group')]
+    for term in report['buckets']:
+        term_label = report['bucket_labels'][term]
         for measure_key in report['measure_keys']:
             header.append(f"{term_label} {report['measure_labels'][measure_key]}")
     writer.writerow(header)
     for row in report['rows']:
-        row_data = [f"Year {row['year_group']}"]
-        for term in report['terms']:
+        row_data = [row.get('label') or f"Year {row.get('year_group', '')}".strip()]
+        for term in report['buckets']:
             for measure_key in report['measure_keys']:
-                row_data.append(row['terms'][term][measure_key]['display'])
+                row_data.append(row['cells'][term][measure_key]['display'])
         writer.writerow(row_data)
     total_row = ['Whole school']
-    for term in report['terms']:
+    for term in report['buckets']:
         for measure_key in report['measure_keys']:
             total_row.append(report['totals'][term][measure_key]['display'])
     writer.writerow(total_row)
     csv_text = output.getvalue()
-    filename_subject = subject if subject in {'maths', 'reading', 'spag', 'writing'} else 'headline'
+    filename_subject = subject if subject in {'maths', 'reading', 'spag', 'writing', 'eyfs', 'phonics', 'times_tables', 'sats'} else 'headline'
     return Response(
         csv_text,
         mimetype='text/csv',

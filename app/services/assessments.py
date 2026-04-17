@@ -9,7 +9,24 @@ from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
-from app.models import AssessmentSetting, Intervention, Pupil, SatsResult, SatsWritingResult, SchoolClass, SubjectResult, WritingResult
+from app.models import (
+    AssessmentSetting,
+    Intervention,
+    PhonicsScore,
+    PhonicsTestColumn,
+    Pupil,
+    ReceptionTrackerEntry,
+    SatsColumnResult,
+    SatsColumnSetting,
+    SatsExamTab,
+    SatsResult,
+    SatsWritingResult,
+    SchoolClass,
+    SubjectResult,
+    TimesTableScore,
+    TimesTableTestColumn,
+    WritingResult,
+)
 
 TERMS = [
     ('autumn', 'Autumn'),
@@ -675,6 +692,55 @@ def _headline_measure_cell(*, count: int, total: int) -> dict:
     return _headline_term_cell(count=count, total=total)
 
 
+def _finalize_headline_payload(
+    *,
+    subject: str,
+    subject_label: str,
+    academic_year: str,
+    year_group: int | None,
+    subgroup: str,
+    bucket_keys: list[str],
+    bucket_labels: dict[str, str],
+    measure_labels: dict[str, str],
+    row_header_label: str,
+    rows: list[dict],
+) -> dict:
+    totals_by_bucket = {
+        bucket: {'total': 0, **{measure: 0 for measure in measure_labels}}
+        for bucket in bucket_keys
+    }
+    for row in rows:
+        for bucket in bucket_keys:
+            bucket_totals = row.get('bucket_totals', {}).get(bucket, {})
+            totals_by_bucket[bucket]['total'] += bucket_totals.get('total', 0)
+            for measure in measure_labels:
+                totals_by_bucket[bucket][measure] += bucket_totals.get(measure, 0)
+
+    return {
+        'subject': subject,
+        'subject_label': subject_label,
+        'academic_year': academic_year,
+        'year_group': year_group,
+        'subgroup': subgroup,
+        'row_header_label': row_header_label,
+        'buckets': bucket_keys,
+        'bucket_labels': bucket_labels,
+        'measure_keys': tuple(measure_labels.keys()),
+        'measure_labels': measure_labels,
+        'rows': rows,
+        'totals': {
+            bucket: {
+                measure: _headline_measure_cell(count=values[measure], total=values['total'])
+                for measure in measure_labels
+            }
+            for bucket, values in totals_by_bucket.items()
+        },
+        # Backward-compatible aliases used by existing template/export logic.
+        'terms': bucket_keys,
+        'term_labels': bucket_labels,
+    }
+
+
 def build_headline_report(
     *,
     subject: str,
@@ -682,129 +748,274 @@ def build_headline_report(
     year_group: int | None = None,
     subgroup: str = 'all',
     filters: dict | None = None,
+    tracker_key: str | None = None,
 ) -> dict:
-    if subject not in ALL_SUBJECTS:
+    additional_subjects = {'eyfs', 'phonics', 'times_tables', 'sats'}
+    if subject not in ALL_SUBJECTS and subject not in additional_subjects:
         subject = 'maths'
     filters = filters or {}
-    years = [year_group] if year_group in {1, 2, 3, 4, 5, 6} else [1, 2, 3, 4, 5, 6]
-    terms = [term for term, _ in TERMS]
+    measure_labels = {'working_towards': 'Working Towards', 'on_track_plus': 'On Track+', 'exceeding': 'Exceeding'}
 
-    measure_labels = {
-        'working_towards': 'Working Towards',
-        'on_track_plus': 'On Track+',
-        'exceeding': 'Exceeding',
-    }
-    measure_keys = tuple(measure_labels.keys())
-
-    if subject in CORE_SUBJECTS:
+    if subject in ALL_SUBJECTS:
+        years = [year_group] if year_group in {1, 2, 3, 4, 5, 6} else [1, 2, 3, 4, 5, 6]
+        terms = [term for term, _ in TERMS]
         query = (
-            SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)
-            .filter(
+            SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class).filter(
                 SubjectResult.subject == subject,
                 SubjectResult.academic_year == academic_year,
                 SchoolClass.year_group.in_(years),
             )
         )
-        query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
-        rows = query.all()
-        year_term_counts = defaultdict(
-            lambda: defaultdict(
-                lambda: {
-                    'total': 0,
-                    'working_towards': 0,
-                    'on_track_plus': 0,
-                    'exceeding': 0,
-                }
-            )
-        )
-        for row in rows:
-            if row.term not in terms:
-                continue
-            cell = year_term_counts[row.pupil.school_class.year_group][row.term]
-            cell['total'] += 1
-            if row.band_label == 'Exceeding':
-                cell['exceeding'] += 1
-                cell['on_track_plus'] += 1
-            elif row.band_label == 'On Track':
-                cell['on_track_plus'] += 1
-            else:
-                cell['working_towards'] += 1
-    else:
-        query = (
-            WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class)
-            .filter(
+        if subject == 'writing':
+            query = WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class).filter(
                 WritingResult.academic_year == academic_year,
                 SchoolClass.year_group.in_(years),
             )
-        )
         query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
-        rows = query.all()
-        year_term_counts = defaultdict(
-            lambda: defaultdict(
-                lambda: {
-                    'total': 0,
-                    'working_towards': 0,
-                    'on_track_plus': 0,
-                    'exceeding': 0,
-                }
-            )
-        )
-        for row in rows:
+        score_rows = query.all()
+        year_term_counts = defaultdict(lambda: defaultdict(lambda: {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0}))
+        for row in score_rows:
             if row.term not in terms:
                 continue
             cell = year_term_counts[row.pupil.school_class.year_group][row.term]
             cell['total'] += 1
-            if row.band == 'greater_depth':
+            if subject in CORE_SUBJECTS and row.band_label == 'Exceeding':
                 cell['exceeding'] += 1
                 cell['on_track_plus'] += 1
-            elif row.band == 'expected':
+            elif subject in CORE_SUBJECTS and row.band_label == 'On Track':
+                cell['on_track_plus'] += 1
+            elif subject == 'writing' and row.band == 'greater_depth':
+                cell['exceeding'] += 1
+                cell['on_track_plus'] += 1
+            elif subject == 'writing' and row.band == 'expected':
                 cell['on_track_plus'] += 1
             else:
                 cell['working_towards'] += 1
-
-    year_rows = []
-    school_totals = {
-        term: {
-            'total': 0,
-            'working_towards': 0,
-            'on_track_plus': 0,
-            'exceeding': 0,
-        }
-        for term in terms
-    }
-    for year in years:
-        term_cells = {}
-        for term in terms:
-            data = year_term_counts[year][term]
-            term_cells[term] = {
-                measure: _headline_measure_cell(count=data[measure], total=data['total'])
-                for measure in measure_keys
+        rows = []
+        for year in years:
+            bucket_totals = {term: year_term_counts[year][term] for term in terms}
+            cells = {
+                term: {measure: _headline_measure_cell(count=bucket_totals[term][measure], total=bucket_totals[term]['total']) for measure in measure_labels}
+                for term in terms
             }
-            school_totals[term]['total'] += data['total']
-            for measure in measure_keys:
-                school_totals[term][measure] += data[measure]
-        year_rows.append({'year_group': year, 'terms': term_cells})
+            rows.append({'label': f'Year {year}', 'year_group': year, 'cells': cells, 'bucket_totals': bucket_totals, 'terms': cells})
+        return _finalize_headline_payload(
+            subject=subject,
+            subject_label=format_subject_name(subject),
+            academic_year=academic_year,
+            year_group=year_group,
+            subgroup=subgroup,
+            bucket_keys=terms,
+            bucket_labels={value: label for value, label in TERMS},
+            measure_labels=measure_labels,
+            row_header_label='Year group',
+            rows=rows,
+        )
 
-    total_cells = {
-        term: {
-            measure: _headline_measure_cell(count=value[measure], total=value['total'])
-            for measure in measure_keys
+    if subject == 'eyfs':
+        tracking_points = ['baseline', 'autumn_2', 'spring_1', 'spring_2', 'summer_1', 'elg']
+        selected_point = tracker_key if tracker_key in tracking_points else None
+        bucket_keys = [selected_point] if selected_point else tracking_points
+        bucket_labels = {
+            'baseline': 'Baseline',
+            'autumn_2': 'Autumn 2',
+            'spring_1': 'Spring 1',
+            'spring_2': 'Spring 2',
+            'summer_1': 'Summer 1',
+            'elg': 'ELG',
         }
-        for term, value in school_totals.items()
+        eyfs_measures = {'not_on_track': 'Not on track', 'on_track': 'On Track'}
+        query = (
+            ReceptionTrackerEntry.query.join(ReceptionTrackerEntry.pupil).join(Pupil.school_class).filter(
+                ReceptionTrackerEntry.academic_year == academic_year,
+                SchoolClass.year_group == 0,
+                ReceptionTrackerEntry.tracking_point.in_(bucket_keys),
+            )
+        )
+        query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
+        entries = query.all()
+        bucket_totals = {point: {'total': 0, 'not_on_track': 0, 'on_track': 0} for point in bucket_keys}
+        for entry in entries:
+            totals = bucket_totals[entry.tracking_point]
+            totals['total'] += 1
+            if entry.status == 'on_track':
+                totals['on_track'] += 1
+            else:
+                totals['not_on_track'] += 1
+        cells = {
+            point: {measure: _headline_measure_cell(count=bucket_totals[point][measure], total=bucket_totals[point]['total']) for measure in eyfs_measures}
+            for point in bucket_keys
+        }
+        row = {'label': 'Reception', 'year_group': 0, 'cells': cells, 'bucket_totals': bucket_totals, 'terms': cells}
+        return _finalize_headline_payload(
+            subject=subject,
+            subject_label='EYFS',
+            academic_year=academic_year,
+            year_group=0,
+            subgroup=subgroup,
+            bucket_keys=bucket_keys,
+            bucket_labels=bucket_labels,
+            measure_labels=eyfs_measures,
+            row_header_label='Year group',
+            rows=[row],
+        ) | {'selected_tracker_key': selected_point}
+
+    if subject == 'phonics':
+        years = [year_group] if year_group in {1, 2} else [1, 2]
+        columns = (
+            PhonicsTestColumn.query.filter(PhonicsTestColumn.year_group.in_(years), PhonicsTestColumn.is_active.is_(True))
+            .order_by(PhonicsTestColumn.year_group, PhonicsTestColumn.display_order, PhonicsTestColumn.id)
+            .all()
+        )
+        selected_column = next((column for column in columns if str(column.id) == str(tracker_key)), None) if tracker_key else None
+        bucket_key = str(selected_column.id) if selected_column else 'latest'
+        bucket_labels = {bucket_key: selected_column.name if selected_column else 'Latest test'}
+        band_labels = {'working_towards': 'Working Towards (<30)', 'on_track_plus': 'On Track+ (30-33)', 'exceeding': 'Exceeding (34+)'}
+        rows = []
+        for year in years:
+            pupils_query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == year)
+            pupils_query = apply_pupil_filters(pupils_query, subgroup=subgroup, filters=filters)
+            pupils = pupils_query.all()
+            pupil_ids = [pupil.id for pupil in pupils]
+            year_columns = [column for column in columns if column.year_group == year]
+            target_column = selected_column if selected_column and selected_column.year_group == year else (year_columns[-1] if year_columns else None)
+            counts = {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0}
+            if target_column and pupil_ids:
+                scores = PhonicsScore.query.filter_by(academic_year=academic_year, phonics_test_column_id=target_column.id).filter(PhonicsScore.pupil_id.in_(pupil_ids)).all()
+                for score in scores:
+                    if score.score is None:
+                        continue
+                    counts['total'] += 1
+                    if score.score >= 34:
+                        counts['exceeding'] += 1
+                    elif score.score >= 30:
+                        counts['on_track_plus'] += 1
+                    else:
+                        counts['working_towards'] += 1
+            cells = {bucket_key: {measure: _headline_measure_cell(count=counts[measure], total=counts['total']) for measure in band_labels}}
+            rows.append({'label': f'Year {year}', 'year_group': year, 'cells': cells, 'bucket_totals': {bucket_key: counts}, 'terms': cells})
+        return _finalize_headline_payload(
+            subject=subject,
+            subject_label='Phonics',
+            academic_year=academic_year,
+            year_group=year_group,
+            subgroup=subgroup,
+            bucket_keys=[bucket_key],
+            bucket_labels=bucket_labels,
+            measure_labels=band_labels,
+            row_header_label='Year group',
+            rows=rows,
+        ) | {'selected_tracker_key': bucket_key}
+
+    if subject == 'times_tables':
+        years = [4]
+        columns = (
+            TimesTableTestColumn.query.filter_by(year_group=4, is_active=True)
+            .order_by(TimesTableTestColumn.display_order, TimesTableTestColumn.id)
+            .all()
+        )
+        selected_column = next((column for column in columns if str(column.id) == str(tracker_key)), None) if tracker_key else None
+        target_column = selected_column or (columns[-1] if columns else None)
+        bucket_key = str(target_column.id) if target_column else 'latest'
+        bucket_labels = {bucket_key: target_column.name if target_column else 'Latest test'}
+        band_labels = {'working_towards': 'Working Towards (<20)', 'on_track_plus': 'On Track+ (20-24)', 'exceeding': 'Exceeding (25)'}
+
+        pupils_query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 4)
+        pupils_query = apply_pupil_filters(pupils_query, subgroup=subgroup, filters=filters)
+        pupils = pupils_query.all()
+        pupil_ids = [pupil.id for pupil in pupils]
+        counts = {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0}
+        if target_column and pupil_ids:
+            scores = TimesTableScore.query.filter_by(academic_year=academic_year, times_table_test_column_id=target_column.id).filter(TimesTableScore.pupil_id.in_(pupil_ids)).all()
+            for score in scores:
+                if score.score is None:
+                    continue
+                counts['total'] += 1
+                if score.score >= 25:
+                    counts['exceeding'] += 1
+                elif score.score >= 20:
+                    counts['on_track_plus'] += 1
+                else:
+                    counts['working_towards'] += 1
+
+        cells = {bucket_key: {measure: _headline_measure_cell(count=counts[measure], total=counts['total']) for measure in band_labels}}
+        row = {'label': 'Year 4', 'year_group': 4, 'cells': cells, 'bucket_totals': {bucket_key: counts}, 'terms': cells}
+        return _finalize_headline_payload(
+            subject=subject,
+            subject_label='Times Tables',
+            academic_year=academic_year,
+            year_group=4,
+            subgroup=subgroup,
+            bucket_keys=[bucket_key],
+            bucket_labels=bucket_labels,
+            measure_labels=band_labels,
+            row_header_label='Year group',
+            rows=[row],
+        ) | {'selected_tracker_key': bucket_key}
+
+    # SATs (Year 6 scaled score headlines).
+    tabs = SatsExamTab.query.filter_by(year_group=6).order_by(SatsExamTab.display_order, SatsExamTab.id).all()
+    selected_tab = next((tab for tab in tabs if str(tab.id) == str(tracker_key)), None) if tracker_key else None
+    if not selected_tab:
+        selected_tab = next((tab for tab in tabs if tab.is_active), tabs[-1] if tabs else None)
+    scaled_columns = []
+    if selected_tab:
+        scaled_columns = (
+            SatsColumnSetting.query.filter_by(year_group=6, exam_tab_id=selected_tab.id, score_type='scaled', is_active=True)
+            .filter(SatsColumnSetting.column_key.in_(['maths_scaled', 'reading_scaled', 'spag_scaled']))
+            .order_by(SatsColumnSetting.display_order, SatsColumnSetting.id)
+            .all()
+        )
+    pupils_query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6)
+    pupils_query = apply_pupil_filters(pupils_query, subgroup=subgroup, filters=filters)
+    pupils = pupils_query.all()
+    pupil_ids = [pupil.id for pupil in pupils]
+    measure_labels = {'working_towards': 'Working Towards (<100)', 'on_track_plus': 'On Track+ (100-109)', 'exceeding': 'Exceeding (110+)'}
+    bucket_keys = [column.column_key for column in scaled_columns] or ['maths_scaled', 'reading_scaled', 'spag_scaled']
+    bucket_labels = {'maths_scaled': 'Maths scaled', 'reading_scaled': 'Reading scaled', 'spag_scaled': 'SPaG scaled'}
+    bucket_totals = {bucket: {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0} for bucket in bucket_keys}
+    if pupil_ids and scaled_columns:
+        results = (
+            SatsColumnResult.query.filter_by(academic_year=academic_year)
+            .filter(SatsColumnResult.pupil_id.in_(pupil_ids), SatsColumnResult.column_id.in_([column.id for column in scaled_columns]))
+            .all()
+        )
+        column_key_by_id = {column.id: column.column_key for column in scaled_columns}
+        for result in results:
+            score_value = result.raw_score
+            if score_value is None:
+                continue
+            key = column_key_by_id.get(result.column_id)
+            if key not in bucket_totals:
+                continue
+            bucket = bucket_totals[key]
+            bucket['total'] += 1
+            if score_value >= 110:
+                bucket['exceeding'] += 1
+            elif score_value >= 100:
+                bucket['on_track_plus'] += 1
+            else:
+                bucket['working_towards'] += 1
+    cells = {
+        bucket: {
+            measure: _headline_measure_cell(count=bucket_totals[bucket][measure], total=bucket_totals[bucket]['total'])
+            for measure in measure_labels
+        }
+        for bucket in bucket_keys
     }
-    return {
-        'subject': subject,
-        'subject_label': format_subject_name(subject),
-        'academic_year': academic_year,
-        'year_group': year_group,
-        'subgroup': subgroup,
-        'terms': terms,
-        'term_labels': {value: label for value, label in TERMS},
-        'measure_keys': measure_keys,
-        'measure_labels': measure_labels,
-        'rows': year_rows,
-        'totals': total_cells,
-    }
+    row = {'label': 'Year 6', 'year_group': 6, 'cells': cells, 'bucket_totals': bucket_totals, 'terms': cells}
+    return _finalize_headline_payload(
+        subject='sats',
+        subject_label='SATs',
+        academic_year=academic_year,
+        year_group=6,
+        subgroup=subgroup,
+        bucket_keys=bucket_keys,
+        bucket_labels=bucket_labels,
+        measure_labels=measure_labels,
+        row_header_label='Year group',
+        rows=[row],
+    ) | {'selected_tracker_key': str(selected_tab.id) if selected_tab else ''}
 
 
 def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_year: str) -> tuple[str, list[dict]]:
