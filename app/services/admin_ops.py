@@ -111,20 +111,50 @@ def snapshot_pupil_history(academic_year: str) -> int:
     return created
 
 
-def promote_pupils_to_next_year(source_year: str) -> dict:
+def get_promotion_mapping_options() -> list[dict]:
+    """Build source-class rows and valid destination options for promotion UI."""
+    classes = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    options: list[dict] = []
+    for school_class in classes:
+        active_pupil_count = school_class.pupils.filter_by(is_active=True).count()
+        destination_classes = (
+            SchoolClass.query.filter_by(is_active=True, year_group=school_class.year_group + 1)
+            .order_by(SchoolClass.name)
+            .all()
+        )
+        options.append({
+            'source_class': school_class,
+            'active_pupil_count': active_pupil_count,
+            'destination_classes': destination_classes,
+            'requires_selection': bool(destination_classes),
+            'default_destination_id': destination_classes[0].id if len(destination_classes) == 1 else None,
+        })
+    return options
+
+
+def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int | None] | None = None) -> dict:
     snapshot_count = snapshot_pupil_history(source_year)
     target_year = build_next_academic_year(source_year)
     ensure_academic_year(source_year, archived=True)
     ensure_academic_year(target_year, mark_current=True)
 
+    normalized_mapping = class_mapping or {}
     classes = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group.desc(), SchoolClass.name).all()
     moved = 0
     leavers = 0
     for school_class in classes:
         pupils = school_class.pupils.filter_by(is_active=True).all()
+        selected_destination_id = normalized_mapping.get(school_class.id)
+        selected_destination = None
+        if selected_destination_id:
+            selected_destination = SchoolClass.query.filter_by(id=selected_destination_id, is_active=True).first()
+            if not selected_destination:
+                raise ValueError(f'Invalid destination selected for {school_class.name}.')
+            if selected_destination.year_group != school_class.year_group + 1:
+                raise ValueError(f'Invalid destination year group selected for {school_class.name}.')
         for pupil in pupils:
             history = PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=source_year).first()
-            if school_class.year_group >= 6:
+            if selected_destination is None and school_class.year_group >= 6:
                 pupil.is_active = False
                 leavers += 1
                 if history:
@@ -132,11 +162,13 @@ def promote_pupils_to_next_year(source_year: str) -> dict:
                     db.session.add(history)
                 db.session.add(pupil)
                 continue
-            next_class = SchoolClass.query.filter_by(year_group=school_class.year_group + 1, is_active=True).order_by(SchoolClass.name).first()
+            next_class = selected_destination
             if not next_class:
-                next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True)
-                db.session.add(next_class)
-                db.session.flush()
+                next_class = SchoolClass.query.filter_by(year_group=school_class.year_group + 1, is_active=True).order_by(SchoolClass.name).first()
+                if not next_class:
+                    next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True)
+                    db.session.add(next_class)
+                    db.session.flush()
             pupil.class_id = next_class.id
             moved += 1
             if history:

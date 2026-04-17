@@ -59,6 +59,7 @@ from .admin_ops import (
     ensure_academic_year,
     ensure_default_logins_and_classes,
     get_history_rows,
+    get_promotion_mapping_options,
     promote_pupils_to_next_year,
     snapshot_pupil_history,
     sort_teacher_accounts,
