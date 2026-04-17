@@ -8,7 +8,7 @@
     <h3 class="h4 mb-1">School headline report</h3>
     <p class="text-muted mb-0">Leadership summary of {{ report.subject_label }} outcomes by year group and term.</p>
   </div>
-  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.export_headline_report', subject=subject, academic_year=academic_year, year_group=year_group or None, subgroup=subgroup, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, search=pupil_filters.search) }}">Download Excel-friendly CSV</a>
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.export_headline_report', subject=subject, tracker_key=tracker_key or None, academic_year=academic_year, year_group=year_group or None, subgroup=subgroup, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, search=pupil_filters.search) }}">Download Excel-friendly CSV</a>
 </div>
 
 <div class="card shadow-sm mb-4">
@@ -19,7 +19,7 @@
         <label class="form-label">Subject</label>
         <select class="form-select" name="subject">
           {% for option in subjects %}
-            <option value="{{ option }}" {% if subject == option %}selected{% endif %}>{{ 'SPaG' if option == 'spag' else option|title }}</option>
+            <option value="{{ option }}" {% if subject == option %}selected{% endif %}>{{ 'SPaG' if option == 'spag' else option.replace('_', ' ')|title }}</option>
           {% endfor %}
         </select>
       </div>
@@ -28,11 +28,23 @@
         <label class="form-label">Year group</label>
         <select class="form-select" name="year_group">
           <option value="">Whole school</option>
+          <option value="0" {% if year_group == '0' %}selected{% endif %}>Reception</option>
           {% for year in range(1, 7) %}
             <option value="{{ year }}" {% if year_group == year|string %}selected{% endif %}>Year {{ year }}</option>
           {% endfor %}
         </select>
       </div>
+      {% if tracker_options %}
+        <div class="col-md-3">
+          <label class="form-label">Tracking point / test</label>
+          <select class="form-select" name="tracker_key">
+            <option value="">Latest / default</option>
+            {% for option in tracker_options %}
+              <option value="{{ option.value }}" {% if tracker_key == option.value %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endif %}
       <div class="col-md-2">
         <label class="form-label">Subgroup</label>
         <select name="subgroup" class="form-select">
@@ -58,7 +70,7 @@
     <table class="table align-middle mb-0 headline-report-table">
       <thead class="table-light headline-report-thead">
         <tr>
-          <th rowspan="2" class="sticky-col">Year group</th>
+          <th rowspan="2" class="sticky-col">{{ report.row_header_label or 'Year group' }}</th>
           {% for term in report.terms %}
             <th colspan="{{ report.measure_keys|length }}" class="text-center">{{ report.term_labels[term] }}</th>
           {% endfor %}
@@ -74,10 +86,10 @@
       <tbody>
         {% for row in report.rows %}
           <tr>
-            <td class="fw-semibold sticky-col">Year {{ row.year_group }}</td>
-            {% for term in report.terms %}
+            <td class="fw-semibold sticky-col">{{ row.label }}</td>
+            {% for term in report.buckets %}
               {% for measure_key in report.measure_keys %}
-                <td class="text-center">{{ row.terms[term][measure_key].display }}</td>
+                <td class="text-center">{{ row.cells[term][measure_key].display }}</td>
               {% endfor %}
             {% endfor %}
           </tr>
@@ -86,7 +98,7 @@
       <tfoot class="table-light">
         <tr>
           <th class="sticky-col">Whole school</th>
-          {% for term in report.terms %}
+          {% for term in report.buckets %}
             {% for measure_key in report.measure_keys %}
               <th class="text-center">{{ report.totals[term][measure_key].display }}</th>
             {% endfor %}
