@@ -19,9 +19,6 @@
             <label class="form-label">Import type</label>
             <select name="import_type" class="form-select">
               <option value="combined" {% if selected_import_type == 'combined' %}selected{% endif %}>Combined pupil + results</option>
-              <option value="pupils" {% if selected_import_type == 'pupils' %}selected{% endif %}>Legacy pupil-only CSV</option>
-              <option value="subject_results" {% if selected_import_type == 'subject_results' %}selected{% endif %}>Legacy subject results CSV</option>
-              <option value="writing_results" {% if selected_import_type == 'writing_results' %}selected{% endif %}>Legacy writing CSV</option>
               <option value="reception" {% if selected_import_type == 'reception' %}selected{% endif %}>Reception tracker CSV</option>
               <option value="sats_tracker" {% if selected_import_type == 'sats_tracker' %}selected{% endif %}>Year 6 SATs tracker CSV</option>
             </select>
@@ -62,9 +59,6 @@
         <hr>
         <div class="d-flex flex-wrap gap-2">
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='combined') }}">Combined template</a>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='pupils') }}">Pupil template</a>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='subject_results') }}">Subject result template</a>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='writing_results') }}">Writing template</a>
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='reception') }}">Reception template</a>
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='sats_tracker') }}">SATs template</a>
         </div>
