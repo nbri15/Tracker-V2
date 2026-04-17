@@ -37,6 +37,17 @@
         </div>
       </div>
     {% endfor %}
+    {% if school_class and school_class.year_group in [1, 2] %}
+      <div class="col-sm-6 col-lg-2">
+        <div class="card shadow-sm h-100 quick-link-card">
+          <div class="card-body">
+            <p class="text-muted small mb-2">KS1</p>
+            <h3 class="h5">Open phonics</h3>
+            <a href="{{ url_for('teacher.phonics') }}" class="stretched-link text-decoration-none">Go to Phonics</a>
+          </div>
+        </div>
+      </div>
+    {% endif %}
     <div class="col-sm-6 col-lg-2">
       <div class="card shadow-sm h-100 quick-link-card">
         <div class="card-body">

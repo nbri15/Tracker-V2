@@ -24,6 +24,9 @@
     <a class="btn btn-sm {% if subject_key == 'reading' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
     <a class="btn btn-sm {% if subject_key == 'spag' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.writing') }}">Writing</a>
+    {% if school_class and school_class.year_group in [1, 2] %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.phonics') }}">Phonics</a>
+    {% endif %}
   </div>
 </div>
 

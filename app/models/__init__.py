@@ -1,6 +1,6 @@
 """Database model package exports."""
 
-from .assessment import AssessmentSetting, GapQuestion, GapScore, GapTemplate, SubjectResult
+from .assessment import AssessmentSetting, GapQuestion, GapScore, GapTemplate, PhonicsScore, PhonicsTestColumn, SubjectResult
 from .history import AcademicYear, PupilClassHistory
 from .intervention import Intervention
 from .pupil import Pupil
@@ -17,6 +17,8 @@ __all__ = [
     'GapScore',
     'GapTemplate',
     'Intervention',
+    'PhonicsScore',
+    'PhonicsTestColumn',
     'Pupil',
     'ReceptionTrackerEntry',
     'PupilClassHistory',
