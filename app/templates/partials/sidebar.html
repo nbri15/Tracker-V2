@@ -21,6 +21,9 @@
         {% if assigned_class and assigned_class.year_group in [1, 2] %}
           <a class="nav-link text-white {% if request.endpoint == 'teacher.phonics' %}active{% endif %}" href="{{ url_for('teacher.phonics') }}">Phonics</a>
         {% endif %}
+        {% if assigned_class and assigned_class.year_group == 4 %}
+          <a class="nav-link text-white {% if request.endpoint == 'teacher.times_tables' %}active{% endif %}" href="{{ url_for('teacher.times_tables') }}">Times tables</a>
+        {% endif %}
         <a class="nav-link text-white {% if request.endpoint == 'teacher.interventions' %}active{% endif %}" href="{{ url_for('teacher.interventions') }}">Interventions</a>
         <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs / mode</a>
       {% endif %}
@@ -28,7 +31,7 @@
 
     {% if current_user.is_admin %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
-      <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail', 'admin.class_sats', 'admin.class_phonics'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
+      <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail', 'admin.class_sats', 'admin.class_phonics', 'admin.class_times_tables'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Users</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.pupils' %}active{% endif %}" href="{{ url_for('admin.pupils') }}">Pupils</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>

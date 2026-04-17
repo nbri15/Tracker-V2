@@ -111,6 +111,17 @@ from .phonics import (
     save_phonics_columns,
     save_phonics_scores,
 )
+from .times_tables import (
+    DEFAULT_TIMES_TABLE_COLUMNS,
+    TIMES_TABLES_YEAR_GROUP,
+    TimesTablesValidationError,
+    add_times_tables_column,
+    build_times_tables_tracker_rows,
+    ensure_times_tables_columns,
+    is_times_tables_year_group,
+    save_times_tables_columns,
+    save_times_tables_scores,
+)
 from .csv_tools import (
     CsvImportSummary,
     export_class_overview_csv,
