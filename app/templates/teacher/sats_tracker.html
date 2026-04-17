@@ -155,10 +155,13 @@
   </div>
 </div>
 
-<div class="card shadow-sm">
+<div class="card shadow-sm" id="teacher-sats-export">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <strong>Year 6 SATs spreadsheet{% if selected_tab %} · {{ selected_tab.name }}{% endif %}</strong>
-    <button form="sats-form" class="btn btn-success btn-sm">Save SATs tracker</button>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#teacher-sats-export" data-pdf-filename="sats-{{ selected_tab.name|replace(' ', '-') if selected_tab else 'current-tab' }}-{{ academic_year }}.pdf">Download PDF</button>
+      <button form="sats-form" class="btn btn-success btn-sm">Save SATs tracker</button>
+    </div>
   </div>
   <div class="card-body p-0">
     <form method="post" id="sats-form" class="js-sats-sheet-form">

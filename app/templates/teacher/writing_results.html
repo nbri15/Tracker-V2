@@ -99,13 +99,16 @@
   </div>
 </div>
 
-<div class="card shadow-sm mb-4">
+<div class="card shadow-sm mb-4" id="writing-results-export">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <div>
       <strong>Writing bands</strong>
       <div class="text-muted small">{{ academic_year }} · {{ get_term_label(term) }}</div>
     </div>
-    <span class="text-muted small">{{ rows|length }} pupils shown</span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="text-muted small">{{ rows|length }} pupils shown</span>
+      <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#writing-results-export" data-pdf-filename="writing-{{ term }}-{{ academic_year }}-results.pdf">Download PDF</button>
+    </div>
   </div>
   <div class="card-body p-0">
     <form method="post">

@@ -24,7 +24,9 @@
 <div class="d-flex gap-2 flex-wrap mb-3">
   <a class="btn btn-sm {% if selected_view == 'tracker' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('admin.reception_tracker', academic_year=academic_year, tracking_point=selected_tracking_point, view='tracker') }}">Tracker View</a>
   <a class="btn btn-sm {% if selected_view == 'overview' %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('admin.reception_tracker', academic_year=academic_year, tracking_point=selected_tracking_point, view='overview') }}">Overview View</a>
+  <button type="button" class="btn btn-sm btn-outline-secondary js-download-pdf" data-pdf-target="#admin-reception-export" data-pdf-filename="admin-reception-{{ selected_tracking_point }}-{{ academic_year }}.pdf">Download PDF</button>
 </div>
+<div id="admin-reception-export">
 {% if selected_view == 'tracker' %}
   <form method="post" class="card shadow-sm">
     <div class="card-body p-0">
@@ -133,5 +135,6 @@
       </tbody>
     </table>
   </div>
+</div>
 </div>
 {% endblock %}

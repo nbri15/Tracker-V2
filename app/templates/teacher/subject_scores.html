@@ -195,15 +195,18 @@
   </div>
 </div>
 
-<div class="card shadow-sm mb-4">
+<div class="card shadow-sm mb-4" id="subject-results-export">
   <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
     <div>
       <strong>{{ page_title }} results table</strong>
       <div class="text-muted small">{{ rows|length }} pupils shown · click a column heading to sort.</div>
     </div>
-    <div class="text-muted small text-lg-end">
-      <div>{{ setting.paper_1_name if setting else 'Paper 1' }} max: <strong>{{ setting.paper_1_max if setting else '—' }}</strong> · {{ setting.paper_2_name if setting else 'Paper 2' }} max: <strong>{{ setting.paper_2_max if setting else '—' }}</strong></div>
-      <div>Combined max: <strong>{{ setting.combined_max if setting else '—' }}</strong> · Pass below <strong>{{ setting.below_are_threshold_percent if setting else '—' }}%</strong></div>
+    <div class="d-flex flex-column align-items-start align-items-lg-end gap-2">
+      <div class="text-muted small text-lg-end">
+        <div>{{ setting.paper_1_name if setting else 'Paper 1' }} max: <strong>{{ setting.paper_1_max if setting else '—' }}</strong> · {{ setting.paper_2_name if setting else 'Paper 2' }} max: <strong>{{ setting.paper_2_max if setting else '—' }}</strong></div>
+        <div>Combined max: <strong>{{ setting.combined_max if setting else '—' }}</strong> · Pass below <strong>{{ setting.below_are_threshold_percent if setting else '—' }}%</strong></div>
+      </div>
+      <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#subject-results-export" data-pdf-filename="{{ subject_key }}-{{ term }}-{{ academic_year }}-results.pdf">Download PDF</button>
     </div>
   </div>
   <div class="card-body p-0">
