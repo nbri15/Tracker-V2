@@ -231,12 +231,18 @@ def update_assessment_setting(setting: AssessmentSetting, payload: dict) -> Asse
     return setting
 
 
-def compute_subject_result_values(setting: AssessmentSetting, paper_1_score: int | None, paper_2_score: int | None) -> dict:
+def compute_subject_result_values(
+    setting: AssessmentSetting,
+    paper_1_score: int | None,
+    paper_2_score: int | None,
+    *,
+    validate_scores: bool = True,
+) -> dict:
     for label, score, max_score in (
         (setting.paper_1_name, paper_1_score, setting.paper_1_max),
         (setting.paper_2_name, paper_2_score, setting.paper_2_max),
     ):
-        if score is None:
+        if score is None or not validate_scores:
             continue
         if score < 0:
             raise AssessmentValidationError(f'{label} score cannot be below 0.')
@@ -269,7 +275,7 @@ def recalculate_subject_results_for_scope(year_group: int, subject: str, term: s
     for result in results:
         if result.paper_1_score is None or result.paper_2_score is None:
             continue
-        computed = compute_subject_result_values(setting, result.paper_1_score, result.paper_2_score)
+        computed = compute_subject_result_values(setting, result.paper_1_score, result.paper_2_score, validate_scores=False)
         result.combined_score = computed['combined_score']
         result.combined_percent = computed['combined_percent']
         result.band_label = computed['band_label']
@@ -503,9 +509,26 @@ def _build_summary_payload(
 
 def _counts_from_band_labels(rows: list[SubjectResult]) -> dict:
     counts = {'Working Towards': 0, 'On Track': 0, 'Exceeding': 0}
+    setting_cache: dict[tuple[int, str, str], AssessmentSetting] = {}
     for row in rows:
-        if row.band_label in counts:
-            counts[row.band_label] += 1
+        if row.combined_percent is None:
+            continue
+        year_group = row.pupil.school_class.year_group if row.pupil and row.pupil.school_class else None
+        if year_group is None:
+            band_label = row.band_label
+        else:
+            cache_key = (year_group, row.subject, row.term)
+            setting = setting_cache.get(cache_key)
+            if setting is None:
+                setting = get_subject_setting(year_group, row.subject, row.term)
+                setting_cache[cache_key] = setting
+            band_label = SubjectResult.calculate_band_label(
+                row.combined_percent,
+                setting.below_are_threshold_percent,
+                setting.exceeding_threshold_percent,
+            )
+        if band_label in counts:
+            counts[band_label] += 1
     return counts
 
 
@@ -528,7 +551,7 @@ def get_most_recent_term_with_data(
         query = SubjectResult.query.join(SubjectResult.pupil).filter(
             SubjectResult.subject == subject,
             SubjectResult.academic_year == academic_year,
-            SubjectResult.band_label.isnot(None),
+            SubjectResult.combined_percent.isnot(None),
             Pupil.class_id == class_id,
         )
     else:
@@ -779,10 +802,19 @@ def build_headline_report(
                 continue
             cell = year_term_counts[row.pupil.school_class.year_group][row.term]
             cell['total'] += 1
-            if subject in CORE_SUBJECTS and row.band_label == 'Exceeding':
+            if subject in CORE_SUBJECTS:
+                setting = get_subject_setting(row.pupil.school_class.year_group, subject, row.term)
+                band_label = SubjectResult.calculate_band_label(
+                    row.combined_percent,
+                    setting.below_are_threshold_percent,
+                    setting.exceeding_threshold_percent,
+                )
+            else:
+                band_label = None
+            if subject in CORE_SUBJECTS and band_label == 'Exceeding':
                 cell['exceeding'] += 1
                 cell['on_track_plus'] += 1
-            elif subject in CORE_SUBJECTS and row.band_label == 'On Track':
+            elif subject in CORE_SUBJECTS and band_label == 'On Track':
                 cell['on_track_plus'] += 1
             elif subject == 'writing' and row.band == 'greater_depth':
                 cell['exceeding'] += 1
@@ -1024,6 +1056,7 @@ def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_y
         return 'No data', []
 
     if subject in CORE_SUBJECTS:
+        setting = get_subject_setting(school_class.year_group, subject, latest_term)
         rows = (
             SubjectResult.query.join(SubjectResult.pupil)
             .filter(
@@ -1042,7 +1075,11 @@ def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_y
                 'paper_2_score': row.paper_2_score,
                 'combined_score': row.combined_score,
                 'combined_percent': row.combined_percent,
-                'band_label': row.band_label,
+                'band_label': SubjectResult.calculate_band_label(
+                    row.combined_percent,
+                    setting.below_are_threshold_percent,
+                    setting.exceeding_threshold_percent,
+                ),
                 'source': row.source,
             }
             for row in rows
@@ -1096,6 +1133,7 @@ def _build_class_detail_subject_rows(
     ).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if subject in CORE_SUBJECTS:
+        setting = get_subject_setting(school_class.year_group, subject, term)
         result_rows = (
             SubjectResult.query.join(SubjectResult.pupil)
             .filter(
@@ -1137,7 +1175,15 @@ def _build_class_detail_subject_rows(
                 'paper_2_score': result.paper_2_score if result else None,
                 'combined_score': result.combined_score if result else None,
                 'combined_percent': result.combined_percent if result else None,
-                'band_label': result.band_label if result else None,
+                'band_label': (
+                    SubjectResult.calculate_band_label(
+                        result.combined_percent,
+                        setting.below_are_threshold_percent,
+                        setting.exceeding_threshold_percent,
+                    )
+                    if result
+                    else None
+                ),
                 'source': result.source if result else None,
             })
         else:
