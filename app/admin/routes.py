@@ -91,6 +91,7 @@ from app.services import (
     import_sats_tracker_results,
     parse_uploaded_csv,
     promote_pupils_to_next_year,
+    recalculate_subject_results_for_scope,
     save_sats_column,
     save_phonics_columns,
     save_phonics_scores,
@@ -663,6 +664,7 @@ def settings():
                 payload = validate_setting_payload(_parse_setting_form())
                 setting = get_or_create_assessment_setting(payload['year_group'], payload['subject'], payload['term'])
                 update_assessment_setting(setting, payload)
+                recalculate_subject_results_for_scope(setting.year_group, setting.subject, setting.term)
                 db.session.commit()
                 flash(f"Saved {format_subject_name(setting.subject)} {setting.term.title()} settings for Year {setting.year_group}.", 'success')
             else:
@@ -673,6 +675,7 @@ def settings():
                 if existing and existing.id != setting.id:
                     raise AssessmentValidationError('A setting already exists for that year group, subject, and term.')
                 update_assessment_setting(setting, payload)
+                recalculate_subject_results_for_scope(setting.year_group, setting.subject, setting.term)
                 db.session.commit()
                 flash(f"Updated {format_subject_name(setting.subject)} {setting.term.title()} settings for Year {setting.year_group}.", 'success')
         except (ValueError, AssessmentValidationError) as exc:

@@ -90,7 +90,7 @@
                 <td><div class="fw-semibold">{{ row.pupil.full_name }}</div></td>
                 {% for column in columns if column.is_active %}
                   {% set score = row.scores[column.id] %}
-                  <td class="{% if score is not none and score < 30 %}tracker-score-low{% elif score is not none and score <= 33 %}tracker-score-mid{% elif score is not none %}tracker-score-high{% endif %}"><input type="number" min="0" step="1" name="score_{{ row.pupil.id }}_{{ column.id }}" value="{{ score if score is not none else '' }}" class="form-control form-control-sm"></td>
+                  <td class="{% if score is not none and score < 30 %}band-wts{% elif score is not none and score <= 33 %}band-ot{% elif score is not none %}band-gds{% endif %}"><input type="number" min="0" step="1" name="score_{{ row.pupil.id }}_{{ column.id }}" value="{{ score if score is not none else '' }}" class="form-control form-control-sm"></td>
                 {% endfor %}
                 <td>{{ row.latest_score if row.latest_score is not none else '—' }}</td>
               </tr>

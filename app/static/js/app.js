@@ -113,28 +113,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const combinedCell = row.querySelector('.js-combined-score');
         const percentCell = row.querySelector('.js-combined-percent');
         const bandCell = row.querySelector('.js-band-label');
+        const clearBandClasses = (cell) => {
+          cell.classList.remove('band-wts', 'band-ot', 'band-gds');
+        };
 
         if (values.some((value) => Number.isNaN(value)) || values.includes(null)) {
           combinedCell.textContent = '—';
           percentCell.textContent = '—';
           bandCell.innerHTML = '<span class="text-muted">—</span>';
+          clearBandClasses(combinedCell);
+          clearBandClasses(percentCell);
+          clearBandClasses(bandCell);
           return;
         }
 
         const combined = values[0] + values[1];
         const percent = combinedMax ? ((combined / combinedMax) * 100).toFixed(1) : null;
         let band = 'On Track';
+        let bandClass = 'band-ot';
+        let badgeClass = 'result-badge-ot';
         if (percent === null) {
           band = '—';
         } else if (Number.parseFloat(percent) < belowThreshold) {
           band = 'Working Towards';
+          bandClass = 'band-wts';
+          badgeClass = 'result-badge-wt';
         } else if (Number.parseFloat(percent) >= exceedingThreshold) {
           band = 'Exceeding';
+          bandClass = 'band-gds';
+          badgeClass = 'result-badge-ex';
         }
 
         combinedCell.textContent = combined;
         percentCell.textContent = percent === null ? '—' : `${percent}%`;
-        bandCell.innerHTML = percent === null ? '<span class="text-muted">—</span>' : `<span class="badge text-bg-light border">${band}</span>`;
+        clearBandClasses(combinedCell);
+        clearBandClasses(percentCell);
+        clearBandClasses(bandCell);
+        if (percent !== null) {
+          combinedCell.classList.add(bandClass);
+          percentCell.classList.add(bandClass);
+          bandCell.classList.add(bandClass);
+        }
+        bandCell.innerHTML = percent === null ? '<span class="text-muted">—</span>' : `<span class="result-badge ${badgeClass}">${band}</span>`;
       };
 
       paperInputs.forEach((input) => input.addEventListener('input', updateRow));
