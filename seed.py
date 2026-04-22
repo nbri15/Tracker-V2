@@ -184,10 +184,9 @@ def seed_sats_data(class_lookup: dict[int, SchoolClass], academic_year: str) -> 
 def print_seed_summary(reset_requested: bool) -> None:
     mode_label = 'hard reset + seed' if reset_requested else 'seed refresh'
     print(f'Development {mode_label} completed successfully.')
-    print('Default development logins:')
-    print(f'  {DEFAULT_ADMIN.username} -> {DEFAULT_ADMIN.password}')
-    for login in DEFAULT_TEACHERS:
-        print(f'  {login.username} -> Year {login.year_group} ({login.password})')
+    print('Default development accounts were refreshed for local use only (credentials are intentionally not printed).')
+    print(f'  Admin account: {DEFAULT_ADMIN.username}')
+    print(f'  Teacher accounts: {len(DEFAULT_TEACHERS)} created/refreshed')
     if reset_requested:
         print('Reset mode deleted existing development data before recreating the defaults.')
 

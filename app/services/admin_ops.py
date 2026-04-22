@@ -17,6 +17,7 @@ class DefaultLogin:
     year_group: int | None = None
 
 
+# NOTE: Default accounts below are for local development and test seeding only.
 DEFAULT_ADMIN = DefaultLogin(username='admin', password='admin123', role='admin')
 DEFAULT_TEACHERS = [DefaultLogin(username=f'teacher{year}', password=f'teacher{year}', role='teacher', year_group=year) for year in range(1, 7)]
 
