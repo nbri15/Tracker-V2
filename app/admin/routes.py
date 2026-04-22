@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 
-from flask import Response, flash, redirect, render_template, request, url_for
+from flask import Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 
 from app.extensions import db
@@ -554,6 +554,8 @@ def users():
                 db.session.add(user)
                 flash(f'Updated {user.username}.', 'success')
             elif action == 'sync_defaults':
+                if not current_app.config.get('ALLOW_DEV_BOOTSTRAP', False):
+                    raise ValueError('Default account sync is disabled in production.')
                 ensure_default_logins_and_classes()
                 flash('Default development accounts and Year 1–6 class links were refreshed.', 'success')
             db.session.commit()
@@ -564,7 +566,12 @@ def users():
 
     teachers = sort_teacher_accounts(User.query.order_by(User.role.desc(), User.username).all())
     classes = SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all()
-    return render_template('admin/users.html', teachers=teachers, classes=classes)
+    return render_template(
+        'admin/users.html',
+        teachers=teachers,
+        classes=classes,
+        allow_dev_bootstrap=current_app.config.get('ALLOW_DEV_BOOTSTRAP', False),
+    )
 
 
 @admin_bp.route('/users/<int:user_id>/reset-password', methods=['GET', 'POST'])

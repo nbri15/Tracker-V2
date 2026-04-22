@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: tracker-v2
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tracker-v2-db
+          property: connectionString
+
+databases:
+  - name: tracker-v2-db
+    plan: starter

@@ -16,6 +16,7 @@
         </form>
       </div>
     </div>
+    {% if allow_dev_bootstrap %}
     <div class="card shadow-sm">
       <div class="card-header bg-white"><strong>Default development accounts</strong></div>
       <div class="card-body">
@@ -23,6 +24,7 @@
         <form method="post" class="text-end"><input type="hidden" name="action" value="sync_defaults"><button class="btn btn-outline-secondary">Repair default accounts</button></form>
       </div>
     </div>
+    {% endif %}
   </div>
   <div class="col-lg-8">
     <div class="card shadow-sm">
