@@ -3,6 +3,7 @@
 import os
 
 from flask import Flask, redirect, render_template, request, url_for
+from flask_login import current_user
 
 from config import config_by_name
 from .extensions import db, login_manager, migrate
@@ -19,6 +20,7 @@ def create_app(config_name: str | None = None) -> Flask:
 
     register_extensions(app)
     register_blueprints(app)
+    register_request_guards(app)
     register_error_handlers(app)
     register_template_helpers(app)
     register_shell_context(app)
@@ -70,6 +72,18 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(404)
     def not_found(error):
         return render_template('errors/404.html'), 404
+
+
+def register_request_guards(app: Flask) -> None:
+    """Apply application-wide access guards."""
+
+    @app.before_request
+    def force_password_change():
+        if not current_user.is_authenticated or not getattr(current_user, 'require_password_change', False):
+            return None
+        if request.endpoint in {'auth.change_password', 'auth.logout', 'static'}:
+            return None
+        return redirect(url_for('auth.change_password'))
 
 
 

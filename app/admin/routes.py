@@ -537,15 +537,12 @@ def users():
             elif action == 'update':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
                 username = request.form.get(f'username_{user.id}', '').strip()
-                password = request.form.get(f'password_{user.id}', '').strip()
                 class_id_raw = request.form.get(f'class_id_{user.id}', '').strip()
                 if username and username != user.username:
                     if User.query.filter(User.username == username, User.id != user.id).first():
                         raise ValueError('That username is already in use.')
                     user.username = username
                 user.is_active = request.form.get(f'is_active_{user.id}') == 'on'
-                if password:
-                    user.set_password(password)
                 for school_class in user.classes.all():
                     if not class_id_raw or school_class.id != int(class_id_raw):
                         school_class.teacher_id = None
@@ -568,6 +565,36 @@ def users():
     teachers = sort_teacher_accounts(User.query.order_by(User.role.desc(), User.username).all())
     classes = SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all()
     return render_template('admin/users.html', teachers=teachers, classes=classes)
+
+
+@admin_bp.route('/users/<int:user_id>/reset-password', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def reset_user_password(user_id: int):
+    user = User.query.get_or_404(user_id)
+    if user.is_admin:
+        flash('Admin passwords cannot be reset from this page.', 'warning')
+        return redirect(url_for('admin.users'))
+
+    if request.method == 'POST':
+        password = request.form.get('new_password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+        require_change = request.form.get('require_password_change') == 'on'
+        if not password:
+            flash('A new password is required.', 'danger')
+        elif len(password) < 8:
+            flash('New password must be at least 8 characters long.', 'danger')
+        elif password != confirm_password:
+            flash('Passwords did not match.', 'danger')
+        else:
+            user.set_password(password)
+            user.require_password_change = require_change
+            db.session.add(user)
+            db.session.commit()
+            flash(f'Password reset for {user.username}.', 'success')
+            return redirect(url_for('admin.users'))
+
+    return render_template('admin/reset_password.html', user=user)
 
 
 @admin_bp.route('/pupils')

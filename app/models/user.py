@@ -18,6 +18,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='teacher')
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    require_password_change = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     classes = db.relationship('SchoolClass', back_populates='teacher', lazy='dynamic')
