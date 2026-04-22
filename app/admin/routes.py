@@ -558,7 +558,7 @@ def users():
                 flash(f'Updated {user.username}.', 'success')
             elif action == 'sync_defaults':
                 ensure_default_logins_and_classes()
-                flash('Default admin, teacher logins, and Year 1–6 classes were refreshed.', 'success')
+                flash('Default development accounts and Year 1–6 class links were refreshed.', 'success')
             db.session.commit()
             return redirect(url_for('admin.users'))
         except ValueError as exc:
