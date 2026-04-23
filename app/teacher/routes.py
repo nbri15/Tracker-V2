@@ -35,6 +35,8 @@ from app.services import (
     compute_subject_result_values,
     format_subject_name,
     format_progress_delta,
+    previous_term,
+    progress_theme,
     get_current_academic_year,
     get_current_term,
     get_gender_filter_options,
@@ -992,5 +994,3 @@ def render_writing_page():
         header_state=_table_header_state(context['sort_state'], WRITING_SORTABLE_COLUMNS),
         **context,
     )
-    previous_term,
-    progress_theme,
