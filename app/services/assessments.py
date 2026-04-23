@@ -306,13 +306,11 @@ def progress_theme(delta: float | None) -> str | None:
 
 
 def previous_term(term: str) -> str | None:
-    order = [key for key, _ in TERMS]
-    if term not in order:
-        return None
-    idx = order.index(term)
-    if idx <= 0:
-        return None
-    return order[idx - 1]
+    mapping = {
+        'spring': 'autumn',
+        'summer': 'spring',
+    }
+    return mapping.get((term or '').strip().lower())
 
 
 def recalculate_subject_results_for_scope(year_group: int, subject: str, term: str, *, academic_year: str | None = None, class_id: int | None = None) -> int:
