@@ -5,6 +5,7 @@ import os
 import click
 from flask import Flask, redirect, render_template, request, url_for
 from flask_login import current_user
+from sqlalchemy import inspect
 
 from config import config_by_name
 from .extensions import db, login_manager, migrate
@@ -28,6 +29,7 @@ def create_app(config_name: str | None = None) -> Flask:
     register_template_helpers(app)
     register_shell_context(app)
     register_cli_commands(app)
+    bootstrap_admin_from_env(app)
 
     return app
 
@@ -138,3 +140,28 @@ def register_cli_commands(app: Flask) -> None:
         db.session.add(user)
         db.session.commit()
         click.echo(f"Created admin user '{user.username}'.")
+
+
+def bootstrap_admin_from_env(app: Flask) -> None:
+    """Create an initial admin account from environment variables when needed."""
+
+    username = (app.config.get('BOOTSTRAP_ADMIN_USERNAME') or os.environ.get('BOOTSTRAP_ADMIN_USERNAME') or '').strip()
+    password = app.config.get('BOOTSTRAP_ADMIN_PASSWORD') or os.environ.get('BOOTSTRAP_ADMIN_PASSWORD') or ''
+    if not username or not password:
+        return
+
+    from .models import User
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if not inspector.has_table(User.__tablename__):
+            return
+
+        existing_admin = User.query.filter_by(role='admin').first()
+        if existing_admin:
+            return
+
+        user = User(username=username, role='admin', is_active=True)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
