@@ -113,6 +113,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const combinedCell = row.querySelector('.js-combined-score');
         const percentCell = row.querySelector('.js-combined-percent');
         const bandCell = row.querySelector('.js-band-label');
+        const assessmentSelect = row.querySelector('.js-assessment-year-group');
+        const pupilYearGroup = Number.parseInt(row.dataset.pupilYearGroup || '', 10);
         const clearBandClasses = (cell) => {
           cell.classList.remove('band-wts', 'band-ot', 'band-gds');
         };
@@ -132,9 +134,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let band = 'On Track';
         let bandClass = 'band-ot';
         let badgeClass = 'result-badge-ot';
+        const assessmentYearGroup = assessmentSelect ? Number.parseInt(assessmentSelect.value || '', 10) : null;
+        const belowYearExpectation = Number.isFinite(pupilYearGroup) && Number.isFinite(assessmentYearGroup) && assessmentYearGroup < pupilYearGroup;
         if (percent === null) {
           band = '—';
-        } else if (Number.parseFloat(percent) < belowThreshold) {
+        } else if (belowYearExpectation || Number.parseFloat(percent) < belowThreshold) {
           band = 'Working Towards';
           bandClass = 'band-wts';
           badgeClass = 'result-badge-wt';
@@ -154,10 +158,12 @@ document.addEventListener('DOMContentLoaded', () => {
           percentCell.classList.add(bandClass);
           bandCell.classList.add(bandClass);
         }
+        row.classList.toggle('table-warning', belowYearExpectation);
         bandCell.innerHTML = percent === null ? '<span class="text-muted">—</span>' : `<span class="result-badge ${badgeClass}">${band}</span>`;
       };
 
       paperInputs.forEach((input) => input.addEventListener('input', updateRow));
+      row.querySelectorAll('.js-assessment-year-group').forEach((input) => input.addEventListener('change', updateRow));
       updateRow();
     });
   });

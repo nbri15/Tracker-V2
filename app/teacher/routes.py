@@ -34,6 +34,7 @@ from app.services import (
     build_sats_tracker_rows,
     compute_subject_result_values,
     format_subject_name,
+    format_progress_delta,
     get_current_academic_year,
     get_current_term,
     get_gender_filter_options,
@@ -52,6 +53,7 @@ from app.services import (
     get_writing_outcome_theme,
     parse_question_columns,
     recalculate_subject_results_for_scope,
+    resolve_subject_band_label,
     save_reception_tracker_entries,
     save_gap_scores,
     save_phonics_columns,
@@ -584,7 +586,7 @@ def _build_setting_payload(subject_key: str) -> dict:
     }
 
 
-SUBJECT_SORTABLE_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label'}
+SUBJECT_SORTABLE_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'assessment_year_group', 'progress_delta'}
 WRITING_SORTABLE_COLUMNS = {'name', 'band_label', 'notes'}
 
 
@@ -689,9 +691,11 @@ def _build_subject_rows(pupils: list[Pupil], existing_by_pupil: dict[int, Subjec
     rows = []
     for pupil in pupils:
         existing = existing_by_pupil.get(pupil.id)
+        assessment_year_group = existing.assessment_year_group if existing and existing.assessment_year_group is not None else pupil.school_class.year_group
         rows.append(
             {
                 'pupil': pupil,
+                'assessment_year_group': assessment_year_group,
                 'paper_1_score': '' if not existing or existing.paper_1_score is None else existing.paper_1_score,
                 'paper_2_score': '' if not existing or existing.paper_2_score is None else existing.paper_2_score,
                 'combined_score': existing.combined_score if existing else None,
@@ -700,6 +704,10 @@ def _build_subject_rows(pupils: list[Pupil], existing_by_pupil: dict[int, Subjec
                 'notes': existing.notes if existing else '',
                 'source': existing.source if existing else None,
                 'outcome_theme': get_result_outcome_theme(existing.band_label if existing else None),
+                'progress_delta': None,
+                'progress_label': '—',
+                'progress_theme': None,
+                'below_expected_test': False,
             }
         )
     return rows
@@ -762,6 +770,20 @@ def render_subject_page(subject_key: str):
         .all()
     )
     existing_by_pupil = {result.pupil_id: result for result in result_rows}
+    previous_term_key = previous_term(context['term'])
+    previous_lookup: dict[int, SubjectResult] = {}
+    if previous_term_key:
+        previous_rows = (
+            SubjectResult.query.join(SubjectResult.pupil)
+            .filter(
+                SubjectResult.subject == subject_key,
+                SubjectResult.academic_year == context['academic_year'],
+                SubjectResult.term == previous_term_key,
+                SubjectResult.pupil.has(class_id=school_class.id),
+            )
+            .all()
+        )
+        previous_lookup = {result.pupil_id: result for result in previous_rows}
     rows = []
 
     if request.method == 'POST' and request.form.get('form_name') == 'results':
@@ -773,6 +795,7 @@ def render_subject_page(subject_key: str):
             existing = existing_by_pupil.get(pupil.id)
             row = {
                 'pupil': pupil,
+                'assessment_year_group': (existing.assessment_year_group if existing and existing.assessment_year_group is not None else school_class.year_group),
                 'paper_1_score': paper_1_raw.strip(),
                 'paper_2_score': paper_2_raw.strip(),
                 'notes': notes,
@@ -781,10 +804,19 @@ def render_subject_page(subject_key: str):
                 'band_label': existing.band_label if existing else None,
                 'source': existing.source if existing else None,
                 'outcome_theme': get_result_outcome_theme(existing.band_label if existing else None),
+                'progress_delta': None,
+                'progress_label': '—',
+                'progress_theme': None,
+                'below_expected_test': False,
             }
             try:
                 paper_1_score = _parse_int(paper_1_raw)
                 paper_2_score = _parse_int(paper_2_raw)
+                assessment_year_group = _parse_int(request.form.get(f'assessment_year_group_{pupil.id}'))
+                if assessment_year_group is None:
+                    assessment_year_group = school_class.year_group
+                if assessment_year_group < 0 or assessment_year_group > 6:
+                    raise AssessmentValidationError('Test level must be between Reception and Year 6.')
                 if paper_1_score is None and paper_2_score is None and not notes:
                     if existing:
                         db.session.delete(existing)
@@ -792,15 +824,24 @@ def render_subject_page(subject_key: str):
                 else:
                     computed = compute_subject_result_values(setting, paper_1_score, paper_2_score)
                     result = existing or SubjectResult(pupil_id=pupil.id, academic_year=context['academic_year'], term=context['term'], subject=subject_key)
+                    result.assessment_year_group = assessment_year_group
                     result.paper_1_score = paper_1_score
                     result.paper_2_score = paper_2_score
                     result.combined_score = computed['combined_score']
                     result.combined_percent = computed['combined_percent']
-                    result.band_label = computed['band_label']
+                    result.band_label = resolve_subject_band_label(
+                        percent=computed['combined_percent'],
+                        setting=setting,
+                        pupil_year_group=school_class.year_group,
+                        assessment_year_group=assessment_year_group,
+                    )
                     result.source = 'manual'
                     result.notes = notes or None
                     db.session.add(result)
+                    prev_percent = previous_lookup.get(pupil.id).combined_percent if previous_lookup.get(pupil.id) else None
+                    delta = (result.combined_percent - prev_percent) if (result.combined_percent is not None and prev_percent is not None) else None
                     row.update({
+                        'assessment_year_group': assessment_year_group,
                         'paper_1_score': '' if paper_1_score is None else paper_1_score,
                         'paper_2_score': '' if paper_2_score is None else paper_2_score,
                         'combined_score': result.combined_score,
@@ -808,6 +849,10 @@ def render_subject_page(subject_key: str):
                         'band_label': result.band_label,
                         'source': result.source,
                         'outcome_theme': get_result_outcome_theme(result.band_label),
+                        'progress_delta': delta,
+                        'progress_label': format_progress_delta(delta),
+                        'progress_theme': progress_theme(delta),
+                        'below_expected_test': assessment_year_group < school_class.year_group,
                     })
             except ValueError:
                 errors.append(f'{pupil.full_name}: scores must be whole numbers.')
@@ -839,6 +884,21 @@ def render_subject_page(subject_key: str):
             )
     else:
         rows = _build_subject_rows(context['pupils'], existing_by_pupil)
+        for row in rows:
+            prev_percent = previous_lookup.get(row['pupil'].id).combined_percent if previous_lookup.get(row['pupil'].id) else None
+            delta = (row['combined_percent'] - prev_percent) if (row['combined_percent'] is not None and prev_percent is not None) else None
+            row['progress_delta'] = delta
+            row['progress_label'] = format_progress_delta(delta)
+            row['progress_theme'] = progress_theme(delta)
+            row['below_expected_test'] = (row['assessment_year_group'] or school_class.year_group) < school_class.year_group
+            if row['combined_percent'] is not None:
+                row['band_label'] = resolve_subject_band_label(
+                    percent=row['combined_percent'],
+                    setting=setting,
+                    pupil_year_group=school_class.year_group,
+                    assessment_year_group=row['assessment_year_group'],
+                )
+                row['outcome_theme'] = get_result_outcome_theme(row['band_label'])
 
     active_interventions = sync_auto_interventions(school_class, subject_key, context['term'], context['academic_year'], setting.below_are_threshold_percent)
     db.session.commit()
@@ -932,3 +992,5 @@ def render_writing_page():
         header_state=_table_header_state(context['sort_state'], WRITING_SORTABLE_COLUMNS),
         **context,
     )
+    previous_term,
+    progress_theme,

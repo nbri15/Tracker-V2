@@ -235,13 +235,15 @@
               <th>{{ sort_link('combined_score', 'Combined') }}</th>
               <th>{{ sort_link('combined_percent', 'Percent') }}</th>
               <th>{{ sort_link('band_label', 'Category') }}</th>
+              <th>{{ sort_link('assessment_year_group', 'Test') }}</th>
+              <th>{{ sort_link('progress_delta', 'Progress') }}</th>
               <th>Notes</th>
               <th>Source</th>
             </tr>
           </thead>
           <tbody>
             {% for row in rows %}
-              <tr class="result-row{% if row.outcome_theme %} result-row-{{ row.outcome_theme }}{% endif %}">
+              <tr data-pupil-year-group="{{ school_class.year_group if school_class else '' }}" class="result-row{% if row.outcome_theme %} result-row-{{ row.outcome_theme }}{% endif %}{% if row.below_expected_test %} table-warning{% endif %}">
                 <td>
                   <div class="fw-semibold">{{ row.pupil.full_name }}</div>
                   <div class="small text-muted">{{ row.pupil.gender }}{% if row.pupil.pupil_premium %} · PP{% endif %}{% if row.pupil.laps %} · LAPS{% endif %}{% if row.pupil.service_child %} · Service{% endif %}</div>
@@ -257,11 +259,22 @@
                     <span class="text-muted">—</span>
                   {% endif %}
                 </td>
+                <td class="text-nowrap" title="{% if row.below_expected_test %}Below year-group paper{% endif %}">
+                  <select name="assessment_year_group_{{ row.pupil.id }}" class="form-select form-select-sm js-assessment-year-group">
+                    {% for year in range(0, 7) %}
+                      <option value="{{ year }}" {% if row.assessment_year_group == year %}selected{% endif %}>{{ 'R' if year == 0 else 'Y' ~ year }}</option>
+                    {% endfor %}
+                  </select>
+                  {% if row.below_expected_test %}<span class="badge text-bg-warning-subtle text-warning-emphasis border mt-1">Below</span>{% endif %}
+                </td>
+                <td class="small {% if row.progress_theme == 'up' %}text-success{% elif row.progress_theme == 'down' %}text-danger{% elif row.progress_theme == 'flat' %}text-warning{% else %}text-muted{% endif %}">
+                  {{ row.progress_label }}
+                </td>
                 <td><input type="text" name="notes_{{ row.pupil.id }}" value="{{ row.notes }}" class="form-control form-control-sm" placeholder="Optional note"></td>
                 <td>{% if row.source %}<span class="badge text-bg-info-subtle text-info-emphasis border">{{ row.source }}</span>{% else %}<span class="badge text-bg-light border">empty</span>{% endif %}</td>
               </tr>
             {% else %}
-              <tr><td colspan="8" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
+              <tr><td colspan="10" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
             {% endfor %}
           </tbody>
         </table>
