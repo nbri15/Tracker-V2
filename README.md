@@ -61,7 +61,7 @@ pip install -r requirements.txt
 
 ```bash
 export FLASK_APP=run.py
-export FLASK_ENV=development
+export APP_ENV=development
 export SECRET_KEY='change-this-in-production'
 ```
 
@@ -69,7 +69,7 @@ export SECRET_KEY='change-this-in-production'
 
 ```powershell
 $env:FLASK_APP = 'run.py'
-$env:FLASK_ENV = 'development'
+$env:APP_ENV = 'development'
 $env:SECRET_KEY = 'change-this-in-production'
 ```
 
@@ -105,22 +105,11 @@ python run.py
 
 The development server starts on `http://0.0.0.0:8080/`.
 
-## Default development logins
+## Default local seed accounts (development only)
 
-### Admin
+`seed.py` refreshes local development accounts and class links. These credentials are for local/dev use only and should never be used in production.
 
-- `admin` / `admin123`
-
-### Teachers
-
-- Year 1: `teacher1` / `teacher1`
-- Year 2: `teacher2` / `teacher2`
-- Year 3: `teacher3` / `teacher3`
-- Year 4: `teacher4` / `teacher4`
-- Year 5: `teacher5` / `teacher5`
-- Year 6: `teacher6` / `teacher6`
-
-Each teacher is linked to the matching Year 1 to Year 6 class. The admin users page also includes a **Repair default logins** action to refresh this mapping safely without requiring a reset seed.
+Each teacher is linked to the matching Year 1 to Year 6 class. The admin users page includes a **Repair default accounts** action only when `APP_ENV=development`.
 
 ## Year 6 mode toggle
 
@@ -270,7 +259,85 @@ python run.py
 
 Recommended manual checks after `flask db upgrade`:
 
-1. Sign in as `admin` / `admin123`.
-2. Open **Users** and confirm `teacher1` to `teacher6` are linked to `Year 1` to `Year 6`.
+1. Sign in with your local admin account created for development.
+2. Open **Users** and confirm teacher users are linked to the expected classes.
 3. Open **Year 6 SATs** and confirm the tracker mode and default SATs columns look correct.
 4. Open **Promotion & history** before end-of-year testing if you want a snapshot/export first.
+
+
+## Render deployment (Web Service + Render Postgres)
+
+This repository is ready for Render deployment using:
+
+- web entrypoint: `gunicorn wsgi:app`
+- DB connection from `DATABASE_URL`
+- production mode via `APP_ENV=production`
+
+### Render build command
+
+```bash
+pip install -r requirements.txt
+```
+
+### Render start command
+
+```bash
+gunicorn wsgi:app
+```
+
+### Required Render environment variables
+
+- `APP_ENV=production`
+- `SECRET_KEY=<strong-random-secret>`
+- `DATABASE_URL=<Render Postgres connection string>`
+
+Notes:
+- The app uses `DATABASE_URL` when present.
+- If the URL starts with `postgres://`, it is normalized to `postgresql://` automatically for SQLAlchemy compatibility.
+- SQLite fallback is used only when `DATABASE_URL` is not set (local development).
+
+### Migrations on Render
+
+Run migrations after deploy (or via a Render one-off shell):
+
+```bash
+flask --app run.py db upgrade
+```
+
+Optional (only when schema changes are introduced locally):
+
+```bash
+flask --app run.py db migrate -m "describe change"
+flask --app run.py db upgrade
+```
+
+### First admin bootstrap (production-safe)
+
+Create the initial admin user once (does not reset DB, does not seed demo data):
+
+```bash
+flask --app run.py create-admin --username <admin_username>
+```
+
+You can also supply credentials with env vars for non-interactive use:
+
+```bash
+ADMIN_USERNAME=<admin_username> ADMIN_PASSWORD='<strong-password>' flask --app run.py create-admin
+```
+
+Behaviour:
+- command is a no-op if an admin already exists
+- requires password length of at least 8
+- does not run `seed.py`
+
+### Render blueprint
+
+A `render.yaml` blueprint is included to provision:
+- one Python web service
+- one Render Postgres database
+- environment variable wiring for `DATABASE_URL`
+
+### Local vs production
+
+- Local development: `APP_ENV=development`, SQLite fallback, optional `seed.py`.
+- Production: `APP_ENV=production`, Postgres via `DATABASE_URL`, secure cookies enabled, no development account bootstrap UI.

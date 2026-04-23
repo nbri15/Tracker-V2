@@ -2,6 +2,7 @@
 
 import os
 
+import click
 from flask import Flask, redirect, render_template, request, url_for
 from flask_login import current_user
 
@@ -15,7 +16,9 @@ def create_app(config_name: str | None = None) -> Flask:
 
     app = Flask(__name__, instance_relative_config=True)
 
-    selected_config = config_name or os.environ.get('FLASK_ENV', 'default')
+    selected_config = config_name or os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV', 'default')
+    if not config_name and os.environ.get('DATABASE_URL') and selected_config == 'default':
+        selected_config = 'production'
     app.config.from_object(config_by_name.get(selected_config, config_by_name['default']))
 
     register_extensions(app)
@@ -24,6 +27,7 @@ def create_app(config_name: str | None = None) -> Flask:
     register_error_handlers(app)
     register_template_helpers(app)
     register_shell_context(app)
+    register_cli_commands(app)
 
     return app
 
@@ -86,9 +90,6 @@ def register_request_guards(app: Flask) -> None:
         return redirect(url_for('auth.change_password'))
 
 
-
-
-
 def register_template_helpers(app: Flask) -> None:
     """Expose common formatting helpers to templates."""
 
@@ -98,6 +99,7 @@ def register_template_helpers(app: Flask) -> None:
         get_writing_band_label=get_writing_band_label,
         get_tracker_mode_label=get_tracker_mode_label,
     )
+
 
 def register_shell_context(app: Flask) -> None:
     """Add common objects to the Flask shell for quick debugging."""
@@ -110,3 +112,29 @@ def register_shell_context(app: Flask) -> None:
             'db': db,
             'models': models,
         }
+
+
+def register_cli_commands(app: Flask) -> None:
+    """Register custom CLI utilities for production-safe administration."""
+
+    @app.cli.command('create-admin')
+    @click.option('--username', envvar='ADMIN_USERNAME', default='admin', show_default=True)
+    @click.option('--password', envvar='ADMIN_PASSWORD', prompt=True, hide_input=True, confirmation_prompt=True)
+    @click.option('--force-password-change', is_flag=True, default=False)
+    def create_admin_command(username: str, password: str, force_password_change: bool) -> None:
+        """Create the first admin user if no admin exists; otherwise no-op."""
+
+        from .models import User
+
+        existing_admin = User.query.filter_by(role='admin').first()
+        if existing_admin:
+            click.echo(f"Admin user already exists ({existing_admin.username}). No changes made.")
+            return
+        if len(password) < 8:
+            raise click.ClickException('Admin password must be at least 8 characters long.')
+
+        user = User(username=username.strip(), role='admin', is_active=True, require_password_change=force_password_change)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        click.echo(f"Created admin user '{user.username}'.")
