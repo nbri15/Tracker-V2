@@ -13,6 +13,7 @@ from app.models import (
     GapQuestion,
     GapScore,
     GapTemplate,
+    FoundationResult,
     Intervention,
     PhonicsScore,
     Pupil,
@@ -95,6 +96,7 @@ def profile(pupil_id: int):
     phonics_rows = PhonicsScore.query.filter_by(pupil_id=pupil.id).all()
     times_tables_rows = TimesTableScore.query.filter_by(pupil_id=pupil.id).all()
     reception_rows = ReceptionTrackerEntry.query.filter_by(pupil_id=pupil.id).order_by(ReceptionTrackerEntry.academic_year.desc(), ReceptionTrackerEntry.tracking_point.desc()).all()
+    foundation_rows = FoundationResult.query.filter_by(pupil_id=pupil.id).order_by(FoundationResult.academic_year.desc(), FoundationResult.half_term.desc(), FoundationResult.subject.asc()).all()
     sats_rows = SatsResult.query.filter_by(pupil_id=pupil.id).order_by(SatsResult.academic_year.desc(), SatsResult.assessment_point.desc()).all()
     sats_writing_rows = SatsWritingResult.query.filter_by(pupil_id=pupil.id).order_by(SatsWritingResult.academic_year.desc(), SatsWritingResult.assessment_point.desc()).all()
     sats_column_rows = (
@@ -161,6 +163,8 @@ def profile(pupil_id: int):
         phonics_rows=phonics_view_rows,
         times_tables_rows=times_tables_view_rows,
         reception_rows=reception_rows,
+        foundation_history=_build_foundation_history(foundation_rows),
+        latest_foundation=_latest_foundation_by_subject(foundation_rows),
         sats_rows=sats_rows,
         sats_writing_rows=sats_writing_rows,
         sats_column_rows=sats_column_rows,
@@ -294,6 +298,64 @@ def _redirect_to_pupil_source(pupil_id: int):
 def _term_rank(term: str) -> int:
     mapping = {'autumn': 1, 'spring': 2, 'summer': 3}
     return mapping.get((term or '').lower(), 0)
+
+
+def _half_term_rank(half_term: str) -> int:
+    mapping = {'autumn_1': 1, 'autumn_2': 2, 'spring_1': 3, 'spring_2': 4, 'summer_1': 5, 'summer_2': 6}
+    return mapping.get((half_term or '').lower(), 0)
+
+
+def _half_term_label(half_term: str) -> str:
+    labels = {
+        'autumn_1': 'Autumn 1',
+        'autumn_2': 'Autumn 2',
+        'spring_1': 'Spring 1',
+        'spring_2': 'Spring 2',
+        'summer_1': 'Summer 1',
+        'summer_2': 'Summer 2',
+    }
+    return labels.get(half_term, (half_term or '').replace('_', ' ').title())
+
+
+def _build_foundation_history(rows: list[FoundationResult]) -> list[dict]:
+    grouped = defaultdict(lambda: defaultdict(dict))
+    for row in rows:
+        grouped[row.academic_year][row.half_term][row.subject] = row.judgement
+
+    ordered = []
+    for academic_year in sorted(grouped.keys(), reverse=True):
+        half_terms = grouped[academic_year]
+        ordered_half_terms = sorted(
+            half_terms.items(),
+            key=lambda item: _half_term_rank(item[0]),
+            reverse=True,
+        )
+        ordered.append(
+            {
+                'academic_year': academic_year,
+                'half_terms': [
+                    {'half_term_key': half_term_key, 'half_term_label': _half_term_label(half_term_key), 'subjects': subjects}
+                    for half_term_key, subjects in ordered_half_terms
+                ],
+            }
+        )
+    return ordered
+
+
+def _latest_foundation_by_subject(rows: list[FoundationResult]) -> list[dict]:
+    latest_by_subject = {}
+    for row in sorted(rows, key=lambda item: (item.academic_year, _half_term_rank(item.half_term), item.updated_at), reverse=True):
+        if row.subject not in latest_by_subject:
+            latest_by_subject[row.subject] = row
+    return [
+        {
+            'subject': key.replace('_', ' ').upper() if key == 're' else key.replace('_', ' ').title(),
+            'judgement': value.judgement,
+            'half_term': _half_term_label(value.half_term),
+            'academic_year': value.academic_year,
+        }
+        for key, value in sorted(latest_by_subject.items())
+    ]
 
 
 def _latest_subject_snapshots(pupil_ids: list[int]) -> dict[int, dict]:

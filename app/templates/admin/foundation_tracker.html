@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Foundation tracker{% endblock %}
+{% set page_heading = 'Foundation tracker' %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+  <div>
+    <h3 class="h4 mb-1">{{ school_class.name }} · Foundation</h3>
+    <p class="text-muted mb-0">Year {{ school_class.year_group }} · {{ academic_year }} · {{ dict(half_terms).get(selected_half_term) }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year) }}">Back to class tabs</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.classes', class_id=school_class.id, academic_year=academic_year) }}">Back to classes</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4"><div class="card-body py-3">
+  <form method="get" class="row g-2 align-items-end compact-filter-row">
+    <div class="col-md-2"><label class="form-label">Class</label><select name="class_id" class="form-select form-select-sm">{% for option in class_options %}<option value="{{ option.id }}" {% if option.id == school_class.id %}selected{% endif %}>Y{{ option.year_group }} {{ option.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Academic year</label><select name="academic_year" class="form-select form-select-sm">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Half term</label><select name="half_term" class="form-select form-select-sm">{% for value, label in half_terms %}<option value="{{ value }}" {% if value == selected_half_term %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Pupil status</label><select name="pupil_status" class="form-select form-select-sm">{% for value, label in pupil_status_filter_choices %}<option value="{{ value }}" {% if filters.pupil_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-1"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="all" {% if filters.gender == 'all' %}selected{% endif %}>All</option>{% for gender in gender_options %}<option value="{{ gender }}" {% if filters.gender == gender %}selected{% endif %}>{{ gender }}</option>{% endfor %}</select></div>
+    <div class="col-md-1"><label class="form-label">PP</label><select name="pupil_premium" class="form-select form-select-sm">{% for value, label in boolean_filter_choices.items() %}<option value="{{ value }}" {% if filters.pupil_premium == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-1"><label class="form-label">LAPS</label><select name="laps" class="form-select form-select-sm">{% for value, label in boolean_filter_choices.items() %}<option value="{{ value }}" {% if filters.laps == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-1"><label class="form-label">Service</label><select name="service_child" class="form-select form-select-sm">{% for value, label in boolean_filter_choices.items() %}<option value="{{ value }}" {% if filters.service_child == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Search pupil</label><input type="text" class="form-control form-control-sm" name="search" value="{{ filters.search }}" placeholder="Name"></div>
+    <div class="col-12 d-flex justify-content-end gap-2"><button class="btn btn-primary btn-sm">Apply</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.foundation_tracker', class_id=school_class.id, academic_year=academic_year) }}">Clear</a></div>
+  </form>
+</div></div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">Working Towards</div><div class="h5 mb-0 text-danger">{{ summary.overall['Working Towards'] }}</div></div></div></div>
+  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">On Track</div><div class="h5 mb-0 text-success">{{ summary.overall['On Track'] }}</div></div></div></div>
+  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">Exceeding</div><div class="h5 mb-0 text-warning">{{ summary.overall['Exceeding'] }}</div></div></div></div>
+  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">Missing</div><div class="h5 mb-0 text-secondary">{{ summary.overall['Missing'] }}</div></div></div></div>
+</div>
+
+<div class="card shadow-sm" id="admin-foundation-export"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Foundation judgements</strong><button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#admin-foundation-export" data-pdf-filename="admin-foundation-{{ school_class.name|replace(' ', '-') }}-{{ selected_half_term }}-{{ academic_year }}.pdf">Download PDF</button></div><div class="card-body p-0">
+  <form method="post">
+    <input type="hidden" name="class_id" value="{{ school_class.id }}">
+    <input type="hidden" name="academic_year" value="{{ academic_year }}">
+    <input type="hidden" name="half_term" value="{{ selected_half_term }}">
+    <input type="hidden" name="pupil_status" value="{{ filters.pupil_status }}">
+    <input type="hidden" name="gender" value="{{ filters.gender }}">
+    <input type="hidden" name="pupil_premium" value="{{ filters.pupil_premium }}">
+    <input type="hidden" name="laps" value="{{ filters.laps }}">
+    <input type="hidden" name="service_child" value="{{ filters.service_child }}">
+    <input type="hidden" name="search" value="{{ filters.search }}">
+    <div class="px-3 py-3 text-end"><button class="btn btn-success btn-sm">Quick save Foundation judgements</button></div>
+    <div class="table-responsive spreadsheet-wrap"><table class="table table-sm table-hover align-middle mb-0 spreadsheet-table foundation-table"><thead class="table-light sticky-top"><tr><th class="sticky-col foundation-name-col">Pupil</th>{% for subject_key, subject_label in subjects %}<th class="foundation-subject-col">{{ subject_label }}</th>{% endfor %}</tr></thead><tbody>
+      {% for row in rows %}<tr><td class="sticky-col foundation-name-col"><div class="fw-semibold">{{ row.pupil.full_name }}</div><div class="small text-muted">{{ row.pupil.gender }}{% if row.pupil.pupil_premium %} · PP{% endif %}{% if row.pupil.laps %} · LAPS{% endif %}{% if row.pupil.service_child %} · Service{% endif %}</div></td>{% for subject_key, _subject_label in subjects %}{% set judgement = row.judgements[subject_key] %}<td class="{{ judgement_themes.get(judgement, '') }}"><select name="judgement_{{ row.pupil.id }}_{{ subject_key }}" class="form-select form-select-sm">{% for value, label in judgement_choices %}<option value="{{ value }}" {% if value == judgement %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></td>{% endfor %}</tr>{% else %}<tr><td colspan="99" class="text-center py-4 text-muted">No pupils match current filters.</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="px-3 py-3 text-end border-top bg-light-subtle"><button class="btn btn-success btn-sm">Quick save Foundation judgements</button></div>
+  </form>
+</div></div>
+
+<div class="card shadow-sm mt-4"><div class="card-header bg-white"><strong>By subject summary</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Subject</th><th>WT</th><th>OT</th><th>Exceeding</th><th>Missing</th></tr></thead><tbody>{% for subject_key, subject_label in subjects %}{% set item = summary.by_subject[subject_key] %}<tr><td>{{ subject_label }}</td><td>{{ item['Working Towards'] }}</td><td>{{ item['On Track'] }}</td><td>{{ item['Exceeding'] }}</td><td>{{ item['Missing'] }}</td></tr>{% endfor %}</tbody></table></div></div>
+
+<div class="d-flex gap-2 flex-wrap foundation-tab-strip mt-3">
+  {% for value, label in half_terms %}
+    <a class="btn btn-sm {% if value == selected_half_term %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('admin.foundation_tracker', class_id=school_class.id, academic_year=academic_year, half_term=value, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, search=filters.search) }}">{{ label }}</a>
+  {% endfor %}
+</div>
+{% endblock %}

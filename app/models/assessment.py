@@ -258,3 +258,29 @@ class TimesTableScore(db.Model):
 
     def __repr__(self) -> str:
         return f'<TimesTableScore pupil={self.pupil_id} column={self.times_table_test_column_id}>'
+
+
+class FoundationResult(db.Model):
+    """Per-pupil Foundation subject judgement for one half term."""
+
+    __tablename__ = 'foundation_results'
+    __table_args__ = (
+        db.UniqueConstraint('pupil_id', 'academic_year', 'half_term', 'subject', name='uq_foundation_result_scope'),
+        db.Index('ix_foundation_results_lookup', 'academic_year', 'half_term', 'subject'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=False, index=True)
+    half_term = db.Column(db.String(20), nullable=False, index=True)
+    subject = db.Column(db.String(20), nullable=False, index=True)
+    judgement = db.Column(db.String(50), nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    pupil = db.relationship('Pupil', back_populates='foundation_results')
+    updated_by_user = db.relationship('User')
+
+    def __repr__(self) -> str:
+        return f'<FoundationResult pupil={self.pupil_id} {self.subject} {self.half_term}>'

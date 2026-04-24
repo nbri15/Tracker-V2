@@ -19,6 +19,7 @@
         <a class="nav-link text-white {% if request.endpoint == 'teacher.reading' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'reading') %}active{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
         <a class="nav-link text-white {% if request.endpoint == 'teacher.spag' or (request.endpoint == 'teacher.gap_analysis' and request.view_args.get('subject') == 'spag') %}active{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
         <a class="nav-link text-white {% if request.endpoint == 'teacher.writing' %}active{% endif %}" href="{{ url_for('teacher.writing') }}">Writing</a>
+        <a class="nav-link text-white {% if request.endpoint == 'teacher.foundation' %}active{% endif %}" href="{{ url_for('teacher.foundation') }}">Foundation</a>
         {% if assigned_class and assigned_class.year_group in [1, 2] %}
           <a class="nav-link text-white {% if request.endpoint == 'teacher.phonics' %}active{% endif %}" href="{{ url_for('teacher.phonics') }}">Phonics</a>
         {% endif %}
@@ -37,6 +38,7 @@
       <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>
       <a class="nav-link text-white {% if request.endpoint in ['admin.sats', 'admin.class_sats'] %}active{% endif %}" href="{{ url_for('admin.sats') }}">Year 6 SATs</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.reception_tracker' %}active{% endif %}" href="{{ url_for('admin.reception_tracker') }}">Reception tracker</a>
+      <a class="nav-link text-white {% if request.endpoint == 'admin.foundation_tracker' %}active{% endif %}" href="{{ url_for('admin.foundation_tracker') }}">Foundation tracker</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.promotion' %}active{% endif %}" href="{{ url_for('admin.promotion') }}">Promotion & history</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
       <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
