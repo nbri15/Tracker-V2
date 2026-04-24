@@ -287,11 +287,14 @@ def resolve_subject_band_label(
 def format_progress_delta(delta: float | None) -> str:
     if delta is None:
         return '—'
-    rounded = int(round(delta))
+    rounded = round(delta, 1)
+    if rounded == 0:
+        return '→ 0'
+    formatted = f'{rounded:.1f}'.rstrip('0').rstrip('.')
     if rounded > 0:
-        return f'↑ +{rounded}'
+        return f'↑ +{formatted}'
     if rounded < 0:
-        return f'↓ {rounded}'
+        return f'↓ {formatted}'
     return '→ 0'
 
 
