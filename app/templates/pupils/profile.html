@@ -38,7 +38,7 @@
               <strong>{{ label }}:</strong>
               {% if item and item.band %}
                 <span class="badge text-bg-{{ item.band_theme }}">{{ item.band }}</span>
-                <span class="text-{{ item.progress_theme }}">{{ item.arrow }} {{ item.delta_label }}</span>
+                <span class="{% if item.progress_theme %}text-{{ item.progress_theme }}{% else %}text-muted{% endif %}">{{ item.progress_label or '—' }}</span>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}
@@ -117,7 +117,7 @@
                           <span class="text-muted">Assessment level —</span>
                         {% endif %}
                       </div>
-                      <div class="small text-{{ row.progress_theme }}">{{ row.arrow }} {{ row.delta_label }}</div>
+                      <div class="small {% if row.progress_theme %}text-{{ row.progress_theme }}{% else %}text-muted{% endif %}">{{ row.progress_label or '—' }}</div>
                     </li>
                   {% else %}
                     <li class="list-group-item text-muted">No data yet.</li>

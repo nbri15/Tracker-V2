@@ -26,6 +26,7 @@ from app.models import (
     TimesTableScore,
     WritingResult,
 )
+from app.services import format_progress_delta, progress_theme
 from app.utils import teacher_or_admin_required
 
 from . import pupils_bp
@@ -336,7 +337,7 @@ def _build_latest_summary(subject_rows: list[SubjectResult], writing_rows: list[
     for subject in ['reading', 'maths', 'spag']:
         latest = latest_by_subject.get(subject)
         previous = previous_by_subject.get(subject)
-        summary[subject] = _summary_payload(latest.band_label if latest else None, previous.band_label if previous else None)
+        summary[subject] = _subject_summary_payload(latest, previous)
 
     summary['writing'] = _summary_payload(latest_writing.band if latest_writing else None, previous_writing.band if previous_writing else None)
 
@@ -372,6 +373,27 @@ def _summary_payload(current_band: str | None, previous_band: str | None) -> dic
         'band_theme': BAND_THEME.get(current_band or '', 'secondary'),
         'progress_theme': {'up': 'success', 'same': 'warning', 'down': 'danger'}[direction],
     }
+
+
+def _subject_summary_payload(current_row: SubjectResult | None, previous_row: SubjectResult | None) -> dict:
+    payload = _summary_payload(current_row.band_label if current_row else None, previous_row.band_label if previous_row else None)
+    current_percent = current_row.combined_percent if current_row else None
+    previous_percent = previous_row.combined_percent if previous_row else None
+    delta = (
+        current_percent - previous_percent
+        if current_percent is not None and previous_percent is not None
+        else None
+    )
+    theme = progress_theme(delta)
+    payload.update(
+        {
+            'current_percent': current_percent,
+            'previous_percent': previous_percent,
+            'progress_label': format_progress_delta(delta),
+            'progress_theme': {'up': 'success', 'flat': 'warning', 'down': 'danger'}.get(theme, None),
+        }
+    )
+    return payload
 
 
 def _rank_to_band(rank: float | None) -> str | None:
@@ -426,16 +448,13 @@ def _build_subject_history_cards(subject_rows: list[SubjectResult], writing_rows
 
     for rows in cards.values():
         for index, row in enumerate(rows):
-            previous_rank = rows[index + 1]['rank'] if index + 1 < len(rows) else None
+            previous = rows[index + 1] if index + 1 < len(rows) else None
             delta = None
-            direction = 'same'
-            if row['rank'] is not None and previous_rank is not None:
-                delta = row['rank'] - previous_rank
-                if delta > 0:
-                    direction = 'up'
-                elif delta < 0:
-                    direction = 'down'
-            row['arrow'] = {'up': '↑', 'same': '→', 'down': '↓'}[direction]
-            row['delta_label'] = f"{delta:+.0f}" if delta is not None else '0'
-            row['progress_theme'] = {'up': 'success', 'same': 'warning', 'down': 'danger'}[direction]
+            if row['percentage'] is not None and previous and previous.get('percentage') is not None:
+                delta = row['percentage'] - previous['percentage']
+            elif row['percentage'] is None and row['rank'] is not None and previous and previous.get('rank') is not None:
+                delta = row['rank'] - previous['rank']
+            theme = progress_theme(delta)
+            row['progress_label'] = format_progress_delta(delta)
+            row['progress_theme'] = {'up': 'success', 'flat': 'warning', 'down': 'danger'}.get(theme, None)
     return cards
