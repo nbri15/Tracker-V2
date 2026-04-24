@@ -49,10 +49,12 @@ def register_blueprints(app: Flask) -> None:
     from .auth import auth_bp
     from .dashboards import dashboards_bp
     from .teacher import teacher_bp
+    from .pupils import pupils_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
     app.register_blueprint(teacher_bp)
+    app.register_blueprint(pupils_bp)
     app.register_blueprint(admin_bp)
 
 
