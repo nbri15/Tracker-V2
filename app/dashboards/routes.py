@@ -19,7 +19,7 @@ from app.services import (
     get_tracker_mode_label,
     sort_class_rows,
 )
-from app.utils import admin_required, get_primary_class_for_user, teacher_required
+from app.utils import admin_required, get_primary_class_for_user, get_year_group_class_for_user, teacher_required
 
 from . import dashboards_bp
 
@@ -58,6 +58,7 @@ def teacher_dashboard():
 
     context = {
         'school_class': school_class,
+        'has_year6_sats_access': get_year_group_class_for_user(current_user, 6) is not None,
         'pupil_count': len(pupils),
         'academic_year': academic_year,
         'summary_rows': summary_rows,

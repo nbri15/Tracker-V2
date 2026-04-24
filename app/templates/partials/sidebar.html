@@ -27,7 +27,9 @@
           <a class="nav-link text-white {% if request.endpoint == 'teacher.times_tables' %}active{% endif %}" href="{{ url_for('teacher.times_tables') }}">Times tables</a>
         {% endif %}
         <a class="nav-link text-white {% if request.endpoint == 'teacher.interventions' %}active{% endif %}" href="{{ url_for('teacher.interventions') }}">Interventions</a>
-        <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs / mode</a>
+        {% if current_user.classes.filter_by(is_active=True, year_group=6).first() %}
+          <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs / mode</a>
+        {% endif %}
       {% endif %}
     {% endif %}
 
