@@ -34,7 +34,6 @@
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
       <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail', 'admin.class_sats', 'admin.class_phonics', 'admin.class_times_tables'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Users</a>
-      <a class="nav-link text-white {% if request.endpoint == 'admin.pupils' %}active{% endif %}" href="{{ url_for('admin.pupils') }}">Pupils</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>
       <a class="nav-link text-white {% if request.endpoint in ['admin.sats', 'admin.class_sats'] %}active{% endif %}" href="{{ url_for('admin.sats') }}">Year 6 SATs</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.reception_tracker' %}active{% endif %}" href="{{ url_for('admin.reception_tracker') }}">Reception tracker</a>

@@ -553,6 +553,17 @@ def users():
                     db.session.add(school_class)
                 db.session.add(user)
                 flash(f'Updated {user.username}.', 'success')
+            elif action == 'delete':
+                user = User.query.get_or_404(int(request.form.get('user_id', '0')))
+                if user.id == current_user.id:
+                    raise ValueError('You cannot delete your own account while logged in.')
+                if user.is_admin and User.query.filter_by(role='admin', is_active=True).count() <= 1:
+                    raise ValueError('You cannot delete the last remaining active admin user.')
+                for school_class in user.classes.all():
+                    school_class.teacher_id = None
+                    db.session.add(school_class)
+                db.session.delete(user)
+                flash(f'Deleted user {user.username}.', 'success')
             elif action == 'sync_defaults':
                 if not current_app.config.get('ALLOW_DEV_BOOTSTRAP', False):
                     raise ValueError('Default account sync is disabled in production.')
@@ -570,6 +581,7 @@ def users():
         'admin/users.html',
         teachers=teachers,
         classes=classes,
+        active_admin_count=User.query.filter_by(role='admin', is_active=True).count(),
         allow_dev_bootstrap=current_app.config.get('ALLOW_DEV_BOOTSTRAP', False),
     )
 
