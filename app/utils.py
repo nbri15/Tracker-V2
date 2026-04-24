@@ -54,3 +54,15 @@ def get_primary_class_for_user(user):
         .order_by(SchoolClass.year_group, SchoolClass.name)
         .first()
     )
+
+
+def get_year_group_class_for_user(user, year_group: int):
+    """Return the first active class in a specific year group for the user."""
+
+    if not user.is_authenticated:
+        return None
+    return (
+        SchoolClass.query.filter_by(teacher_id=user.id, is_active=True, year_group=year_group)
+        .order_by(SchoolClass.name)
+        .first()
+    )

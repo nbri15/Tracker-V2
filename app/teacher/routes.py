@@ -93,7 +93,7 @@ from app.services import (
     sort_times_tables_tracker_rows,
     FoundationValidationError,
 )
-from app.utils import get_primary_class_for_user, teacher_required
+from app.utils import get_primary_class_for_user, get_year_group_class_for_user, teacher_required
 
 from . import teacher_bp
 
@@ -468,12 +468,12 @@ def interventions():
 @login_required
 @teacher_required
 def sats_tracker():
-    school_class = get_primary_class_for_user(current_user)
+    school_class = get_year_group_class_for_user(current_user, 6)
     academic_year = request.values.get('academic_year', get_current_academic_year())
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
 
-    if not school_class or school_class.year_group != 6:
-        flash('The SATs tracker is only available for the Year 6 teacher.', 'warning')
+    if not school_class:
+        flash('Year 6 SATs tracker is only available for Year 6.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
     tracker_mode = get_tracker_mode(6)
