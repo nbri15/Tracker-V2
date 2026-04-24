@@ -180,21 +180,10 @@ def bootstrap_runtime_schema(app: Flask) -> None:
     """
 
     with app.app_context():
+        # Ensure an empty database has baseline tables before additive ALTERs.
+        db.create_all()
         inspector = inspect(db.engine)
 
-        if inspector.dialect.name == 'postgresql':
-            statements = [
-                "ALTER TABLE pupils ADD COLUMN IF NOT EXISTS strengths_notes TEXT",
-                "ALTER TABLE pupils ADD COLUMN IF NOT EXISTS next_steps_notes TEXT",
-                "ALTER TABLE pupils ADD COLUMN IF NOT EXISTS general_notes TEXT",
-                "ALTER TABLE subject_results ADD COLUMN IF NOT EXISTS assessment_year_group INTEGER",
-            ]
-            with db.engine.begin() as connection:
-                for statement in statements:
-                    connection.execute(text(statement))
-            return
-
-        # Fallback for non-PostgreSQL local development environments.
         table_columns = {
             'pupils': {
                 'strengths_notes': 'TEXT',
@@ -205,12 +194,35 @@ def bootstrap_runtime_schema(app: Flask) -> None:
                 'assessment_year_group': 'INTEGER',
             },
         }
+
         with db.engine.begin() as connection:
             for table_name, columns in table_columns.items():
                 if not inspector.has_table(table_name):
+                    app.logger.warning(
+                        "Runtime schema bootstrap skipped missing table '%s'.",
+                        table_name,
+                    )
                     continue
+
                 existing_columns = {column['name'] for column in inspector.get_columns(table_name)}
                 for column_name, column_type in columns.items():
                     if column_name in existing_columns:
                         continue
-                    connection.execute(text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}'))
+
+                    if inspector.dialect.name == 'postgresql':
+                        statement = (
+                            f'ALTER TABLE {table_name} '
+                            f'ADD COLUMN IF NOT EXISTS {column_name} {column_type}'
+                        )
+                    else:
+                        statement = f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}'
+
+                    try:
+                        connection.execute(text(statement))
+                    except Exception:
+                        app.logger.warning(
+                            "Runtime schema bootstrap failed for %s.%s.",
+                            table_name,
+                            column_name,
+                            exc_info=True,
+                        )
