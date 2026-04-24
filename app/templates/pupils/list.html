@@ -101,6 +101,7 @@
           <th>Reading</th>
           <th>Writing</th>
           <th>Maths</th>
+          <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -118,9 +119,24 @@
             <td>{{ latest.get('reading') or '—' }}</td>
             <td>{{ latest.get('writing') or '—' }}</td>
             <td>{{ latest.get('maths') or '—' }}</td>
+            <td class="text-end">
+              <div class="d-inline-flex gap-1">
+                {% if pupil.is_active and (current_user.is_admin or current_user.is_teacher) %}
+                  <form method="post" action="{{ url_for('pupils.archive', pupil_id=pupil.id) }}" onsubmit="return confirm('Are you sure you want to archive this pupil? This will remove them from active lists but keep all historical data.');">
+                    <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+                    <button type="submit" class="btn btn-outline-warning btn-sm">Archive</button>
+                  </form>
+                {% elif current_user.is_admin %}
+                  <form method="post" action="{{ url_for('pupils.restore', pupil_id=pupil.id) }}">
+                    <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+                    <button type="submit" class="btn btn-outline-success btn-sm">Restore</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="11" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
+          <tr><td colspan="12" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
         {% endfor %}
       </tbody>
     </table>
