@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ pupil.full_name }}{% endblock %}
+{% set page_heading = pupil.full_name %}
+
+{% block content %}
+<div class="d-flex justify-content-end mb-3">
+  <button class="btn btn-outline-primary btn-sm js-download-pdf" data-pdf-target="#pupil-profile-pdf" data-pdf-filename="{{ pupil.full_name|replace(' ', '_')|lower }}-summary.pdf">Download Pupil Summary PDF</button>
+</div>
+
+<div id="pupil-profile-pdf">
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h4 class="mb-1">{{ pupil.full_name }} — Year {{ pupil.school_class.year_group }}</h4>
+      <p class="mb-2 text-muted">Class: {{ pupil.school_class.name }}</p>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <span class="badge text-bg-secondary">PP: {{ 'Yes' if pupil.pupil_premium else 'No' }}</span>
+        <span class="badge text-bg-secondary">LAPS: {{ 'Yes' if pupil.laps else 'No' }}</span>
+        <span class="badge text-bg-secondary">Service: {{ 'Yes' if pupil.service_child else 'No' }}</span>
+        <span class="badge text-bg-secondary">SEND/EHCP: —</span>
+      </div>
+      <div class="row g-2">
+        {% for subject_key, label in [('reading','Reading'), ('maths','Maths'), ('spag','SPaG'), ('writing','Writing'), ('overall','Overall')] %}
+          {% set item = latest_summary.get(subject_key) %}
+          <div class="col-md-4">
+            <div class="border rounded p-2 bg-light">
+              <strong>{{ label }}:</strong>
+              {% if item and item.band %}
+                <span class="badge text-bg-{{ item.band_theme }}">{{ item.band }}</span>
+                <span class="text-{{ item.progress_theme }}">{{ item.arrow }} {{ item.delta_label }}</span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if missing_data_warnings %}
+    <div class="alert alert-warning py-2 mb-4">
+      {% for warning in missing_data_warnings %}<div>• {{ warning }}</div>{% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white"><strong>Interventions</strong></div>
+    <div class="card-body">
+      <p class="mb-2">Interventions: {{ intervention_summary.total }} total · {{ intervention_summary.active }} active · {{ intervention_summary.closed }} closed</p>
+      <p class="mb-2"><strong>Active focus:</strong> {{ active_focuses|join(', ') if active_focuses else '—' }}</p>
+      <p class="mb-0"><strong>Latest note:</strong> {{ latest_intervention_note or '—' }}</p>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white"><strong>Notes & report writing</strong></div>
+    <div class="card-body">
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">Strengths</label>
+          <textarea class="form-control" name="strengths_notes" rows="3">{{ pupil.strengths_notes or '' }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Next steps</label>
+          <textarea class="form-control" name="next_steps_notes" rows="3">{{ pupil.next_steps_notes or '' }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">General notes</label>
+          <textarea class="form-control" name="general_notes" rows="4">{{ pupil.general_notes or '' }}</textarea>
+        </div>
+        <button class="btn btn-primary btn-sm">Save notes</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white"><strong>Historic attainment</strong></div>
+    <div class="card-body">
+      <h6>Maths / Reading / SPaG</h6>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>Year</th><th>Term</th><th>Subject</th><th>Score</th><th>Band</th><th>Assessment level</th></tr></thead>
+          <tbody>
+            {% for row in subject_rows %}
+              <tr>
+                <td>{{ row.academic_year }}</td>
+                <td>{{ row.term|title }}</td>
+                <td>{{ format_subject_name(row.subject) }}</td>
+                <td>{{ row.combined_percent ~ '%' if row.combined_percent is not none else '—' }}</td>
+                <td>{{ row.band_label or '—' }}</td>
+                <td>
+                  {% if row.assessment_year_group is not none %}
+                    Y{{ row.assessment_year_group }} test
+                    {% if row.assessment_year_group < pupil.school_class.year_group %}<span class="text-warning">(Lower year test)</span>{% endif %}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="text-muted">No subject records yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h6>Writing</h6>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>Year</th><th>Term</th><th>Band</th></tr></thead>
+          <tbody>
+            {% for row in writing_rows %}
+              <tr><td>{{ row.academic_year }}</td><td>{{ row.term|title }}</td><td>{{ row.band }}</td></tr>
+            {% else %}
+              <tr><td colspan="3" class="text-muted">No writing records yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h6>Phonics / Times tables / Reception</h6>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <ul class="list-group list-group-flush">
+            {% for row in phonics_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.column }}: {{ row.score if row.score is not none else '—' }}</li>{% else %}<li class="list-group-item px-0 text-muted">No phonics data.</li>{% endfor %}
+          </ul>
+        </div>
+        <div class="col-md-4">
+          <ul class="list-group list-group-flush">
+            {% for row in times_tables_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.column }}: {{ row.score if row.score is not none else '—' }}</li>{% else %}<li class="list-group-item px-0 text-muted">No times tables data.</li>{% endfor %}
+          </ul>
+        </div>
+        <div class="col-md-4">
+          <ul class="list-group list-group-flush">
+            {% for row in reception_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.tracking_point }} · {{ row.area_key }}: {{ row.status }}</li>{% else %}<li class="list-group-item px-0 text-muted">No reception data.</li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <h6 class="mt-3">SATs</h6>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm">
+          <thead><tr><th>Year</th><th>Type</th><th>Detail</th></tr></thead>
+          <tbody>
+            {% for row in sats_rows %}
+              <tr><td>{{ row.academic_year }}</td><td>{{ row.subject|upper }} AP{{ row.assessment_point }}</td><td>Raw {{ row.raw_score if row.raw_score is not none else '—' }} / Scaled {{ row.scaled_score if row.scaled_score is not none else '—' }}</td></tr>
+            {% endfor %}
+            {% for row in sats_writing_rows %}
+              <tr><td>{{ row.academic_year }}</td><td>Writing AP{{ row.assessment_point }}</td><td>{{ row.band or '—' }}</td></tr>
+            {% endfor %}
+            {% for row in sats_column_rows %}
+              <tr><td>{{ row.academic_year }}</td><td>{{ row.column.name }}</td><td>{{ row.raw_score if row.raw_score is not none else '—' }}</td></tr>
+            {% endfor %}
+            {% if not sats_rows and not sats_writing_rows and not sats_column_rows %}
+              <tr><td colspan="3" class="text-muted">No SATs data.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <h6>Class history</h6>
+      <ul class="list-group list-group-flush mb-0">
+        {% for row in history_rows %}
+          <li class="list-group-item px-0">{{ row.academic_year }} · {{ row.class_name }} (Year {{ row.year_group }})</li>
+        {% else %}
+          <li class="list-group-item px-0 text-muted">No archived class history entries.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
