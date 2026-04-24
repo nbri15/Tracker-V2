@@ -47,6 +47,7 @@ class SubjectResult(db.Model):
     academic_year = db.Column(db.String(20), nullable=False)
     term = db.Column(db.String(20), nullable=False)
     subject = db.Column(db.String(20), nullable=False)
+    assessment_year_group = db.Column(db.Integer, nullable=True)
     paper_1_score = db.Column(db.Integer, nullable=True)
     paper_2_score = db.Column(db.Integer, nullable=True)
     combined_score = db.Column(db.Integer, nullable=True)

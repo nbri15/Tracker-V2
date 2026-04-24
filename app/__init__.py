@@ -5,6 +5,7 @@ import os
 import click
 from flask import Flask, redirect, render_template, request, url_for
 from flask_login import current_user
+from sqlalchemy import inspect, text
 
 from config import config_by_name
 from .extensions import db, login_manager, migrate
@@ -28,6 +29,8 @@ def create_app(config_name: str | None = None) -> Flask:
     register_template_helpers(app)
     register_shell_context(app)
     register_cli_commands(app)
+    bootstrap_runtime_schema(app)
+    bootstrap_admin_from_env(app)
 
     return app
 
@@ -47,10 +50,12 @@ def register_blueprints(app: Flask) -> None:
     from .auth import auth_bp
     from .dashboards import dashboards_bp
     from .teacher import teacher_bp
+    from .pupils import pupils_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
     app.register_blueprint(teacher_bp)
+    app.register_blueprint(pupils_bp)
     app.register_blueprint(admin_bp)
 
 
@@ -138,3 +143,74 @@ def register_cli_commands(app: Flask) -> None:
         db.session.add(user)
         db.session.commit()
         click.echo(f"Created admin user '{user.username}'.")
+
+
+def bootstrap_admin_from_env(app: Flask) -> None:
+    """Create an initial admin account from environment variables when needed."""
+
+    username = (app.config.get('BOOTSTRAP_ADMIN_USERNAME') or os.environ.get('BOOTSTRAP_ADMIN_USERNAME') or '').strip()
+    password = app.config.get('BOOTSTRAP_ADMIN_PASSWORD') or os.environ.get('BOOTSTRAP_ADMIN_PASSWORD') or ''
+    if not username or not password:
+        return
+
+    from .models import User
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if not inspector.has_table(User.__tablename__):
+            return
+
+        existing_admin = User.query.filter_by(role='admin').first()
+        if existing_admin:
+            return
+
+        user = User(username=username, role='admin', is_active=True)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+
+
+def bootstrap_runtime_schema(app: Flask) -> None:
+    """Apply lightweight additive schema fixes needed at runtime.
+
+    This keeps startup resilient on environments where running CLI migrations
+    is not practical (for example, managed platforms without shell access).
+    The bootstrap is intentionally non-destructive and only adds missing
+    columns.
+    """
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+
+        if inspector.dialect.name == 'postgresql':
+            statements = [
+                "ALTER TABLE pupils ADD COLUMN IF NOT EXISTS strengths_notes TEXT",
+                "ALTER TABLE pupils ADD COLUMN IF NOT EXISTS next_steps_notes TEXT",
+                "ALTER TABLE pupils ADD COLUMN IF NOT EXISTS general_notes TEXT",
+                "ALTER TABLE subject_results ADD COLUMN IF NOT EXISTS assessment_year_group INTEGER",
+            ]
+            with db.engine.begin() as connection:
+                for statement in statements:
+                    connection.execute(text(statement))
+            return
+
+        # Fallback for non-PostgreSQL local development environments.
+        table_columns = {
+            'pupils': {
+                'strengths_notes': 'TEXT',
+                'next_steps_notes': 'TEXT',
+                'general_notes': 'TEXT',
+            },
+            'subject_results': {
+                'assessment_year_group': 'INTEGER',
+            },
+        }
+        with db.engine.begin() as connection:
+            for table_name, columns in table_columns.items():
+                if not inspector.has_table(table_name):
+                    continue
+                existing_columns = {column['name'] for column in inspector.get_columns(table_name)}
+                for column_name, column_type in columns.items():
+                    if column_name in existing_columns:
+                        continue
+                    connection.execute(text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}'))

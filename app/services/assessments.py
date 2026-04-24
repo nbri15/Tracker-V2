@@ -259,6 +259,60 @@ def compute_subject_result_values(
     }
 
 
+def resolve_effective_assessment_year_group(result_year_group: int | None, pupil_year_group: int | None) -> int | None:
+    if result_year_group is not None:
+        return result_year_group
+    return pupil_year_group
+
+
+def resolve_subject_band_label(
+    *,
+    percent: float | None,
+    setting: AssessmentSetting | None,
+    pupil_year_group: int | None,
+    assessment_year_group: int | None,
+) -> str | None:
+    if percent is None or setting is None:
+        return None
+    effective_test_year = resolve_effective_assessment_year_group(assessment_year_group, pupil_year_group)
+    if pupil_year_group is not None and effective_test_year is not None and effective_test_year < pupil_year_group:
+        return 'Working Towards'
+    return SubjectResult.calculate_band_label(
+        percent,
+        setting.below_are_threshold_percent,
+        setting.exceeding_threshold_percent,
+    )
+
+
+def format_progress_delta(delta: float | None) -> str:
+    if delta is None:
+        return '—'
+    rounded = int(round(delta))
+    if rounded > 0:
+        return f'↑ +{rounded}'
+    if rounded < 0:
+        return f'↓ {rounded}'
+    return '→ 0'
+
+
+def progress_theme(delta: float | None) -> str | None:
+    if delta is None:
+        return None
+    if delta > 0:
+        return 'up'
+    if delta < 0:
+        return 'down'
+    return 'flat'
+
+
+def previous_term(term: str) -> str | None:
+    mapping = {
+        'spring': 'autumn',
+        'summer': 'spring',
+    }
+    return mapping.get((term or '').strip().lower())
+
+
 def recalculate_subject_results_for_scope(year_group: int, subject: str, term: str, *, academic_year: str | None = None, class_id: int | None = None) -> int:
     setting = get_subject_setting(year_group, subject, term)
     query = (
@@ -434,6 +488,10 @@ def sort_subject_result_rows(rows: list[dict], sort_column: str, sort_direction:
         return _sort_rows(rows, lambda row: _coerce_numeric(row.get('combined_percent')), direction=sort_direction)
     if sort_column == 'band_label':
         return _sort_rows(rows, lambda row: _normalized_text(row.get('band_label')), direction=sort_direction)
+    if sort_column == 'assessment_year_group':
+        return _sort_rows(rows, lambda row: _coerce_numeric(row.get('assessment_year_group')), direction=sort_direction)
+    if sort_column == 'progress_delta':
+        return _sort_rows(rows, lambda row: _coerce_numeric(row.get('progress_delta')), direction=sort_direction)
     return sorted(rows, key=_name_sort_key)
 
 
@@ -522,10 +580,11 @@ def _counts_from_band_labels(rows: list[SubjectResult]) -> dict:
             if setting is None:
                 setting = get_subject_setting(year_group, row.subject, row.term)
                 setting_cache[cache_key] = setting
-            band_label = SubjectResult.calculate_band_label(
-                row.combined_percent,
-                setting.below_are_threshold_percent,
-                setting.exceeding_threshold_percent,
+            band_label = resolve_subject_band_label(
+                percent=row.combined_percent,
+                setting=setting,
+                pupil_year_group=year_group,
+                assessment_year_group=row.assessment_year_group,
             )
         if band_label in counts:
             counts[band_label] += 1
@@ -1134,6 +1193,7 @@ def _build_class_detail_subject_rows(
 
     if subject in CORE_SUBJECTS:
         setting = get_subject_setting(school_class.year_group, subject, term)
+        prev_term = previous_term(term)
         result_rows = (
             SubjectResult.query.join(SubjectResult.pupil)
             .filter(
@@ -1145,6 +1205,19 @@ def _build_class_detail_subject_rows(
         )
         result_rows = apply_admin_pupil_filters(result_rows, filters).all()
         result_lookup = {row.pupil_id: row for row in result_rows}
+        previous_lookup: dict[int, SubjectResult] = {}
+        if prev_term:
+            previous_rows = (
+                SubjectResult.query.join(SubjectResult.pupil)
+                .filter(
+                    SubjectResult.subject == subject,
+                    SubjectResult.academic_year == academic_year,
+                    SubjectResult.term == prev_term,
+                    Pupil.class_id == school_class.id,
+                )
+            )
+            previous_rows = apply_admin_pupil_filters(previous_rows, filters).all()
+            previous_lookup = {row.pupil_id: row for row in previous_rows}
     else:
         result_rows = (
             WritingResult.query.join(WritingResult.pupil)
@@ -1170,20 +1243,29 @@ def _build_class_detail_subject_rows(
             'flags': _build_pupil_flag_summary(pupil),
         }
         if subject in CORE_SUBJECTS:
+            assessment_year_group = (
+                result.assessment_year_group
+                if result and result.assessment_year_group is not None
+                else school_class.year_group
+            )
+            prev_percent = previous_lookup.get(pupil.id).combined_percent if previous_lookup.get(pupil.id) else None
+            delta = (result.combined_percent - prev_percent) if (result and result.combined_percent is not None and prev_percent is not None) else None
             base_row.update({
                 'paper_1_score': result.paper_1_score if result else None,
                 'paper_2_score': result.paper_2_score if result else None,
                 'combined_score': result.combined_score if result else None,
                 'combined_percent': result.combined_percent if result else None,
-                'band_label': (
-                    SubjectResult.calculate_band_label(
-                        result.combined_percent,
-                        setting.below_are_threshold_percent,
-                        setting.exceeding_threshold_percent,
-                    )
-                    if result
-                    else None
+                'band_label': resolve_subject_band_label(
+                    percent=result.combined_percent if result else None,
+                    setting=setting,
+                    pupil_year_group=school_class.year_group,
+                    assessment_year_group=assessment_year_group,
                 ),
+                'assessment_year_group': assessment_year_group,
+                'below_expected_test': assessment_year_group < school_class.year_group if result else False,
+                'progress_delta': delta,
+                'progress_label': format_progress_delta(delta),
+                'progress_theme': progress_theme(delta),
                 'source': result.source if result else None,
             })
         else:
@@ -1313,6 +1395,12 @@ def get_class_detail_context(
         ),
         'pupil_rows': pupil_rows,
         'filtered_pupil_count': len(pupils),
+        'overview_cards': {
+            'improved': [row for row in pupil_rows if row.get('progress_delta') is not None and row.get('progress_delta') > 0],
+            'no_change': [row for row in pupil_rows if row.get('progress_delta') is not None and row.get('progress_delta') == 0],
+            'dropped': [row for row in pupil_rows if row.get('progress_delta') is not None and row.get('progress_delta') < 0],
+            'below_test': [row for row in pupil_rows if row.get('below_expected_test')],
+        } if active_subject in CORE_SUBJECTS else None,
     })
     return context
 
