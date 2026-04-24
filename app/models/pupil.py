@@ -36,6 +36,7 @@ class Pupil(db.Model):
     reception_tracker_entries = db.relationship('ReceptionTrackerEntry', back_populates='pupil', cascade='all, delete-orphan')
     phonics_scores = db.relationship('PhonicsScore', back_populates='pupil', cascade='all, delete-orphan')
     times_table_scores = db.relationship('TimesTableScore', back_populates='pupil', cascade='all, delete-orphan')
+    foundation_results = db.relationship('FoundationResult', back_populates='pupil', cascade='all, delete-orphan')
 
     @property
     def full_name(self) -> str:
