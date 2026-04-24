@@ -150,6 +150,8 @@ def profile(pupil_id: int):
     return render_template(
         'pupils/profile.html',
         pupil=pupil,
+        can_archive=_can_archive_pupil(pupil),
+        can_restore=current_user.is_admin and not pupil.is_active,
         latest_summary=latest_summary,
         subject_rows=subject_rows,
         writing_rows=writing_rows,
@@ -167,6 +169,42 @@ def profile(pupil_id: int):
         missing_data_warnings=missing_data_warnings,
         gap_rows=gap_rows,
     )
+
+
+@pupils_bp.route('/<int:pupil_id>/archive', methods=['POST'])
+@login_required
+@teacher_or_admin_required
+def archive(pupil_id: int):
+    pupil = Pupil.query.join(Pupil.school_class).filter(Pupil.id == pupil_id).first_or_404()
+    if not _can_archive_pupil(pupil):
+        abort(403)
+    if not pupil.is_active:
+        flash(f'{pupil.full_name} is already archived.', 'info')
+        return _redirect_to_pupil_source(pupil.id)
+
+    pupil.is_active = False
+    db.session.add(pupil)
+    db.session.commit()
+    flash(f'{pupil.full_name} has been archived.', 'success')
+    return _redirect_to_pupil_source(pupil.id)
+
+
+@pupils_bp.route('/<int:pupil_id>/restore', methods=['POST'])
+@login_required
+@teacher_or_admin_required
+def restore(pupil_id: int):
+    pupil = Pupil.query.join(Pupil.school_class).filter(Pupil.id == pupil_id).first_or_404()
+    if not current_user.is_admin:
+        abort(403)
+    if pupil.is_active:
+        flash(f'{pupil.full_name} is already active.', 'info')
+        return _redirect_to_pupil_source(pupil.id)
+
+    pupil.is_active = True
+    db.session.add(pupil)
+    db.session.commit()
+    flash(f'{pupil.full_name} has been restored to active lists.', 'success')
+    return _redirect_to_pupil_source(pupil.id)
 
 
 def _build_pupil_filters(args) -> dict:
@@ -234,6 +272,20 @@ def _can_view_pupil(pupil: Pupil) -> bool:
         return True
     teacher_class_ids = {school_class.id for school_class in current_user.classes.filter_by(is_active=True).all()}
     return pupil.is_active and pupil.class_id in teacher_class_ids
+
+
+def _can_archive_pupil(pupil: Pupil) -> bool:
+    if current_user.is_admin:
+        return True
+    teacher_class_ids = {school_class.id for school_class in current_user.classes.filter_by(is_active=True).all()}
+    return pupil.class_id in teacher_class_ids
+
+
+def _redirect_to_pupil_source(pupil_id: int):
+    next_url = (request.form.get('next') or '').strip()
+    if next_url and next_url.startswith('/'):
+        return redirect(next_url)
+    return redirect(url_for('pupils.profile', pupil_id=pupil_id))
 
 
 def _term_rank(term: str) -> int:

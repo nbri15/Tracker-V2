@@ -4,7 +4,18 @@
 {% set page_heading = pupil.full_name %}
 
 {% block content %}
-<div class="d-flex justify-content-end mb-3">
+<div class="d-flex justify-content-end gap-2 mb-3">
+  {% if can_archive %}
+    <form method="post" action="{{ url_for('pupils.archive', pupil_id=pupil.id) }}" onsubmit="return confirm('Are you sure you want to archive this pupil? This will remove them from active lists but keep all historical data.');">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit" class="btn btn-outline-warning btn-sm">Archive pupil</button>
+    </form>
+  {% elif can_restore %}
+    <form method="post" action="{{ url_for('pupils.restore', pupil_id=pupil.id) }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button type="submit" class="btn btn-outline-success btn-sm">Restore pupil</button>
+    </form>
+  {% endif %}
   <button class="btn btn-outline-primary btn-sm js-download-pdf" data-pdf-target="#pupil-profile-pdf" data-pdf-filename="{{ pupil.full_name|replace(' ', '_')|lower }}-summary.pdf">Download Pupil Summary PDF</button>
 </div>
 
