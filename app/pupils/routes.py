@@ -106,6 +106,7 @@ def profile(pupil_id: int):
     history_rows = PupilClassHistory.query.filter_by(pupil_id=pupil.id).order_by(PupilClassHistory.academic_year.desc()).all()
 
     latest_summary = _build_latest_summary(subject_rows, writing_rows)
+    subject_history_cards = _build_subject_history_cards(subject_rows, writing_rows)
     intervention_summary = {
         'total': len(intervention_rows),
         'active': len([row for row in intervention_rows if row.is_active]),
@@ -153,6 +154,7 @@ def profile(pupil_id: int):
         can_archive=_can_archive_pupil(pupil),
         can_restore=current_user.is_admin and not pupil.is_active,
         latest_summary=latest_summary,
+        subject_history_cards=subject_history_cards,
         subject_rows=subject_rows,
         writing_rows=writing_rows,
         phonics_rows=phonics_view_rows,
@@ -380,3 +382,60 @@ def _rank_to_band(rank: float | None) -> str | None:
     if rank < 2.5:
         return 'On Track'
     return 'Exceeding'
+
+
+def _build_subject_history_cards(subject_rows: list[SubjectResult], writing_rows: list[WritingResult]) -> dict[str, list[dict]]:
+    cards: dict[str, list[dict]] = {key: [] for key in ['maths', 'reading', 'spag', 'writing']}
+    ordered_subject_rows = sorted(
+        subject_rows,
+        key=lambda row: (row.academic_year, _term_rank(row.term), row.updated_at),
+        reverse=True,
+    )
+    for row in ordered_subject_rows:
+        if row.subject not in cards:
+            continue
+        cards[row.subject].append(
+            {
+                'academic_year': row.academic_year,
+                'term': row.term,
+                'percentage': row.combined_percent,
+                'band': row.band_label,
+                'assessment_year_group': row.assessment_year_group,
+                'rank': BAND_RANK.get(row.band_label) if row.band_label else None,
+                'band_theme': BAND_THEME.get(row.band_label or '', 'secondary'),
+            }
+        )
+
+    ordered_writing_rows = sorted(
+        writing_rows,
+        key=lambda row: (row.academic_year, _term_rank(row.term), row.updated_at),
+        reverse=True,
+    )
+    for row in ordered_writing_rows:
+        cards['writing'].append(
+            {
+                'academic_year': row.academic_year,
+                'term': row.term,
+                'percentage': None,
+                'band': row.band,
+                'assessment_year_group': None,
+                'rank': BAND_RANK.get(row.band) if row.band else None,
+                'band_theme': BAND_THEME.get(row.band or '', 'secondary'),
+            }
+        )
+
+    for rows in cards.values():
+        for index, row in enumerate(rows):
+            previous_rank = rows[index + 1]['rank'] if index + 1 < len(rows) else None
+            delta = None
+            direction = 'same'
+            if row['rank'] is not None and previous_rank is not None:
+                delta = row['rank'] - previous_rank
+                if delta > 0:
+                    direction = 'up'
+                elif delta < 0:
+                    direction = 'down'
+            row['arrow'] = {'up': '↑', 'same': '→', 'down': '↓'}[direction]
+            row['delta_label'] = f"{delta:+.0f}" if delta is not None else '0'
+            row['progress_theme'] = {'up': 'success', 'same': 'warning', 'down': 'danger'}[direction]
+    return cards
