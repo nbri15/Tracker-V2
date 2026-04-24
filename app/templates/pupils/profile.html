@@ -88,46 +88,45 @@
   <div class="card shadow-sm mb-4">
     <div class="card-header bg-white"><strong>Historic attainment</strong></div>
     <div class="card-body">
-      <h6>Maths / Reading / SPaG</h6>
-      <div class="table-responsive mb-3">
-        <table class="table table-sm">
-          <thead><tr><th>Year</th><th>Term</th><th>Subject</th><th>Score</th><th>Band</th><th>Assessment level</th></tr></thead>
-          <tbody>
-            {% for row in subject_rows %}
-              <tr>
-                <td>{{ row.academic_year }}</td>
-                <td>{{ row.term|title }}</td>
-                <td>{{ format_subject_name(row.subject) }}</td>
-                <td>{{ row.combined_percent ~ '%' if row.combined_percent is not none else '—' }}</td>
-                <td>{{ row.band_label or '—' }}</td>
-                <td>
-                  {% if row.assessment_year_group is not none %}
-                    Y{{ row.assessment_year_group }} test
-                    {% if row.assessment_year_group < pupil.school_class.year_group %}<span class="text-warning">(Lower year test)</span>{% endif %}
+      <h6>Maths / Reading / SPaG / Writing</h6>
+      <div class="row g-3 mb-3">
+        {% for subject_key, label in [('maths', 'Maths'), ('reading', 'Reading'), ('spag', 'SPaG'), ('writing', 'Writing')] %}
+          {% set rows = subject_history_cards.get(subject_key, []) %}
+          <div class="col-12 col-md-6 col-xl-3">
+            <div class="card h-100 border-light-subtle">
+              <div class="card-header bg-light"><strong>{{ label }}</strong></div>
+              <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                  {% for row in rows %}
+                    <li class="list-group-item">
+                      <div class="fw-semibold">{{ row.academic_year }} {{ row.term|title }}</div>
+                      <div class="small">
+                        <span>{{ row.percentage ~ '%' if row.percentage is not none else '—' }}</span>
+                        <span class="mx-1">—</span>
+                        {% if row.band %}
+                          <span class="badge text-bg-{{ row.band_theme }}">{{ row.band }}</span>
+                        {% else %}
+                          <span class="text-muted">—</span>
+                        {% endif %}
+                      </div>
+                      <div class="small mt-1">
+                        {% if row.assessment_year_group is not none %}
+                          Y{{ row.assessment_year_group }} test
+                          {% if row.assessment_year_group < pupil.school_class.year_group %}<span class="text-warning">(Lower year test)</span>{% endif %}
+                        {% else %}
+                          <span class="text-muted">Assessment level —</span>
+                        {% endif %}
+                      </div>
+                      <div class="small text-{{ row.progress_theme }}">{{ row.arrow }} {{ row.delta_label }}</div>
+                    </li>
                   {% else %}
-                    —
-                  {% endif %}
-                </td>
-              </tr>
-            {% else %}
-              <tr><td colspan="6" class="text-muted">No subject records yet.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
-      <h6>Writing</h6>
-      <div class="table-responsive mb-3">
-        <table class="table table-sm">
-          <thead><tr><th>Year</th><th>Term</th><th>Band</th></tr></thead>
-          <tbody>
-            {% for row in writing_rows %}
-              <tr><td>{{ row.academic_year }}</td><td>{{ row.term|title }}</td><td>{{ row.band }}</td></tr>
-            {% else %}
-              <tr><td colspan="3" class="text-muted">No writing records yet.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
+                    <li class="list-group-item text-muted">No data yet.</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
       </div>
 
       <h6>Phonics / Times tables / Reception</h6>
