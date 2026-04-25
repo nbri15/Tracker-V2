@@ -615,3 +615,19 @@ a:hover {
 .sidebar .nav-link:hover {
   background: rgba(255, 255, 255, 0.12);
 }
+
+.sidebar-brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.25rem 0 1rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+.sidebar-logo-full {
+  width: 150px !important;
+  max-width: 150px !important;
+  height: auto !important;
+  object-fit: contain;
+  display: block;
+}
