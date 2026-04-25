@@ -631,3 +631,12 @@ a:hover {
   object-fit: contain;
   display: block;
 }
+
+.progress {
+  height: 18px;   /* default is ~8px */
+  border-radius: 8px;
+}
+
+.progress-bar {
+  border-radius: 8px;
+}
