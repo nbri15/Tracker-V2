@@ -3,11 +3,17 @@
 {% set page_heading = 'Admin dashboard' %}
 {% macro summary_bar(summary) -%}
   <div class="admin-summary-bar mb-2" aria-label="{{ summary.subject_label }} summary bar">
-    <span class="segment segment-wt" style="width: {{ summary.working_towards_percent }}%"></span>
-    <span class="segment segment-ot" style="width: {{ summary.on_track_percent }}%"></span>
-    <span class="segment segment-ex" style="width: {{ summary.exceeding_percent }}%"></span>
+    <span class="segment segment-wt" title="{{ summary.working_towards }} pupils Working Towards" style="width: {{ summary.working_towards_percent }}%">
+      {% if summary.working_towards_percent >= 16 %}<span class="segment-label">{{ summary.working_towards_percent }}%</span>{% endif %}
+    </span>
+    <span class="segment segment-ot" title="{{ summary.on_track }} pupils On Track" style="width: {{ summary.on_track_percent }}%">
+      {% if summary.on_track_percent >= 16 %}<span class="segment-label">{{ summary.on_track_percent }}%</span>{% endif %}
+    </span>
+    <span class="segment segment-ex" title="{{ summary.exceeding }} pupils Exceeding" style="width: {{ summary.exceeding_percent }}%">
+      {% if summary.exceeding_percent >= 16 %}<span class="segment-label">{{ summary.exceeding_percent }}%</span>{% endif %}
+    </span>
   </div>
-  <div class="d-flex flex-wrap gap-2 small text-muted">
+  <div class="d-flex flex-wrap gap-2 small text-muted subject-summary-legend">
     <span>WT {{ summary.working_towards_percent }}%</span>
     <span>OT {{ summary.on_track_percent }}%</span>
     <span>EX {{ summary.exceeding_percent }}%</span>
@@ -126,38 +132,38 @@
 
 <div class="row g-3 mb-4">
   <div class="col-sm-6 col-xl-3">
-    <div class="card shadow-sm h-100 admin-mini-stat">
+    <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
-        <div class="text-muted small mb-1">Filtered pupils</div>
-        <div class="h3 mb-1">{{ filtered_pupil_total }}</div>
-        <div class="small text-muted">{{ filtered_class_count }} classes shown</div>
+        <div class="kpi-label mb-1">Filtered pupils</div>
+        <div class="kpi-value mb-1">{{ filtered_pupil_total }}</div>
+        <div class="kpi-note">{{ filtered_class_count }} classes shown</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <div class="card shadow-sm h-100 admin-mini-stat">
+    <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
-        <div class="text-muted small mb-1">Total pupils on roll</div>
-        <div class="h3 mb-1">{{ total_pupils }}</div>
-        <div class="small text-muted">All active pupils</div>
+        <div class="kpi-label mb-1">Total pupils on roll</div>
+        <div class="kpi-value mb-1">{{ total_pupils }}</div>
+        <div class="kpi-note">All active pupils</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <div class="card shadow-sm h-100 admin-mini-stat">
+    <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
-        <div class="text-muted small mb-1">Teachers</div>
-        <div class="h3 mb-1">{{ teacher_count }}</div>
-        <div class="small text-muted">Across {{ total_classes }} active classes</div>
+        <div class="kpi-label mb-1">Teachers</div>
+        <div class="kpi-value mb-1">{{ teacher_count }}</div>
+        <div class="kpi-note">Across {{ total_classes }} active classes</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-xl-3">
-    <div class="card shadow-sm h-100 admin-mini-stat">
+    <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
-        <div class="text-muted small mb-1">Year 6 tracker</div>
-        <div class="h5 mb-1">{{ year6_tracker_mode_label }}</div>
-        <div class="small text-muted">Most recent class data shown below</div>
+        <div class="kpi-label mb-1">Year 6 tracker</div>
+        <div class="kpi-value h5 mb-1">{{ year6_tracker_mode_label }}</div>
+        <div class="kpi-note">Most recent class data shown below</div>
       </div>
     </div>
   </div>
@@ -173,7 +179,7 @@
               <div class="fw-semibold">{{ card.subject_label }}</div>
               <div class="small text-muted">Latest term in view: {{ card.term_label }}</div>
             </div>
-            <span class="badge text-bg-light border">{{ card.pupil_count }} results</span>
+            <span class="subject-result-pill {% if card.pupil_count == 0 %}is-empty{% endif %}">{{ card.pupil_count }} results</span>
           </div>
           {{ summary_bar(card) }}
         </div>
