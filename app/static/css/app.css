@@ -620,13 +620,13 @@ a:hover {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 0.25rem 0 1rem 0;
+  padding: 0.5rem 0 1rem 0;
   border-bottom: 1px solid rgba(255,255,255,0.12);
 }
 
 .sidebar-logo-full {
-  width: 150px !important;
-  max-width: 150px !important;
+  width: 100% !important;
+  max-width: 100% !important;
   height: auto !important;
   object-fit: contain;
   display: block;
