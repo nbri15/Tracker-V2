@@ -130,7 +130,7 @@ def _teacher_options():
     return sort_teacher_accounts(teachers)
 
 
-CLASS_DETAIL_SUBJECT_SORT_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label'}
+CLASS_DETAIL_SUBJECT_SORT_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'assessment_year_group', 'progress_delta'}
 CLASS_DETAIL_WRITING_SORT_COLUMNS = {'name', 'band_label', 'notes'}
 PUPIL_STATUS_FILTER_CHOICES = (
     ('active', 'Active pupils only'),

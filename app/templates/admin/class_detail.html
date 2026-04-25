@@ -34,6 +34,31 @@
   </div>
 </div>
 
+{% if selected_subject in ['maths', 'reading', 'spag'] and overview_cards %}
+  <div class="row g-2 mb-3">
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100" title="{% for row in overview_cards.improved %}{{ row.name }} {{ row.progress_label }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">
+        <div class="card-body py-2"><div class="text-muted small">Improved</div><div class="h5 mb-0 text-success">{{ overview_cards.improved|length }}</div></div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100" title="{% for row in overview_cards.no_change %}{{ row.name }} {{ row.progress_label }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">
+        <div class="card-body py-2"><div class="text-muted small">No change</div><div class="h5 mb-0 text-warning">{{ overview_cards.no_change|length }}</div></div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100" title="{% for row in overview_cards.dropped %}{{ row.name }} {{ row.progress_label }}{% if not loop.last %}&#10;{% endif %}{% endfor %}">
+        <div class="card-body py-2"><div class="text-muted small">Dropped</div><div class="h5 mb-0 text-danger">{{ overview_cards.dropped|length }}</div></div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100" title="{% for row in overview_cards.below_test %}{{ row.name }} (Y{{ row.assessment_year_group }}){% if not loop.last %}&#10;{% endif %}{% endfor %}">
+        <div class="card-body py-2"><div class="text-muted small">Below year-group test</div><div class="h5 mb-0 text-warning-emphasis">{{ overview_cards.below_test|length }}</div></div>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
 <div class="card shadow-sm mb-4">
   <div class="card-body py-3">
     <div class="row g-3 align-items-center">
@@ -179,6 +204,8 @@
               <th>{{ sort_link('combined_score', 'Combined') }}</th>
               <th>{{ sort_link('combined_percent', '%') }}</th>
               <th>{{ sort_link('band_label', 'Band') }}</th>
+              <th>{{ sort_link('assessment_year_group', 'Test') }}</th>
+              <th>{{ sort_link('progress_delta', 'Progress') }}</th>
               <th>Source</th>
             {% else %}
               <th>{{ sort_link('band_label', 'Writing judgement') }}</th>
@@ -211,6 +238,8 @@
                     —
                   {% endif %}
                 </td>
+                <td>{% if row.assessment_year_group == 0 %}R{% else %}Y{{ row.assessment_year_group }}{% endif %}{% if row.below_expected_test %}<span class="badge text-bg-warning-subtle text-warning-emphasis border ms-1">Below</span>{% endif %}</td>
+                <td class="{% if row.progress_theme == 'up' %}text-success{% elif row.progress_theme == 'down' %}text-danger{% elif row.progress_theme == 'flat' %}text-warning{% else %}text-muted{% endif %}">{{ row.progress_label }}</td>
                 <td>{{ row.source or '—' }}</td>
               {% else %}
                 <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">
@@ -239,7 +268,7 @@
             </tr>
           {% else %}
             <tr>
-              <td colspan="{% if selected_subject in ['maths', 'reading', 'spag'] %}13{% else %}9{% endif %}" class="text-center py-4 text-muted">No pupils match the current filters.</td>
+              <td colspan="{% if selected_subject in ['maths', 'reading', 'spag'] %}15{% else %}9{% endif %}" class="text-center py-4 text-muted">No pupils match the current filters.</td>
             </tr>
           {% endfor %}
         </tbody>
