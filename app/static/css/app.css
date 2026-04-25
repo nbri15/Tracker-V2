@@ -583,3 +583,12 @@ a:hover {
 .foundation-tab-strip .btn {
   border-radius: 999px;
 }
+
+.sidebar-logo {
+  width: 36px !important;
+  height: 36px !important;
+  max-width: 36px !important;
+  max-height: 36px !important;
+  object-fit: contain;
+  flex-shrink: 0;
+}
