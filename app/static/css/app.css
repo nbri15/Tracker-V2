@@ -584,11 +584,34 @@ a:hover {
   border-radius: 999px;
 }
 
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  min-height: 100vh;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
 .sidebar-logo {
   width: 36px !important;
   height: 36px !important;
   max-width: 36px !important;
   max-height: 36px !important;
   object-fit: contain;
+  display: block;
   flex-shrink: 0;
+}
+
+.sidebar-brand {
+  min-height: 44px;
+}
+
+.sidebar .nav-link {
+  border-radius: 10px;
+  padding: 0.55rem 0.75rem;
+}
+
+.sidebar .nav-link.active,
+.sidebar .nav-link:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
