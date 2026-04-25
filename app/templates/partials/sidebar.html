@@ -1,14 +1,11 @@
 <aside class="sidebar bg-dark text-white p-3">
-  <div class="sidebar-brand mb-4 d-flex align-items-center gap-2">
+  <div class="sidebar-brand mb-4">
     <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}"
          alt="Class Compass logo"
-         class="sidebar-logo">
-    <div class="sidebar-brand mb-4 d-flex align-items-center justify-content-center">
-  <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}"
-       alt="Class Compass logo"
-       class="sidebar-logo">
-</div>
+         class="sidebar-logo-full">
   </div>
+
+  <nav class="nav flex-column gap-1">
 
   <nav class="nav flex-column gap-1">
     <a class="nav-link text-white {% if request.endpoint in ['dashboards.teacher_dashboard', 'dashboards.admin_dashboard'] %}active{% endif %}" href="{{ url_for('dashboards.index') }}">Dashboard</a>
