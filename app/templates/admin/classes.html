@@ -13,14 +13,14 @@
     <div class="card shadow-sm h-100">
       <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2"><strong>Class overview filters</strong><span class="text-muted small">Academic year {{ academic_year }}</span></div>
       <div class="card-body">
-        <form method="get" class="row g-3 align-items-end">
+        <form method="get" class="form-grid">
           <div class="col-md-2"><label class="form-label">Academic year</label><input type="text" class="form-control" name="academic_year" value="{{ academic_year }}"></div>
           <div class="col-md-2"><label class="form-label">Year group</label><select name="year_group" class="form-select"><option value="">All</option>{% for year in [0, 1, 2, 3, 4, 5, 6] %}<option value="{{ year }}" {% if filter_year_group == year|string %}selected{% endif %}>{{ 'Reception' if year == 0 else 'Year ' ~ year }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Class</label><select name="class_id" class="form-select"><option value="">All</option>{% for option in class_options %}<option value="{{ option.id }}" {% if filter_class == option.id|string %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Teacher</label><select name="teacher_id" class="form-select"><option value="">All</option>{% for option in teacher_options %}<option value="{{ option.id }}" {% if filter_teacher == option.id|string %}selected{% endif %}>{{ option.username }}</option>{% endfor %}</select></div>
           <div class="col-md-2"><label class="form-label">Subgroup</label><select name="subgroup" class="form-select">{% for value, label in subgroup_filters.items() %}<option value="{{ value }}" {% if subgroup == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Sort by</label><select name="sort" class="form-select">{% for value, label in sort_options.items() %}<option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-          <div class="col-12 d-flex gap-2 justify-content-end"><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_class_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export class CSV</a><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_pupil_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export pupil CSV</a><button class="btn btn-primary">Apply filters</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.classes') }}">Clear</a></div>
+          <div class="form-actions justify-content-end"><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_class_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export class CSV</a><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_pupil_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export pupil CSV</a><button class="btn btn-primary">Apply filters</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.classes') }}">Clear</a></div>
         </form>
       </div>
     </div>
@@ -29,12 +29,12 @@
     <div class="card shadow-sm h-100">
       <div class="card-header bg-white"><strong>Create class</strong></div>
       <div class="card-body">
-        <form method="post" class="row g-3">
+        <form method="post" class="form-grid">
           <input type="hidden" name="action" value="create_class">
           <div class="col-12"><label class="form-label">Class name</label><input type="text" name="name" class="form-control" placeholder="Year 4" required></div>
           <div class="col-6"><label class="form-label">Year group</label><select name="year_group" class="form-select">{% for year in [0, 1, 2, 3, 4, 5, 6] %}<option value="{{ year }}">{{ 'Reception' if year == 0 else 'Year ' ~ year }}</option>{% endfor %}</select></div>
           <div class="col-6"><label class="form-label">Teacher</label><select name="teacher_id" class="form-select"><option value="">Unassigned</option>{% for option in teacher_options %}<option value="{{ option.id }}">{{ option.username }}</option>{% endfor %}</select></div>
-          <div class="col-12 text-end"><button class="btn btn-outline-primary">Create class</button></div>
+          <div class="form-actions justify-content-end"><button class="btn btn-outline-primary">Create class</button></div>
         </form>
       </div>
     </div>
@@ -60,14 +60,14 @@
             <td>{{ summary_counts(row.subjects.spag) }}</td>
             <td>{{ summary_counts(row.subjects.writing) }}</td>
             <td style="min-width: 280px;">
-              <form method="post" class="row g-2">
+              <form method="post" class="form-grid">
                 <input type="hidden" name="action" value="update_class">
                 <input type="hidden" name="class_id" value="{{ row.class_id }}">
                 <div class="col-12"><input type="text" class="form-control form-control-sm" name="name_{{ row.class_id }}" value="{{ row.class_name }}"></div>
                 <div class="col-4"><select class="form-select form-select-sm" name="year_group_{{ row.class_id }}">{% for year in [0, 1, 2, 3, 4, 5, 6] %}<option value="{{ year }}" {% if row.year_group == year %}selected{% endif %}>{{ 'Rec' if year == 0 else 'Y' ~ year }}</option>{% endfor %}</select></div>
                 <div class="col-8"><select class="form-select form-select-sm" name="teacher_id_{{ row.class_id }}"><option value="">Unassigned</option>{% for option in teacher_options %}<option value="{{ option.id }}" {% if row.class.teacher_id == option.id %}selected{% endif %}>{{ option.username }}</option>{% endfor %}</select></div>
                 <div class="col-6 form-check ms-2"><input class="form-check-input" type="checkbox" name="is_active_{{ row.class_id }}" id="active_{{ row.class_id }}" {% if row.class.is_active %}checked{% endif %}><label class="form-check-label small" for="active_{{ row.class_id }}">Active</label></div>
-                <div class="col-12 d-flex gap-2"><button class="btn btn-outline-primary btn-sm">Save</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_sats', class_id=row.class_id, academic_year=academic_year) if row.year_group == 6 else url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">Open</a></div>
+                <div class="form-actions"><button class="btn btn-outline-primary btn-sm">Save</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_sats', class_id=row.class_id, academic_year=academic_year) if row.year_group == 6 else url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">Open</a></div>
               </form>
             </td>
           </tr>

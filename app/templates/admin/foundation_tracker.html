@@ -15,7 +15,7 @@
 </div>
 
 <div class="card shadow-sm mb-4"><div class="card-body py-3">
-  <form method="get" class="row g-2 align-items-end compact-filter-row">
+  <form method="get" class="form-grid compact-filter-row">
     <div class="col-md-2"><label class="form-label">Class</label><select name="class_id" class="form-select form-select-sm">{% for option in class_options %}<option value="{{ option.id }}" {% if option.id == school_class.id %}selected{% endif %}>Y{{ option.year_group }} {{ option.name }}</option>{% endfor %}</select></div>
     <div class="col-md-2"><label class="form-label">Academic year</label><select name="academic_year" class="form-select form-select-sm">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
     <div class="col-md-2"><label class="form-label">Half term</label><select name="half_term" class="form-select form-select-sm">{% for value, label in half_terms %}<option value="{{ value }}" {% if value == selected_half_term %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>

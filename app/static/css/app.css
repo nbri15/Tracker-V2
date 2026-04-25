@@ -492,6 +492,52 @@ a:hover {
   border: 1px solid rgba(36, 52, 71, 0.08);
 }
 
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.form-grid > [class*="col-"] {
+  width: auto;
+  max-width: none;
+  flex: initial;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+}
+
+.form-grid .form-label {
+  margin-bottom: 0.25rem;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.form-grid > .form-actions {
+  align-items: center;
+}
+
 .compact-filter-row .form-label {
   font-size: 0.78rem;
   margin-bottom: 0.25rem;

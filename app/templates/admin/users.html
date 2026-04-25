@@ -7,12 +7,12 @@
     <div class="card shadow-sm mb-4">
       <div class="card-header bg-white"><strong>Create teacher user</strong></div>
       <div class="card-body">
-        <form method="post" class="row g-3">
+        <form method="post" class="form-grid">
           <input type="hidden" name="action" value="create">
           <div class="col-12"><label class="form-label">Username</label><input type="text" name="username" class="form-control" required></div>
           <div class="col-12"><label class="form-label">Password</label><input type="password" name="password" class="form-control" required autocomplete="new-password"></div>
           <div class="col-12"><label class="form-label">Assign class</label><select name="class_id" class="form-select"><option value="">Unassigned</option>{% for school_class in classes %}<option value="{{ school_class.id }}">{{ school_class.name }}</option>{% endfor %}</select></div>
-          <div class="col-12 text-end"><button class="btn btn-primary">Create teacher</button></div>
+          <div class="form-actions justify-content-end"><button class="btn btn-primary">Create teacher</button></div>
         </form>
       </div>
     </div>
@@ -40,7 +40,7 @@
                 <td>{% for school_class in classes if school_class.teacher_id == user.id %}{{ school_class.name }}{% if not loop.last %}, {% endif %}{% else %}Unassigned{% endfor %}</td>
                 <td>{{ 'Active' if user.is_active else 'Inactive' }}</td>
                 <td style="min-width: 320px;">
-                  <form method="post" class="row g-2 align-items-center">
+                  <form method="post" class="form-grid">
                     <input type="hidden" name="action" value="update">
                     <input type="hidden" name="user_id" value="{{ user.id }}">
                     <div class="col-5"><input type="text" name="username_{{ user.id }}" value="{{ user.username }}" class="form-control form-control-sm"></div>

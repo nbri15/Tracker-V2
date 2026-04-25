@@ -34,7 +34,7 @@
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Filters</strong></div>
   <div class="card-body">
-    <form method="get" class="row g-2 align-items-end compact-filter-row">
+    <form method="get" class="form-grid compact-filter-row">
       <input type="hidden" name="sort" value="{{ sort_state.column }}">
       <input type="hidden" name="direction" value="{{ sort_state.direction }}">
       <div class="col-md-2"><label class="form-label">Academic year</label><select name="academic_year" class="form-select form-select-sm">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
@@ -50,7 +50,7 @@
 </div>
 
 <div class="card shadow-sm mb-4"><div class="card-header bg-white"><strong>Phonics test columns</strong></div><div class="card-body">
-  <form method="post" class="row g-2 align-items-end">
+  <form method="post" class="form-grid">
     <input type="hidden" name="action" value="save_columns">
     <input type="hidden" name="academic_year" value="{{ academic_year }}">
     <input type="hidden" name="sort" value="{{ sort_state.column }}">
@@ -60,10 +60,10 @@
       <div class="col-md-2 col-xl-1"><label class="form-label">Order</label><input type="number" class="form-control form-control-sm" name="display_order_{{ column.id }}" value="{{ column.display_order }}"></div>
       <div class="col-md-2 col-xl-1"><label class="form-label d-block">Active</label><input class="form-check-input mt-2" type="checkbox" name="is_active_{{ column.id }}" {% if column.is_active %}checked{% endif %}></div>
     {% endfor %}
-    <div class="col-12 text-end"><button class="btn btn-outline-primary btn-sm">Save columns</button></div>
+    <div class="form-actions justify-content-end"><button class="btn btn-outline-primary btn-sm">Save columns</button></div>
   </form>
   <hr>
-  <form method="post" class="row g-2 align-items-end">
+  <form method="post" class="form-grid">
     <input type="hidden" name="action" value="add_column">
     <input type="hidden" name="academic_year" value="{{ academic_year }}">
     <input type="hidden" name="sort" value="{{ sort_state.column }}">
