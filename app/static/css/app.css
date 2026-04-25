@@ -565,3 +565,21 @@ a:hover {
     max-height: none;
   }
 }
+
+.foundation-table .form-select {
+  min-width: 138px;
+  padding: 0.2rem 0.35rem;
+}
+
+.foundation-name-col {
+  min-width: 220px;
+  left: 0;
+}
+
+.foundation-subject-col {
+  min-width: 150px;
+}
+
+.foundation-tab-strip .btn {
+  border-radius: 999px;
+}

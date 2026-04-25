@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+
+{% block title %}Pupils{% endblock %}
+{% set page_heading = 'Pupils' %}
+
+{% block content %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>Pupil search & filters</strong></div>
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Search pupils</label>
+        <input type="text" name="search" class="form-control form-control-sm" value="{{ filters.search }}" placeholder="Search pupils...">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Class</label>
+        <select name="class_id" class="form-select form-select-sm">
+          <option value="">All classes</option>
+          {% for school_class in class_options %}
+            <option value="{{ school_class.id }}" {% if filters.class_id == school_class.id|string %}selected{% endif %}>{{ school_class.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Year group</label>
+        <select name="year_group" class="form-select form-select-sm">
+          <option value="">All years</option>
+          {% for year_group in year_group_options %}
+            <option value="{{ year_group }}" {% if filters.year_group == year_group|string %}selected{% endif %}>Year {{ year_group }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Gender</label>
+        <select name="gender" class="form-select form-select-sm">
+          <option value="all" {% if filters.gender == 'all' %}selected{% endif %}>All</option>
+          <option value="Male" {% if filters.gender == 'Male' %}selected{% endif %}>Male</option>
+          <option value="Female" {% if filters.gender == 'Female' %}selected{% endif %}>Female</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">PP</label>
+        <select name="pp" class="form-select form-select-sm">
+          <option value="all" {% if filters.pp == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if filters.pp == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if filters.pp == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">LAPS</label>
+        <select name="laps" class="form-select form-select-sm">
+          <option value="all" {% if filters.laps == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if filters.laps == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if filters.laps == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">Service</label>
+        <select name="service_child" class="form-select form-select-sm">
+          <option value="all" {% if filters.service_child == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if filters.service_child == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if filters.service_child == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      {% if current_user.is_admin %}
+        <div class="col-md-2">
+          <label class="form-label">Pupil status</label>
+          <select name="status" class="form-select form-select-sm">
+            <option value="current" {% if filters.status == 'current' %}selected{% endif %}>Current / active</option>
+            <option value="previous" {% if filters.status == 'previous' %}selected{% endif %}>Previous</option>
+            <option value="archived" {% if filters.status == 'archived' %}selected{% endif %}>Archived</option>
+            <option value="all" {% if filters.status == 'all' %}selected{% endif %}>All</option>
+          </select>
+        </div>
+      {% endif %}
+      <div class="col-md-2 d-flex gap-2 justify-content-md-end">
+        <button class="btn btn-primary btn-sm">Apply</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('pupils.directory') }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <strong>Pupil list</strong>
+    <span class="small text-muted">{{ pupils|length }} pupil(s)</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Class</th>
+          <th>Year</th>
+          <th>Gender</th>
+          <th>PP</th>
+          <th>LAPS</th>
+          <th>Service</th>
+          <th>SEND/EHCP</th>
+          <th>Reading</th>
+          <th>Writing</th>
+          <th>Maths</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pupil in pupils %}
+          {% set latest = latest_subject.get(pupil.id, {}) %}
+          <tr>
+            <td><a href="{{ url_for('pupils.profile', pupil_id=pupil.id) }}">{{ pupil.full_name }}</a></td>
+            <td>{{ pupil.school_class.name }}</td>
+            <td>Year {{ pupil.school_class.year_group }}</td>
+            <td>{{ pupil.gender }}</td>
+            <td>{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
+            <td>{{ 'Yes' if pupil.laps else 'No' }}</td>
+            <td>{{ 'Yes' if pupil.service_child else 'No' }}</td>
+            <td><span class="text-muted">—</span></td>
+            <td>{{ latest.get('reading') or '—' }}</td>
+            <td>{{ latest.get('writing') or '—' }}</td>
+            <td>{{ latest.get('maths') or '—' }}</td>
+            <td class="text-end">
+              <div class="d-inline-flex gap-1">
+                {% if pupil.is_active and (current_user.is_admin or current_user.is_teacher) %}
+                  <form method="post" action="{{ url_for('pupils.archive', pupil_id=pupil.id) }}" onsubmit="return confirm('Are you sure you want to archive this pupil? This will remove them from active lists but keep all historical data.');">
+                    <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+                    <button type="submit" class="btn btn-outline-warning btn-sm">Archive</button>
+                  </form>
+                {% elif current_user.is_admin %}
+                  <form method="post" action="{{ url_for('pupils.restore', pupil_id=pupil.id) }}">
+                    <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+                    <button type="submit" class="btn btn-outline-success btn-sm">Restore</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="12" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

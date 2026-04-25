@@ -2,6 +2,7 @@
 
 from .assessment import (
     AssessmentSetting,
+    FoundationResult,
     GapQuestion,
     GapScore,
     GapTemplate,
@@ -23,6 +24,7 @@ from .writing import WritingResult
 __all__ = [
     'AcademicYear',
     'AssessmentSetting',
+    'FoundationResult',
     'GapQuestion',
     'GapScore',
     'GapTemplate',

@@ -17,6 +17,10 @@ from app.services import (
     RECEPTION_AREAS,
     RECEPTION_STATUS_CHOICES,
     RECEPTION_TRACKING_POINTS,
+    FOUNDATION_HALF_TERMS,
+    FOUNDATION_JUDGEMENTS,
+    FOUNDATION_SUBJECTS,
+    FOUNDATION_JUDGEMENT_THEMES,
     SATS_TRACKER_MODES,
     TERMS,
     WRITING_BAND_CHOICES,
@@ -27,6 +31,8 @@ from app.services import (
     build_reception_summary,
     build_reception_tracker_rows,
     build_admin_pupil_filter_state,
+    build_foundation_summary,
+    build_foundation_tracker_rows,
     build_gap_page_context,
     build_phonics_tracker_rows,
     build_sort_indicator,
@@ -39,6 +45,7 @@ from app.services import (
     progress_theme,
     get_current_academic_year,
     get_current_term,
+    get_foundation_half_term,
     get_gender_filter_options,
     get_next_sort_direction,
     get_or_create_gap_template,
@@ -57,6 +64,7 @@ from app.services import (
     recalculate_subject_results_for_scope,
     resolve_subject_band_label,
     save_reception_tracker_entries,
+    save_foundation_results,
     save_gap_scores,
     save_phonics_columns,
     save_phonics_scores,
@@ -83,8 +91,9 @@ from app.services import (
     save_times_tables_columns,
     save_times_tables_scores,
     sort_times_tables_tracker_rows,
+    FoundationValidationError,
 )
-from app.utils import get_primary_class_for_user, teacher_required
+from app.utils import get_primary_class_for_user, get_year_group_class_for_user, teacher_required
 
 from . import teacher_bp
 
@@ -249,6 +258,62 @@ def times_tables():
     )
 
 
+@teacher_bp.route('/foundation', methods=['GET', 'POST'])
+@login_required
+@teacher_required
+def foundation():
+    school_class = get_primary_class_for_user(current_user)
+    if not school_class:
+        flash('No active class is assigned to your account.', 'warning')
+        return redirect(url_for('dashboards.teacher_dashboard'))
+
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    half_term = get_foundation_half_term(request.values.get('half_term'))
+    filters = build_admin_pupil_filter_state(request.values)
+    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+
+    if request.method == 'POST':
+        half_term = get_foundation_half_term(request.form.get('half_term'))
+        try:
+            save_foundation_results(pupils, academic_year, half_term, request.form, user_id=current_user.id)
+            db.session.commit()
+            flash('Foundation judgements saved.', 'success')
+            return redirect(
+                url_for(
+                    'teacher.foundation',
+                    academic_year=academic_year,
+                    half_term=half_term,
+                    search=filters['search'],
+                    gender=filters['gender'],
+                    pupil_premium=filters['pupil_premium'],
+                    laps=filters['laps'],
+                    service_child=filters['service_child'],
+                )
+            )
+        except FoundationValidationError as exc:
+            db.session.rollback()
+            flash(f'Foundation changes could not be saved: {exc}', 'danger')
+
+    rows = build_foundation_tracker_rows(pupils, academic_year, half_term)
+    summary = build_foundation_summary(rows)
+    return render_template(
+        'teacher/foundation_tracker.html',
+        school_class=school_class,
+        pupils=pupils,
+        rows=rows,
+        summary=summary,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        half_terms=FOUNDATION_HALF_TERMS,
+        selected_half_term=half_term,
+        subjects=FOUNDATION_SUBJECTS,
+        judgement_choices=FOUNDATION_JUDGEMENTS,
+        judgement_themes=FOUNDATION_JUDGEMENT_THEMES,
+        filters=filters,
+        gender_options=get_gender_filter_options(class_id=school_class.id),
+    )
+
+
 @teacher_bp.route('/<subject>/gap', methods=['GET', 'POST'])
 @login_required
 @teacher_required
@@ -403,12 +468,12 @@ def interventions():
 @login_required
 @teacher_required
 def sats_tracker():
-    school_class = get_primary_class_for_user(current_user)
+    school_class = get_year_group_class_for_user(current_user, 6)
     academic_year = request.values.get('academic_year', get_current_academic_year())
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
 
-    if not school_class or school_class.year_group != 6:
-        flash('The SATs tracker is only available for the Year 6 teacher.', 'warning')
+    if not school_class:
+        flash('Year 6 SATs tracker is only available for Year 6.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
     tracker_mode = get_tracker_mode(6)

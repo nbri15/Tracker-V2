@@ -59,15 +59,17 @@
         </div>
       </div>
     {% endif %}
-    <div class="col-sm-6 col-lg-2">
-      <div class="card shadow-sm h-100 quick-link-card">
-        <div class="card-body">
-          <p class="text-muted small mb-2">Year 6 SATs</p>
-          <h3 class="h5">Open tracker</h3>
-          <a href="{{ url_for('teacher.sats_tracker') }}" class="stretched-link text-decoration-none">Open SATs page</a>
+    {% if has_year6_sats_access %}
+      <div class="col-sm-6 col-lg-2">
+        <div class="card shadow-sm h-100 quick-link-card">
+          <div class="card-body">
+            <p class="text-muted small mb-2">Year 6 SATs</p>
+            <h3 class="h5">Open tracker</h3>
+            <a href="{{ url_for('teacher.sats_tracker') }}" class="stretched-link text-decoration-none">Open SATs page</a>
+          </div>
         </div>
       </div>
-    </div>
+    {% endif %}
   {% endif %}
 </div>
 {% if not is_reception %}

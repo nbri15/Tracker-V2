@@ -6,11 +6,12 @@ import csv
 import io
 
 from flask import Response, current_app, flash, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models import (
     AssessmentSetting,
+    FoundationResult,
     GapScore,
     Intervention,
     PhonicsScore,
@@ -33,6 +34,10 @@ from app.services import (
     RECEPTION_AREAS,
     RECEPTION_STATUS_CHOICES,
     RECEPTION_TRACKING_POINTS,
+    FOUNDATION_HALF_TERMS,
+    FOUNDATION_JUDGEMENTS,
+    FOUNDATION_SUBJECTS,
+    FOUNDATION_JUDGEMENT_THEMES,
     SATS_SCORE_TYPES,
     SATS_TRACKER_MODES,
     SUBGROUP_FILTERS,
@@ -50,6 +55,8 @@ from app.services import (
     build_reception_overview,
     build_reception_summary,
     build_reception_tracker_rows,
+    build_foundation_summary,
+    build_foundation_tracker_rows,
     build_phonics_tracker_rows,
     build_times_tables_tracker_rows,
     build_sats_tracker_rows,
@@ -72,6 +79,7 @@ from app.services import (
     generate_csv,
     get_class_detail_context,
     get_current_academic_year,
+    get_foundation_half_term,
     get_gender_filter_options,
     get_next_sort_direction,
     get_history_rows,
@@ -100,6 +108,7 @@ from app.services import (
     save_times_tables_scores,
     sort_times_tables_tracker_rows,
     save_reception_tracker_entries,
+    save_foundation_results,
     save_sats_tab,
     set_tracker_mode,
     snapshot_pupil_history,
@@ -114,6 +123,7 @@ from app.services import (
     add_times_tables_column,
     ensure_phonics_columns,
     ensure_times_tables_columns,
+    FoundationValidationError,
 )
 from app.utils import admin_required
 
@@ -123,6 +133,17 @@ from .forms import AssessmentSettingForm
 
 def _active_class_query():
     return SchoolClass.query.filter_by(is_active=True)
+
+
+def _is_active_year6_class(class_id: int | None) -> bool:
+    if class_id is None:
+        return False
+    return SchoolClass.query.filter_by(id=class_id, year_group=6, is_active=True).first() is not None
+
+
+def _redirect_non_year6_sats_access():
+    flash('Year 6 SATs tracker is only available for Year 6.', 'warning')
+    return redirect(url_for('admin.sats'))
 
 
 def _teacher_options():
@@ -147,6 +168,7 @@ PUPIL_LINKED_MODELS = (
     ('SATs column results', SatsColumnResult),
     ('phonics scores', PhonicsScore),
     ('times tables scores', TimesTableScore),
+    ('foundation judgements', FoundationResult),
     ('class history records', PupilClassHistory),
 )
 
@@ -304,6 +326,8 @@ def class_detail(class_id: int):
 @admin_required
 def class_sats(class_id: int):
     school_class = SchoolClass.query.get_or_404(class_id)
+    if school_class.year_group != 6 or not school_class.is_active:
+        return _redirect_non_year6_sats_access()
     academic_year = request.args.get('academic_year', get_current_academic_year())
     selected_tab_id_raw = request.args.get('exam_tab_id', '').strip()
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
@@ -316,7 +340,7 @@ def class_sats(class_id: int):
         tracker_mode=get_tracker_mode(6),
         tracker_mode_label=get_tracker_mode_label(6),
         tracker_mode_options=SATS_TRACKER_MODES,
-        class_options=SchoolClass.query.filter_by(year_group=6).order_by(SchoolClass.name).all(),
+        class_options=SchoolClass.query.filter_by(year_group=6, is_active=True).order_by(SchoolClass.name).all(),
         selected_class_id=school_class.id,
         columns=columns,
         all_columns=get_sats_columns(6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=False),
@@ -464,6 +488,72 @@ def class_times_tables(class_id: int):
     )
 
 
+@admin_bp.route('/foundation', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def foundation_tracker():
+    class_options = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    if not class_options:
+        flash('No active classes are available yet.', 'warning')
+        return redirect(url_for('admin.classes'))
+
+    selected_class_id_raw = (request.values.get('class_id') or '').strip()
+    school_class = next((item for item in class_options if str(item.id) == selected_class_id_raw), class_options[0])
+    academic_year = request.values.get('academic_year', get_current_academic_year())
+    half_term = get_foundation_half_term(request.values.get('half_term'))
+    filters = build_admin_pupil_filter_state(request.values)
+    pupils_query = school_class.pupils
+    pupils = apply_admin_pupil_filters(pupils_query, filters).order_by(Pupil.last_name, Pupil.first_name).all()
+
+    if request.method == 'POST':
+        half_term = get_foundation_half_term(request.form.get('half_term'))
+        try:
+            save_foundation_results(pupils, academic_year, half_term, request.form, user_id=current_user.id)
+            db.session.commit()
+            flash('Foundation judgements saved.', 'success')
+            return redirect(
+                url_for(
+                    'admin.foundation_tracker',
+                    class_id=school_class.id,
+                    academic_year=academic_year,
+                    half_term=half_term,
+                    pupil_status=filters['pupil_status'],
+                    gender=filters['gender'],
+                    pupil_premium=filters['pupil_premium'],
+                    laps=filters['laps'],
+                    service_child=filters['service_child'],
+                    search=filters['search'],
+                )
+            )
+        except FoundationValidationError as exc:
+            db.session.rollback()
+            flash(f'Foundation changes could not be saved: {exc}', 'danger')
+
+    rows = build_foundation_tracker_rows(pupils, academic_year, half_term)
+    summary = build_foundation_summary(rows)
+    return render_template(
+        'admin/foundation_tracker.html',
+        school_class=school_class,
+        class_options=class_options,
+        rows=rows,
+        summary=summary,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        half_terms=FOUNDATION_HALF_TERMS,
+        selected_half_term=half_term,
+        subjects=FOUNDATION_SUBJECTS,
+        judgement_choices=FOUNDATION_JUDGEMENTS,
+        judgement_themes=FOUNDATION_JUDGEMENT_THEMES,
+        filters=filters,
+        boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
+        gender_options=get_gender_filter_options(
+            class_id=school_class.id,
+            include_inactive=filters.get('pupil_status') != 'active',
+        ),
+        pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
+    )
+
+
 @admin_bp.route('/reception', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -553,6 +643,17 @@ def users():
                     db.session.add(school_class)
                 db.session.add(user)
                 flash(f'Updated {user.username}.', 'success')
+            elif action == 'delete':
+                user = User.query.get_or_404(int(request.form.get('user_id', '0')))
+                if user.id == current_user.id:
+                    raise ValueError('You cannot delete your own account while logged in.')
+                if user.is_admin and User.query.filter_by(role='admin', is_active=True).count() <= 1:
+                    raise ValueError('You cannot delete the last remaining active admin user.')
+                for school_class in user.classes.all():
+                    school_class.teacher_id = None
+                    db.session.add(school_class)
+                db.session.delete(user)
+                flash(f'Deleted user {user.username}.', 'success')
             elif action == 'sync_defaults':
                 if not current_app.config.get('ALLOW_DEV_BOOTSTRAP', False):
                     raise ValueError('Default account sync is disabled in production.')
@@ -570,6 +671,7 @@ def users():
         'admin/users.html',
         teachers=teachers,
         classes=classes,
+        active_admin_count=User.query.filter_by(role='admin', is_active=True).count(),
         allow_dev_bootstrap=current_app.config.get('ALLOW_DEV_BOOTSTRAP', False),
     )
 
@@ -801,6 +903,11 @@ def sats():
     academic_year = request.values.get('academic_year', get_current_academic_year())
     selected_class_id = request.values.get('class_id', '').strip()
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
+    selected_class_id_int = int(selected_class_id) if selected_class_id.isdigit() else None
+    if selected_class_id and selected_class_id_int is None:
+        return _redirect_non_year6_sats_access()
+    if selected_class_id_int and not _is_active_year6_class(selected_class_id_int):
+        return _redirect_non_year6_sats_access()
 
     if request.method == 'POST':
         action = request.form.get('action', 'update_mode')
@@ -841,14 +948,14 @@ def sats():
                 selected_tab_id_raw = str(column.exam_tab_id)
                 flash(f"{column.name} is now {'shown' if column.is_active else 'hidden'}.", 'success')
             db.session.commit()
-            return redirect(url_for('admin.sats', academic_year=academic_year, class_id=selected_class_id or None, exam_tab_id=selected_tab_id_raw or None))
+            return redirect(url_for('admin.sats', academic_year=academic_year, class_id=selected_class_id_int or None, exam_tab_id=selected_tab_id_raw or None))
         except (ValueError, SatsColumnValidationError) as exc:
             db.session.rollback()
             flash(f'SATs changes could not be saved: {exc}', 'danger')
 
     overview = build_year6_sats_overview(
         academic_year,
-        class_id=int(selected_class_id) if selected_class_id else None,
+        class_id=selected_class_id_int,
         exam_tab_id=int(selected_tab_id_raw) if selected_tab_id_raw else None,
     )
     return render_template(
@@ -857,8 +964,8 @@ def sats():
         tracker_mode=get_tracker_mode(6),
         tracker_mode_label=get_tracker_mode_label(6),
         tracker_mode_options=SATS_TRACKER_MODES,
-        class_options=SchoolClass.query.filter_by(year_group=6).order_by(SchoolClass.name).all(),
-        selected_class_id=int(selected_class_id) if selected_class_id else None,
+        class_options=SchoolClass.query.filter_by(year_group=6, is_active=True).order_by(SchoolClass.name).all(),
+        selected_class_id=selected_class_id_int,
         columns=overview['columns'],
         all_columns=get_sats_columns(6, exam_tab_id=overview['selected_tab'].id if overview.get('selected_tab') else None, active_only=False),
         tabs=overview['tabs'],
@@ -1149,9 +1256,12 @@ def export_pupil_overview():
 @admin_required
 def export_sats():
     academic_year = request.args.get('academic_year', get_current_academic_year())
+    selected_class_id = int(request.args['class_id']) if request.args.get('class_id') else None
+    if selected_class_id and not _is_active_year6_class(selected_class_id):
+        return _redirect_non_year6_sats_access()
     csv_text = export_sats_results_csv(
         academic_year,
-        class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
+        class_id=selected_class_id,
         exam_tab_id=int(request.args['exam_tab_id']) if request.args.get('exam_tab_id') else None,
     )
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=sats_export.csv'})

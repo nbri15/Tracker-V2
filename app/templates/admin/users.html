@@ -31,7 +31,7 @@
       <div class="card-header bg-white"><strong>Existing users</strong></div>
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0">
-          <thead class="table-light"><tr><th>Username</th><th>Role</th><th>Assigned class</th><th>Status</th><th>Update</th></tr></thead>
+          <thead class="table-light"><tr><th>Username</th><th>Role</th><th>Assigned class</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             {% for user in teachers %}
               <tr>
@@ -51,6 +51,20 @@
                       <button class="btn btn-outline-primary btn-sm">Save</button>
                     </div>
                   </form>
+                  <div class="d-flex justify-content-end mt-2">
+                    {% set disable_delete = user.id == current_user.id or (user.is_admin and active_admin_count <= 1) %}
+                    <form method="post" onsubmit="return confirm('Are you sure you want to delete this user?');">
+                      <input type="hidden" name="action" value="delete">
+                      <input type="hidden" name="user_id" value="{{ user.id }}">
+                      <button
+                        class="btn btn-outline-danger btn-sm"
+                        {% if disable_delete %}disabled{% endif %}
+                        title="{% if user.id == current_user.id %}You cannot delete your own account.{% elif user.is_admin and active_admin_count <= 1 %}You cannot delete the last active admin.{% else %}Delete user{% endif %}"
+                      >
+                        Delete
+                      </button>
+                    </form>
+                  </div>
                 </td>
               </tr>
             {% endfor %}

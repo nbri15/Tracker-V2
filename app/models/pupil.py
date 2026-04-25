@@ -19,6 +19,9 @@ class Pupil(db.Model):
     service_child = db.Column(db.Boolean, nullable=False, default=False, index=True)
     class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    strengths_notes = db.Column(db.Text, nullable=True)
+    next_steps_notes = db.Column(db.Text, nullable=True)
+    general_notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     school_class = db.relationship('SchoolClass', back_populates='pupils')
@@ -33,6 +36,7 @@ class Pupil(db.Model):
     reception_tracker_entries = db.relationship('ReceptionTrackerEntry', back_populates='pupil', cascade='all, delete-orphan')
     phonics_scores = db.relationship('PhonicsScore', back_populates='pupil', cascade='all, delete-orphan')
     times_table_scores = db.relationship('TimesTableScore', back_populates='pupil', cascade='all, delete-orphan')
+    foundation_results = db.relationship('FoundationResult', back_populates='pupil', cascade='all, delete-orphan')
 
     @property
     def full_name(self) -> str:
