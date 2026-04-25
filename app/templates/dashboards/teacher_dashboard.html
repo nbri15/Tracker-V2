@@ -1,23 +1,36 @@
 {% extends 'base.html' %}
 {% block title %}Teacher dashboard{% endblock %}
 {% set page_heading = 'Teacher dashboard' %}
+{% macro summary_bar(summary) -%}
+  <div class="admin-summary-bar mb-2" aria-label="{{ summary.subject_label }} summary bar">
+    <span class="segment segment-wt" title="{{ summary.working_towards }} pupils Working Towards" style="width: {{ summary.working_towards_percent }}%">
+      {% if summary.working_towards_percent >= 16 %}<span class="segment-label">{{ summary.working_towards_percent }}%</span>{% endif %}
+    </span>
+    <span class="segment segment-ot" title="{{ summary.on_track }} pupils On Track" style="width: {{ summary.on_track_percent }}%">
+      {% if summary.on_track_percent >= 16 %}<span class="segment-label">{{ summary.on_track_percent }}%</span>{% endif %}
+    </span>
+    <span class="segment segment-ex" title="{{ summary.exceeding }} pupils Exceeding" style="width: {{ summary.exceeding_percent }}%">
+      {% if summary.exceeding_percent >= 16 %}<span class="segment-label">{{ summary.exceeding_percent }}%</span>{% endif %}
+    </span>
+  </div>
+{%- endmacro %}
 {% block content %}
 {% set is_reception = school_class and school_class.year_group == 0 %}
 <div class="row g-4 mb-4">
   <div class="col-lg-4">
-    <div class="card shadow-sm h-100">
+    <div class="card shadow-sm h-100 dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
-        <p class="text-muted mb-2">Assigned class</p>
-        <h3 class="h4">{{ school_class.name if school_class else 'No class assigned' }}</h3>
+        <p class="kpi-label mb-2">Assigned class</p>
+        <h3 class="h4 mb-2">{{ school_class.name if school_class else 'No class assigned' }}</h3>
         <p class="mb-1">Pupil count: <strong>{{ pupil_count }}</strong></p>
         <p class="mb-1">Tracker mode: <strong>{{ tracker_mode_label }}</strong></p>
-        <p class="text-muted mb-0 small">Summary year: {{ academic_year }}</p>
+        <p class="kpi-note mb-0">Summary year: {{ academic_year }}</p>
       </div>
     </div>
   </div>
   {% if is_reception %}
     <div class="col-sm-6 col-lg-3">
-      <div class="card shadow-sm h-100 quick-link-card">
+      <div class="card shadow-sm h-100 quick-link-card dashboard-kpi-card">
         <div class="card-body">
           <p class="text-muted small mb-2">Reception EYFS</p>
           <h3 class="h5">Open tracker</h3>
@@ -28,7 +41,7 @@
   {% else %}
     {% for subject in ['maths', 'reading', 'spag', 'writing'] %}
       <div class="col-sm-6 col-lg-2">
-        <div class="card shadow-sm h-100 quick-link-card">
+        <div class="card shadow-sm h-100 quick-link-card dashboard-kpi-card">
           <div class="card-body">
             <p class="text-muted small mb-2">{{ format_subject_name(subject) }}</p>
             <h3 class="h5">Open entry page</h3>
@@ -39,7 +52,7 @@
     {% endfor %}
     {% if school_class and school_class.year_group in [1, 2] %}
       <div class="col-sm-6 col-lg-2">
-        <div class="card shadow-sm h-100 quick-link-card">
+        <div class="card shadow-sm h-100 quick-link-card dashboard-kpi-card">
           <div class="card-body">
             <p class="text-muted small mb-2">KS1</p>
             <h3 class="h5">Open phonics</h3>
@@ -50,7 +63,7 @@
     {% endif %}
     {% if school_class and school_class.year_group == 4 %}
       <div class="col-sm-6 col-lg-2">
-        <div class="card shadow-sm h-100 quick-link-card">
+        <div class="card shadow-sm h-100 quick-link-card dashboard-kpi-card">
           <div class="card-body">
             <p class="text-muted small mb-2">Year 4</p>
             <h3 class="h5">Open times tables</h3>
@@ -61,7 +74,7 @@
     {% endif %}
     {% if has_year6_sats_access %}
       <div class="col-sm-6 col-lg-2">
-        <div class="card shadow-sm h-100 quick-link-card">
+        <div class="card shadow-sm h-100 quick-link-card dashboard-kpi-card">
           <div class="card-body">
             <p class="text-muted small mb-2">Year 6 SATs</p>
             <h3 class="h5">Open tracker</h3>
@@ -73,7 +86,105 @@
   {% endif %}
 </div>
 {% if not is_reception %}
-<div class="row g-4 mb-4">{% for row in chart_cards %}<div class="col-md-6 col-xl-3"><div class="card shadow-sm h-100"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>{{ row.subject_label }}</strong><span class="badge text-bg-light border">{{ row.term_label }}</span></div><div class="card-body"><div class="dashboard-stat-grid"><div><div class="text-muted small">Working Towards</div><div class="display-6 fw-semibold">{{ row.working_towards }}</div></div><div><div class="text-muted small">On Track</div><div class="display-6 fw-semibold">{{ row.on_track }}</div></div><div><div class="text-muted small">Exceeding</div><div class="display-6 fw-semibold">{{ row.exceeding }}</div></div><div><div class="text-muted small">On Track+</div><div class="display-6 fw-semibold">{{ row.on_track_plus }}</div></div></div></div></div></div>{% endfor %}</div>
-<div class="row g-4"><div class="col-lg-7"><div class="card shadow-sm"><div class="card-header bg-white"><strong>Most recent subject summary</strong></div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Subject</th><th>Most recent term</th><th class="text-end">Working Towards</th><th class="text-end">On Track</th><th class="text-end">Exceeding</th><th class="text-end">On Track+</th></tr></thead><tbody>{% for row in summary_rows %}<tr><td>{{ row.subject_label }}</td><td>{{ row.term_label }}</td><td class="text-end">{{ row.working_towards }}</td><td class="text-end">{{ row.on_track }}</td><td class="text-end">{{ row.exceeding }}</td><td class="text-end fw-semibold">{{ row.on_track_plus }}</td></tr>{% endfor %}</tbody></table></div></div></div><div class="col-lg-5"><div class="card shadow-sm h-100"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Active interventions</strong><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.interventions') }}">Open</a></div><div class="list-group list-group-flush">{% for record in active_interventions %}<div class="list-group-item"><div class="fw-semibold">{{ record.pupil.full_name }} · {{ format_subject_name(record.subject) }}</div><div class="small text-muted">{{ get_term_label(record.term) }} · {{ record.reason }}{% if record.note %} · {{ record.note }}{% endif %}</div></div>{% else %}<div class="list-group-item text-muted">No active interventions yet.</div>{% endfor %}</div></div></div></div>
+  <div class="row g-4 mb-4">
+    {% for row in chart_cards %}
+      <div class="col-md-6 col-xl-3">
+        <div class="card shadow-sm h-100 dashboard-kpi-card">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <strong>{{ row.subject_label }}</strong>
+            <span class="subject-result-pill {% if row.pupil_count == 0 %}is-empty{% endif %}">{{ row.term_label }}</span>
+          </div>
+          <div class="card-body">
+            {{ summary_bar(row) }}
+            <div class="d-flex flex-wrap gap-2 small text-muted subject-summary-legend mb-3">
+              <span>WT {{ row.working_towards_percent }}%</span>
+              <span>OT {{ row.on_track_percent }}%</span>
+              <span>EX {{ row.exceeding_percent }}%</span>
+            </div>
+            <div class="row g-2">
+              <div class="col-6">
+                <div class="teacher-summary-stat">
+                  <div class="stat-label">Working Towards</div>
+                  <div class="stat-value">{{ row.working_towards }}</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="teacher-summary-stat">
+                  <div class="stat-label">On Track</div>
+                  <div class="stat-value">{{ row.on_track }}</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="teacher-summary-stat">
+                  <div class="stat-label">Exceeding</div>
+                  <div class="stat-value">{{ row.exceeding }}</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="teacher-summary-stat">
+                  <div class="stat-label">On Track+</div>
+                  <div class="stat-value">{{ row.on_track_plus }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <strong>Most recent subject summary</strong>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>Most recent term</th>
+                <th class="text-end">Working Towards</th>
+                <th class="text-end">On Track</th>
+                <th class="text-end">Exceeding</th>
+                <th class="text-end">On Track+</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in summary_rows %}
+                <tr>
+                  <td>{{ row.subject_label }}</td>
+                  <td>{{ row.term_label }}</td>
+                  <td class="text-end">{{ row.working_towards }}</td>
+                  <td class="text-end">{{ row.on_track }}</td>
+                  <td class="text-end">{{ row.exceeding }}</td>
+                  <td class="text-end fw-semibold">{{ row.on_track_plus }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <strong>Active interventions</strong>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.interventions') }}">Open</a>
+        </div>
+        <div class="list-group list-group-flush">
+          {% for record in active_interventions %}
+            <div class="list-group-item">
+              <div class="fw-semibold">{{ record.pupil.full_name }} · {{ format_subject_name(record.subject) }}</div>
+              <div class="small text-muted">{{ get_term_label(record.term) }} · {{ record.reason }}{% if record.note %} · {{ record.note }}{% endif %}</div>
+            </div>
+          {% else %}
+            <div class="list-group-item text-muted">No active interventions yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
 {% endif %}
 {% endblock %}

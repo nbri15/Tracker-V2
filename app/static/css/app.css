@@ -351,29 +351,130 @@ a:hover {
 
 .admin-summary-bar {
   display: flex;
-  height: 12px;
+  height: 16px;
   width: 100%;
   min-width: 160px;
   overflow: hidden;
-  background: #edf1f5;
+  background: #e8eef6;
+  border: 1px solid #d8e1ec;
   border-radius: 999px;
 }
 
 .admin-summary-bar .segment {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .admin-summary-bar .segment-wt {
-  background: rgba(220, 53, 69, 0.55);
+  background: #ef4444;
 }
 
 .admin-summary-bar .segment-ot {
-  background: rgba(25, 135, 84, 0.55);
+  background: #22c55e;
 }
 
 .admin-summary-bar .segment-ex {
-  background: rgba(253, 126, 20, 0.6);
+  background: #f5ad22;
+}
+
+.admin-summary-bar .segment .segment-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.24);
+  line-height: 1;
+}
+
+.dashboard-kpi-card {
+  border-radius: 1rem;
+  box-shadow: 0 10px 28px rgba(6, 27, 72, 0.08) !important;
+  border: 1px solid #d9e4f1;
+}
+
+.dashboard-kpi-card .card-body {
+  position: relative;
+  padding: 1rem 1.05rem;
+}
+
+.dashboard-kpi-card .kpi-label {
+  color: #5a6d89;
+  font-size: 0.77rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.dashboard-kpi-card .kpi-value {
+  font-size: clamp(1.45rem, 2.25vw, 1.95rem);
+  font-weight: 700;
+  color: #0d2e67;
+  line-height: 1.1;
+}
+
+.dashboard-kpi-card .kpi-note {
+  color: #5f6f86;
+  font-size: 0.8rem;
+}
+
+.dashboard-kpi-card-accent::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 1rem 1rem 0 0;
+  background: linear-gradient(90deg, #1557d6 0%, #f5ad22 100%);
+}
+
+.subject-result-pill {
+  border-radius: 999px;
+  border: 1px solid #d2deec;
+  padding: 0.32rem 0.62rem;
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: #3f5577;
+  background: #f6f9ff;
+}
+
+.subject-result-pill.is-empty {
+  border-color: #d9dee8;
+  color: #68758a;
+  background: #f4f6fa;
+}
+
+.subject-summary-legend {
+  row-gap: 0.35rem;
+}
+
+.subject-summary-legend span {
+  font-size: 0.78rem;
+}
+
+.teacher-summary-stat {
+  border: 1px solid #deebf8;
+  border-radius: 0.75rem;
+  background: #f8fbff;
+  padding: 0.55rem 0.65rem;
+}
+
+.teacher-summary-stat .stat-label {
+  color: #5a6d89;
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.teacher-summary-stat .stat-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #102f63;
 }
 
 .admin-overview-table th,
@@ -633,10 +734,14 @@ a:hover {
 }
 
 .progress {
-  height: 18px;   /* default is ~8px */
-  border-radius: 8px;
+  height: 16px;
+  border-radius: 999px;
+  background-color: #e8eef6;
+  border: 1px solid #d8e1ec;
 }
 
 .progress-bar {
-  border-radius: 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
 }

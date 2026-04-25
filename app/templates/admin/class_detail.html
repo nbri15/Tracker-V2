@@ -7,9 +7,15 @@
 {%- endmacro %}
 {% macro summary_bar(summary) -%}
   <div class="admin-summary-bar mb-2">
-    <span class="segment segment-wt" style="width: {{ summary.working_towards_percent }}%"></span>
-    <span class="segment segment-ot" style="width: {{ summary.on_track_percent }}%"></span>
-    <span class="segment segment-ex" style="width: {{ summary.exceeding_percent }}%"></span>
+    <span class="segment segment-wt" title="{{ summary.working_towards }} pupils Working Towards" style="width: {{ summary.working_towards_percent }}%">
+      {% if summary.working_towards_percent >= 16 %}<span class="segment-label">{{ summary.working_towards_percent }}%</span>{% endif %}
+    </span>
+    <span class="segment segment-ot" title="{{ summary.on_track }} pupils On Track" style="width: {{ summary.on_track_percent }}%">
+      {% if summary.on_track_percent >= 16 %}<span class="segment-label">{{ summary.on_track_percent }}%</span>{% endif %}
+    </span>
+    <span class="segment segment-ex" title="{{ summary.exceeding }} pupils Exceeding" style="width: {{ summary.exceeding_percent }}%">
+      {% if summary.exceeding_percent >= 16 %}<span class="segment-label">{{ summary.exceeding_percent }}%</span>{% endif %}
+    </span>
   </div>
 {%- endmacro %}
 {% macro sort_link(column, label) -%}
