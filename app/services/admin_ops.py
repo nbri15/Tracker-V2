@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from flask_login import current_user
+
 from app.extensions import db
 from app.models import AcademicYear, Pupil, PupilClassHistory, School, SchoolClass, User
+from app.utils import school_scoped_query
 from .assessments import get_current_academic_year
 
 
@@ -33,11 +36,11 @@ def sort_teacher_accounts(users: list[User]) -> list[User]:
 
 def ensure_academic_year(name: str | None = None, *, mark_current: bool = False, archived: bool = False) -> AcademicYear:
     target_name = name or get_current_academic_year()
-    record = AcademicYear.query.filter_by(name=target_name).first()
+    record = school_scoped_query(AcademicYear, AcademicYear.query.filter_by(name=target_name)).first()
     if not record:
-        record = AcademicYear(name=target_name)
+        record = AcademicYear(name=target_name, school_id=getattr(current_user, 'school_id', None))
     if mark_current:
-        AcademicYear.query.update({'is_current': False})
+        school_scoped_query(AcademicYear, AcademicYear.query).update({'is_current': False})
         record.is_current = True
     if archived:
         record.is_archived = True
@@ -106,12 +109,13 @@ def ensure_default_logins_and_classes() -> dict:
 def snapshot_pupil_history(academic_year: str) -> int:
     ensure_academic_year(academic_year)
     created = 0
-    pupils = Pupil.query.join(Pupil.school_class).filter(Pupil.is_active.is_(True), SchoolClass.is_active.is_(True)).all()
+    pupils = school_scoped_query(Pupil, Pupil.query.join(Pupil.school_class)).filter(Pupil.is_active.is_(True), SchoolClass.is_active.is_(True)).all()
     for pupil in pupils:
-        existing = PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=academic_year).first()
+        existing = school_scoped_query(PupilClassHistory, PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=academic_year)).first()
         if existing:
             continue
         db.session.add(PupilClassHistory(
+            school_id=pupil.school_id,
             pupil_id=pupil.id,
             academic_year=academic_year,
             class_name=pupil.school_class.name,
@@ -125,12 +129,12 @@ def snapshot_pupil_history(academic_year: str) -> int:
 
 def get_promotion_mapping_options() -> list[dict]:
     """Build source-class rows and valid destination options for promotion UI."""
-    classes = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    classes = school_scoped_query(SchoolClass, SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
     options: list[dict] = []
     for school_class in classes:
         active_pupil_count = school_class.pupils.filter_by(is_active=True).count()
         destination_classes = (
-            SchoolClass.query.filter_by(is_active=True, year_group=school_class.year_group + 1)
+            school_scoped_query(SchoolClass, SchoolClass.query.filter_by(is_active=True, year_group=school_class.year_group + 1))
             .order_by(SchoolClass.name)
             .all()
         )
@@ -151,7 +155,7 @@ def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int |
     ensure_academic_year(target_year, mark_current=True)
 
     normalized_mapping = class_mapping or {}
-    classes = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group.desc(), SchoolClass.name).all()
+    classes = school_scoped_query(SchoolClass, SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group.desc(), SchoolClass.name).all()
     moved = 0
     leavers = 0
     for school_class in classes:
@@ -159,13 +163,13 @@ def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int |
         selected_destination_id = normalized_mapping.get(school_class.id)
         selected_destination = None
         if selected_destination_id:
-            selected_destination = SchoolClass.query.filter_by(id=selected_destination_id, is_active=True).first()
+            selected_destination = school_scoped_query(SchoolClass, SchoolClass.query.filter_by(id=selected_destination_id, is_active=True)).first()
             if not selected_destination:
                 raise ValueError(f'Invalid destination selected for {school_class.name}.')
             if selected_destination.year_group != school_class.year_group + 1:
                 raise ValueError(f'Invalid destination year group selected for {school_class.name}.')
         for pupil in pupils:
-            history = PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=source_year).first()
+            history = school_scoped_query(PupilClassHistory, PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=source_year)).first()
             if selected_destination is None and school_class.year_group >= 6:
                 pupil.is_active = False
                 leavers += 1
@@ -176,9 +180,9 @@ def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int |
                 continue
             next_class = selected_destination
             if not next_class:
-                next_class = SchoolClass.query.filter_by(year_group=school_class.year_group + 1, is_active=True).order_by(SchoolClass.name).first()
+                next_class = school_scoped_query(SchoolClass, SchoolClass.query.filter_by(year_group=school_class.year_group + 1, is_active=True)).order_by(SchoolClass.name).first()
                 if not next_class:
-                    next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True)
+                    next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True, school_id=school_class.school_id, is_demo=school_class.is_demo)
                     db.session.add(next_class)
                     db.session.flush()
             pupil.class_id = next_class.id
@@ -193,7 +197,7 @@ def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int |
 
 def get_history_rows(academic_year: str) -> list[PupilClassHistory]:
     return (
-        PupilClassHistory.query.join(PupilClassHistory.pupil)
+        school_scoped_query(PupilClassHistory, PupilClassHistory.query.join(PupilClassHistory.pupil))
         .filter(PupilClassHistory.academic_year == academic_year)
         .order_by(PupilClassHistory.year_group, PupilClassHistory.class_name, Pupil.last_name, Pupil.first_name)
         .all()
