@@ -16,6 +16,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    legacy_is_admin = db.Column('is_admin', db.Boolean, nullable=True)
     school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     role = db.Column(db.String(20), nullable=False, default='teacher')
     is_active = db.Column(db.Boolean, nullable=False, default=True)
@@ -34,6 +35,8 @@ class User(UserMixin, db.Model):
 
     @property
     def is_admin(self) -> bool:
+        if self.legacy_is_admin is not None:
+            return bool(self.legacy_is_admin)
         return self.role in {'school_admin', 'executive_admin', 'admin'}
 
     @property
@@ -42,7 +45,7 @@ class User(UserMixin, db.Model):
 
     @property
     def is_school_admin(self) -> bool:
-        return self.role in {'school_admin', 'admin'}
+        return self.role == 'school_admin' or (self.is_admin and self.role != 'executive_admin')
 
     @property
     def is_teacher(self) -> bool:

@@ -10,7 +10,7 @@ from sqlalchemy import inspect, text
 from config import config_by_name
 from .extensions import db, login_manager, migrate
 from .services import format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label
-from .utils import is_demo_user
+from .utils import current_school_id, is_demo_user
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -114,6 +114,20 @@ def register_template_helpers(app: Flask) -> None:
             ('demo_teacher', 'demo123'),
         ),
     )
+
+    @app.context_processor
+    def inject_school_context():
+        from .models import School
+
+        if not current_user.is_authenticated:
+            return {'selected_school_id': None, 'accessible_schools': []}
+
+        if current_user.is_executive_admin:
+            schools = School.query.order_by(School.name).all()
+            return {'selected_school_id': current_school_id(), 'accessible_schools': schools}
+
+        school = current_user.school
+        return {'selected_school_id': school.id if school else None, 'accessible_schools': [school] if school else []}
 
 
 def register_shell_context(app: Flask) -> None:

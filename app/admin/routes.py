@@ -1082,7 +1082,7 @@ def imports():
             flash(f'Import failed: {exc}', 'danger')
 
     overview = {
-        'teachers': User.query.filter_by(role='teacher', is_demo=current_user.is_demo).count(),
+        'teachers': school_scoped_query(User, User.query.filter_by(role='teacher', is_demo=current_user.is_demo)).count(),
         'classes': demo_filter_classes(SchoolClass.query).count(),
         'pupils': demo_filter_pupils(Pupil.query).count(),
     }
