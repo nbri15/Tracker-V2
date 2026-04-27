@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h3 class="h5">Schools</h3>
+  <form method="post" class="row g-2 mb-3">
+    <input type="hidden" name="action" value="create">
+    <div class="col"><input class="form-control" name="name" placeholder="School name" required></div>
+    <div class="col"><input class="form-control" name="slug" placeholder="slug" required></div>
+    <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="is_active" checked> active</div>
+    <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="is_demo"> demo</div>
+    <div class="col-auto"><button class="btn btn-primary">Add school</button></div>
+  </form>
+  <table class="table table-sm">
+    <tr><th>Name</th><th>Slug</th><th>Status</th><th></th></tr>
+    {% for school in schools %}
+    <tr>
+      <td>{{ school.name }}</td><td>{{ school.slug }}</td><td>{{ 'Active' if school.is_active else 'Inactive' }}{% if school.is_demo %} · Demo{% endif %}</td>
+      <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('executive.school_detail', school_id=school.id) }}">Open</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div></div>
+{% endblock %}

@@ -41,7 +41,7 @@
       {% endif %}
     {% endif %}
 
-    {% if current_user.is_admin %}
+    {% if current_user.can_manage_school %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
       <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail', 'admin.class_sats', 'admin.class_phonics', 'admin.class_times_tables'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Users</a>
@@ -53,6 +53,10 @@
       <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
       <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports</a>
+    {% endif %}
+      {% if current_user.is_executive_admin %}
+      <div class="text-uppercase small text-white-50 mt-3 mb-1">Executive</div>
+      <a class="nav-link text-white {% if request.endpoint in ['executive.schools', 'executive.school_detail'] %}active{% endif %}" href="{{ url_for('executive.schools') }}">Schools</a>
     {% endif %}
   </nav>
 </aside>

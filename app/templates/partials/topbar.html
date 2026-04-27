@@ -10,6 +10,7 @@
     <span class="badge text-bg-secondary text-uppercase">{{ current_user.role }}</span>
     <div class="text-end">
       <div class="fw-semibold">{{ current_user.username }}</div>
+      {% if current_user.school %}<div class="small text-muted">{{ current_user.school.name }}</div>{% endif %}
       <a href="{{ url_for('auth.logout') }}" class="small text-decoration-none">Sign out</a>
     </div>
   </div>

@@ -20,6 +20,7 @@ class ReceptionTrackerEntry(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False, index=True)
     tracking_point = db.Column(db.String(40), nullable=False, index=True)

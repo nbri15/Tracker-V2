@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card shadow-sm"><div class="card-body">
+<h3 class="h5">{{ school.name }}</h3>
+<ul>
+<li>Users: {{ users_count }}</li>
+<li>Classes: {{ classes_count }}</li>
+<li>Pupils: {{ pupils_count }}</li>
+</ul>
+<form method="post" action="{{ url_for('executive.create_school_admin', school_id=school.id) }}" class="row g-2">
+  <div class="col"><input class="form-control" name="username" placeholder="admin username" required></div>
+  <div class="col"><input class="form-control" name="password" placeholder="password" required></div>
+  <div class="col-auto"><button class="btn btn-primary">Create school admin</button></div>
+</form>
+</div></div>
+{% endblock %}
