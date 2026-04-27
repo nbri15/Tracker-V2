@@ -162,7 +162,7 @@ def register_cli_commands(app: Flask) -> None:
         if len(password) < 8:
             raise click.ClickException('Admin password must be at least 8 characters long.')
 
-        user = User(username=username.strip(), role='executive_admin', is_active=True, require_password_change=force_password_change)
+        user = User(username=username.strip(), role='executive_admin', legacy_is_admin=True, is_active=True, require_password_change=force_password_change)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -188,7 +188,7 @@ def bootstrap_admin_from_env(app: Flask) -> None:
         if existing_admin:
             return
 
-        user = User(username=username, role='executive_admin', is_active=True)
+        user = User(username=username, role='executive_admin', legacy_is_admin=True, is_active=True)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()

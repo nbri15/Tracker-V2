@@ -60,6 +60,7 @@ def ensure_default_logins_and_classes() -> dict:
         db.session.flush()
     admin = User.query.filter_by(username=DEFAULT_ADMIN.username).first() or User(username=DEFAULT_ADMIN.username)
     admin.role = DEFAULT_ADMIN.role
+    admin.legacy_is_admin = True
     admin.is_active = True
     admin.school_id = default_school.id
     admin.set_password(DEFAULT_ADMIN.password)
@@ -70,6 +71,7 @@ def ensure_default_logins_and_classes() -> dict:
         teacher = User.query.filter_by(username=login.username).first() or User(username=login.username)
         teacher.username = login.username
         teacher.role = login.role
+        teacher.legacy_is_admin = False
         teacher.is_active = True
         teacher.school_id = default_school.id
         teacher.set_password(login.password)

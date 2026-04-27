@@ -16,7 +16,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    legacy_is_admin = db.Column('is_admin', db.Boolean, nullable=True)
+    legacy_is_admin = db.Column('is_admin', db.Boolean, nullable=False, default=False)
     school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     role = db.Column(db.String(20), nullable=False, default='teacher')
     is_active = db.Column(db.Boolean, nullable=False, default=True)
