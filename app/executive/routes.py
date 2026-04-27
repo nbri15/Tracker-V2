@@ -67,7 +67,15 @@ def create_school_admin(school_id: int):
         flash('Username already exists.', 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))
 
-    user = User(username=username, role='school_admin', school_id=school.id, is_demo=school.is_demo, is_active=True)
+    user = User(
+        username=username,
+        is_admin=True,
+        role='school_admin',
+        school_id=school.id,
+        is_active=True,
+        is_demo=school.is_demo,
+        require_password_change=False,
+    )
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
