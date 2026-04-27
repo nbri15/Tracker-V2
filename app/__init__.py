@@ -10,6 +10,7 @@ from sqlalchemy import inspect, text
 from config import config_by_name
 from .extensions import db, login_manager, migrate
 from .services import format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label
+from .utils import is_demo_user
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -31,6 +32,7 @@ def create_app(config_name: str | None = None) -> Flask:
     register_cli_commands(app)
     bootstrap_runtime_schema(app)
     bootstrap_admin_from_env(app)
+    bootstrap_demo_data(app)
 
     return app
 
@@ -104,6 +106,7 @@ def register_template_helpers(app: Flask) -> None:
         get_writing_band_label=get_writing_band_label,
         get_tracker_mode_label=get_tracker_mode_label,
         demo_mode=app.config.get('DEMO_MODE', False),
+        is_demo_user=is_demo_user,
         demo_credentials=(
             ('demo_admin', 'demo123'),
             ('demo_teacher', 'demo123'),
@@ -194,9 +197,19 @@ def bootstrap_runtime_schema(app: Flask) -> None:
                 'strengths_notes': 'TEXT',
                 'next_steps_notes': 'TEXT',
                 'general_notes': 'TEXT',
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
             },
             'subject_results': {
                 'assessment_year_group': 'INTEGER',
+            },
+            'users': {
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+            },
+            'school_classes': {
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+            },
+            'interventions': {
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
             },
         }
 
@@ -231,3 +244,16 @@ def bootstrap_runtime_schema(app: Flask) -> None:
                             column_name,
                             exc_info=True,
                         )
+
+def bootstrap_demo_data(app: Flask) -> None:
+    """Seed demo data at startup only when explicit demo mode is enabled."""
+
+    if not app.config.get('DEMO_MODE', False):
+        return
+    with app.app_context():
+        try:
+            from seed_demo import seed_demo_data
+
+            seed_demo_data()
+        except Exception:
+            app.logger.warning('Demo data bootstrap failed.', exc_info=True)

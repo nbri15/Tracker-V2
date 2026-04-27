@@ -423,7 +423,17 @@ def interventions():
                 reason = request.form.get('reason', '').strip() or 'Teacher added manually'
                 record = Intervention.query.filter_by(pupil_id=pupil_id, subject=subject, term=term, academic_year=academic_year, is_active=True).first()
                 if not record:
-                    record = Intervention(pupil_id=pupil_id, subject=subject, term=term, academic_year=academic_year, reason=reason, note=note, auto_flagged=False, is_active=True)
+                    record = Intervention(
+                        pupil_id=pupil_id,
+                        subject=subject,
+                        term=term,
+                        academic_year=academic_year,
+                        reason=reason,
+                        note=note,
+                        auto_flagged=False,
+                        is_active=True,
+                        is_demo=school_class.is_demo,
+                    )
                 else:
                     record.reason = reason
                     record.note = note
@@ -717,6 +727,7 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
         service_child=request.form.get('service_child') == 'on',
         class_id=school_class.id,
         is_active=True,
+        is_demo=school_class.is_demo,
     )
     db.session.add(pupil)
     db.session.commit()

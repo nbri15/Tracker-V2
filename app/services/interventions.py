@@ -63,6 +63,7 @@ def sync_auto_interventions(school_class, subject: str, term: str, academic_year
                 reason=suggestion['reason'],
                 auto_flagged=True,
                 is_active=True,
+                is_demo=school_class.is_demo,
             )
         else:
             record.reason = suggestion['reason']
