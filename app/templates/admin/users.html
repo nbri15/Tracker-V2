@@ -52,14 +52,14 @@
                     </div>
                   </form>
                   <div class="d-flex justify-content-end mt-2">
-                    {% set disable_delete = user.id == current_user.id or (user.is_admin and active_admin_count <= 1) %}
+                    {% set disable_delete = demo_mode or user.id == current_user.id or (user.is_admin and active_admin_count <= 1) %}
                     <form method="post" onsubmit="return confirm('Are you sure you want to delete this user?');">
                       <input type="hidden" name="action" value="delete">
                       <input type="hidden" name="user_id" value="{{ user.id }}">
                       <button
                         class="btn btn-outline-danger btn-sm"
                         {% if disable_delete %}disabled{% endif %}
-                        title="{% if user.id == current_user.id %}You cannot delete your own account.{% elif user.is_admin and active_admin_count <= 1 %}You cannot delete the last active admin.{% else %}Delete user{% endif %}"
+                        title="{% if demo_mode %}This action is disabled in Demo Mode.{% elif user.id == current_user.id %}You cannot delete your own account.{% elif user.is_admin and active_admin_count <= 1 %}You cannot delete the last active admin.{% else %}Delete user{% endif %}"
                       >
                         Delete
                       </button>

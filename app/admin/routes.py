@@ -125,7 +125,7 @@ from app.services import (
     ensure_times_tables_columns,
     FoundationValidationError,
 )
-from app.utils import admin_required
+from app.utils import admin_required, is_demo_mode_enabled
 
 from . import admin_bp
 from .forms import AssessmentSettingForm
@@ -207,6 +207,9 @@ def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
 def classes():
     if request.method == 'POST':
         action = request.form.get('action', 'create_class')
+        if is_demo_mode_enabled() and action == 'archive_class':
+            flash('This action is disabled in Demo Mode.', 'warning')
+            return redirect(url_for('admin.classes'))
         try:
             if action == 'create_class':
                 name = request.form.get('name', '').strip()
@@ -606,6 +609,9 @@ def reception_tracker():
 def users():
     if request.method == 'POST':
         action = request.form.get('action', 'create')
+        if is_demo_mode_enabled() and action == 'delete':
+            flash('This action is disabled in Demo Mode.', 'warning')
+            return redirect(url_for('admin.users'))
         try:
             if action == 'create':
                 username = request.form.get('username', '').strip()
@@ -733,6 +739,9 @@ def pupils():
 def manage_pupil():
     pupil = Pupil.query.get_or_404(int(request.form.get('pupil_id', '0')))
     action = request.form.get('action', '').strip()
+    if is_demo_mode_enabled() and action in {'archive', 'restore', 'delete'}:
+        flash('This action is disabled in Demo Mode.', 'warning')
+        return _pupil_action_redirect()
     linked_counts = _linked_pupil_record_counts(pupil.id)
     has_linked_data = any(linked_counts.values())
 
@@ -986,6 +995,9 @@ def promotion():
     next_year = build_next_academic_year(academic_year)
     mapping_rows = get_promotion_mapping_options()
     if request.method == 'POST':
+        if is_demo_mode_enabled():
+            flash('This action is disabled in Demo Mode.', 'warning')
+            return redirect(url_for('admin.promotion', academic_year=academic_year))
         action = request.form.get('action', 'snapshot')
         try:
             if action == 'snapshot':

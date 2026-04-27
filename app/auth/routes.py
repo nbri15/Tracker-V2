@@ -7,6 +7,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 
 from app.extensions import db
 from app.models import User
+from app.utils import is_demo_mode_enabled
 
 from . import auth_bp
 from .forms import ChangePasswordForm, LoginForm
@@ -36,6 +37,27 @@ def login():
         flash('Invalid username or password.', 'danger')
 
     return render_template('auth/login.html', form=form)
+
+
+@auth_bp.route('/demo-login')
+def demo_login():
+    """Shortcut login helpers for demo accounts when demo mode is enabled."""
+
+    if not is_demo_mode_enabled():
+        flash('Demo login is not available.', 'warning')
+        return redirect(url_for('auth.login'))
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboards.index'))
+
+    account = (request.args.get('account') or 'teacher').strip().lower()
+    username = 'demo_admin' if account == 'admin' else 'demo_teacher'
+    user = User.query.filter_by(username=username, is_active=True).first()
+    if not user:
+        flash('Demo account is missing. Run seed_demo.py to create demo users.', 'danger')
+        return redirect(url_for('auth.login'))
+    login_user(user)
+    flash(f'Signed in as {username}.', 'success')
+    return redirect(url_for('dashboards.index'))
 
 
 @auth_bp.route('/logout')

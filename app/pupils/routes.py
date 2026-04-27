@@ -28,7 +28,7 @@ from app.models import (
     WritingResult,
 )
 from app.services import format_progress_delta, progress_theme
-from app.utils import teacher_or_admin_required
+from app.utils import is_demo_mode_enabled, teacher_or_admin_required
 
 from . import pupils_bp
 
@@ -182,6 +182,9 @@ def profile(pupil_id: int):
 @login_required
 @teacher_or_admin_required
 def archive(pupil_id: int):
+    if is_demo_mode_enabled():
+        flash('This action is disabled in Demo Mode.', 'warning')
+        return redirect(url_for('pupils.profile', pupil_id=pupil_id))
     pupil = Pupil.query.join(Pupil.school_class).filter(Pupil.id == pupil_id).first_or_404()
     if not _can_archive_pupil(pupil):
         abort(403)
@@ -200,6 +203,9 @@ def archive(pupil_id: int):
 @login_required
 @teacher_or_admin_required
 def restore(pupil_id: int):
+    if is_demo_mode_enabled():
+        flash('This action is disabled in Demo Mode.', 'warning')
+        return redirect(url_for('pupils.profile', pupil_id=pupil_id))
     pupil = Pupil.query.join(Pupil.school_class).filter(Pupil.id == pupil_id).first_or_404()
     if not current_user.is_admin:
         abort(403)

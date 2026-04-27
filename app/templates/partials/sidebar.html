@@ -3,6 +3,11 @@
     <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}"
          alt="Class Compass logo"
          class="sidebar-logo-full">
+    {% if demo_mode %}
+      <div class="mt-2">
+        <span class="badge text-bg-warning text-uppercase">Demo Mode</span>
+      </div>
+    {% endif %}
   </div>
 
   <nav class="nav flex-column gap-1">

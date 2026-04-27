@@ -50,10 +50,10 @@
               </tbody>
             </table>
           </div>
-          <button class="btn btn-primary">Promote active pupils</button>
+          <button class="btn btn-primary" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
         </form>
         <div class="d-flex gap-2 flex-wrap">
-          <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary">Archive current year snapshot</button></form>
+          <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Archive current year snapshot</button></form>
           <a class="btn btn-outline-secondary" href="{{ url_for('admin.export_history', academic_year=academic_year) }}">Export history CSV</a>
         </div>
       </div>

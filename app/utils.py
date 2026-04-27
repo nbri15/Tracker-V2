@@ -2,7 +2,7 @@
 
 from functools import wraps
 
-from flask import abort, flash, redirect, url_for
+from flask import abort, current_app, flash, redirect, url_for
 from flask_login import current_user
 
 from app.models import SchoolClass
@@ -66,3 +66,9 @@ def get_year_group_class_for_user(user, year_group: int):
         .order_by(SchoolClass.name)
         .first()
     )
+
+
+def is_demo_mode_enabled() -> bool:
+    """Return whether the app is running in demo mode."""
+
+    return bool(current_app.config.get('DEMO_MODE', False))

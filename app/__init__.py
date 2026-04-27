@@ -103,6 +103,11 @@ def register_template_helpers(app: Flask) -> None:
         get_term_label=get_term_label,
         get_writing_band_label=get_writing_band_label,
         get_tracker_mode_label=get_tracker_mode_label,
+        demo_mode=app.config.get('DEMO_MODE', False),
+        demo_credentials=(
+            ('demo_admin', 'demo123'),
+            ('demo_teacher', 'demo123'),
+        ),
     )
 
 
