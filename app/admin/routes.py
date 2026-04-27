@@ -625,7 +625,14 @@ def users():
                     raise ValueError('Username and password are required.')
                 if User.query.filter_by(username=username).first():
                     raise ValueError('That username already exists.')
-                user = User(username=username, role='teacher', is_active=True, is_demo=current_user.is_demo, school_id=current_user.school_id)
+                user = User(
+                    username=username,
+                    is_admin=False,
+                    role='teacher',
+                    is_active=True,
+                    is_demo=current_user.is_demo,
+                    school_id=current_user.school_id,
+                )
                 user.set_password(password)
                 db.session.add(user)
                 db.session.flush()
