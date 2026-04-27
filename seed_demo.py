@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from app import create_app
 from app.extensions import db
 from app.models import Intervention, Pupil, SchoolClass, SubjectResult, User, WritingResult
-from app.services import CORE_SUBJECTS, TERMS, compute_subject_result_values, get_current_academic_year, get_subject_setting
-
-app = create_app()
+from app.services import CORE_SUBJECTS, compute_subject_result_values, get_current_academic_year, get_subject_setting
 
 DEMO_CLASSES = [(year, f'Demo Year {year}') for year in range(1, 7)]
 DEMO_BANDS = ['WT', 'OT', 'EXS']
@@ -16,11 +13,14 @@ DEMO_BANDS = ['WT', 'OT', 'EXS']
 def ensure_demo_user(username: str, password: str, role: str) -> User:
     user = User.query.filter_by(username=username).first()
     if not user:
-        user = User(username=username, role=role, is_active=True)
+        user = User(username=username, role=role, is_active=True, is_demo=True)
+        user.set_password(password)
+    elif not user.is_demo:
+        raise ValueError(f"User '{username}' exists as a non-demo account. Refusing to overwrite a real user.")
     user.role = role
     user.is_active = True
+    user.is_demo = True
     user.require_password_change = False
-    user.set_password(password)
     db.session.add(user)
     db.session.flush()
     return user
@@ -33,6 +33,7 @@ def ensure_demo_class(name: str, year_group: int, teacher_id: int | None = None)
     school_class.year_group = year_group
     school_class.teacher_id = teacher_id
     school_class.is_active = True
+    school_class.is_demo = True
     db.session.add(school_class)
     db.session.flush()
     return school_class
@@ -47,6 +48,7 @@ def ensure_demo_pupil(school_class: SchoolClass, index: int) -> Pupil:
     pupil.gender = 'Unknown'
     pupil.class_id = school_class.id
     pupil.is_active = True
+    pupil.is_demo = True
     pupil.pupil_premium = index % 2 == 0
     pupil.laps = index % 3 == 0
     pupil.service_child = index % 4 == 0
@@ -105,32 +107,41 @@ def ensure_demo_intervention(pupil: Pupil, academic_year: str) -> None:
         )
     row.is_active = True
     row.auto_flagged = False
+    row.is_demo = True
     row.note = 'DEMO FAKE DATA: Small group support example.'
     db.session.add(row)
 
 
+def seed_demo_data() -> None:
+    """Create/refresh demo-only accounts and records without touching real data."""
+
+    db.create_all()
+    demo_admin = ensure_demo_user('demo_admin', 'demo123', 'admin')
+    demo_teacher = ensure_demo_user('demo_teacher', 'demo123', 'teacher')
+
+    class_lookup: dict[int, SchoolClass] = {}
+    for year_group, class_name in DEMO_CLASSES:
+        teacher_id = demo_teacher.id if year_group == 1 else None
+        class_lookup[year_group] = ensure_demo_class(class_name, year_group, teacher_id=teacher_id)
+
+    academic_year = get_current_academic_year()
+    for year_group in sorted(class_lookup):
+        school_class = class_lookup[year_group]
+        for index in range(1, 7):
+            pupil = ensure_demo_pupil(school_class, index)
+            ensure_demo_assessments(pupil, academic_year)
+            if index <= 2:
+                ensure_demo_intervention(pupil, academic_year)
+
+    db.session.commit()
+
+
 def main() -> None:
+    from app import create_app
+
+    app = create_app()
     with app.app_context():
-        db.create_all()
-
-        demo_admin = ensure_demo_user('demo_admin', 'demo123', 'admin')
-        demo_teacher = ensure_demo_user('demo_teacher', 'demo123', 'teacher')
-
-        class_lookup: dict[int, SchoolClass] = {}
-        for year_group, class_name in DEMO_CLASSES:
-            teacher_id = demo_teacher.id if year_group == 1 else None
-            class_lookup[year_group] = ensure_demo_class(class_name, year_group, teacher_id=teacher_id)
-
-        academic_year = get_current_academic_year()
-        for year_group in sorted(class_lookup):
-            school_class = class_lookup[year_group]
-            for index in range(1, 7):
-                pupil = ensure_demo_pupil(school_class, index)
-                ensure_demo_assessments(pupil, academic_year)
-                if index <= 2:
-                    ensure_demo_intervention(pupil, academic_year)
-
-        db.session.commit()
+        seed_demo_data()
         print('Demo seed completed safely.')
         print('Created/refreshed demo users: demo_admin, demo_teacher (password: demo123).')
         print('Demo classes Year 1 to Year 6 and fake pupils were created/updated without deleting existing data.')

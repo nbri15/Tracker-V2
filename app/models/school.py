@@ -13,6 +13,7 @@ class SchoolClass(db.Model):
     year_group = db.Column(db.Integer, nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
 
     teacher = db.relationship('User', back_populates='classes')
     pupils = db.relationship('Pupil', back_populates='school_class', lazy='dynamic')
