@@ -625,7 +625,14 @@ def users():
                     raise ValueError('Username and password are required.')
                 if User.query.filter_by(username=username).first():
                     raise ValueError('That username already exists.')
-                user = User(username=username, role='teacher', is_active=True, is_demo=current_user.is_demo, school_id=current_user.school_id)
+                user = User(
+                    username=username,
+                    role='teacher',
+                    legacy_is_admin=False,
+                    is_active=True,
+                    is_demo=current_user.is_demo,
+                    school_id=current_user.school_id,
+                )
                 user.set_password(password)
                 db.session.add(user)
                 db.session.flush()
@@ -677,13 +684,16 @@ def users():
             db.session.rollback()
             flash(f'User changes could not be saved: {exc}', 'danger')
 
-    teachers = sort_teacher_accounts(school_scoped_query(User, User.query.filter_by(is_demo=current_user.is_demo)).order_by(User.role.desc(), User.username).all())
+    users_query = User.query
+    if current_user.role != 'executive_admin':
+        users_query = users_query.filter(User.school_id == current_user.school_id)
+    teachers = sort_teacher_accounts(users_query.order_by(User.role.desc(), User.username).all())
     classes = demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all()
     return render_template(
         'admin/users.html',
         teachers=teachers,
         classes=classes,
-        active_admin_count=school_scoped_query(User, User.query.filter(User.role.in_(['school_admin', 'admin']), User.is_active.is_(True), User.is_demo == current_user.is_demo)).count(),
+        active_admin_count=users_query.filter(User.role.in_(['school_admin', 'admin']), User.is_active.is_(True)).count(),
         allow_dev_bootstrap=current_app.config.get('ALLOW_DEV_BOOTSTRAP', False),
     )
 

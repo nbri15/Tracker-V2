@@ -18,6 +18,7 @@ def ensure_demo_user(username: str, password: str, role: str) -> User:
     elif not user.is_demo:
         raise ValueError(f"User '{username}' exists as a non-demo account. Refusing to overwrite a real user.")
     user.role = role
+    user.legacy_is_admin = role in {'school_admin', 'admin', 'executive_admin'}
     user.is_active = True
     user.is_demo = True
     user.require_password_change = False
