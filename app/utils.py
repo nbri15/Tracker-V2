@@ -75,7 +75,14 @@ def require_same_school(obj) -> None:
     """Abort if object belongs to another school."""
 
     school_id = getattr(obj, 'school_id', None)
-    if not user_can_access_school(current_user, school_id):
+    if getattr(current_user, 'role', None) == 'executive_admin':
+        selected_school_id = current_school_id()
+        if selected_school_id is None:
+            abort(403)
+        if school_id is not None and school_id != selected_school_id:
+            abort(403)
+        return
+    if school_id is not None and school_id != getattr(current_user, 'school_id', None):
         abort(403)
 
 
@@ -89,10 +96,15 @@ def require_school_admin() -> None:
         abort(403)
 
 
-def school_scoped_query(model, query=None):
+def school_scoped_query(model_or_query, query_or_model=None):
     """Apply school scoping to a model query that has a school_id column."""
 
-    scoped = query if query is not None else model.query
+    if hasattr(model_or_query, 'filter') and query_or_model is not None and hasattr(query_or_model, '__table__'):
+        scoped = model_or_query
+        model = query_or_model
+    else:
+        model = model_or_query
+        scoped = query_or_model if query_or_model is not None else model.query
     if not getattr(current_user, 'is_authenticated', False):
         return scoped
     if hasattr(model, 'school_id'):

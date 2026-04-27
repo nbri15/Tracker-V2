@@ -27,6 +27,7 @@ from app.models import (
     TimesTableTestColumn,
     WritingResult,
 )
+from app.utils import school_scoped_query
 
 TERMS = [
     ('autumn', 'Autumn'),
@@ -1048,19 +1049,28 @@ def build_headline_report(
         ) | {'selected_tracker_key': bucket_key}
 
     # SATs (Year 6 scaled score headlines).
-    tabs = SatsExamTab.query.filter_by(year_group=6).order_by(SatsExamTab.display_order, SatsExamTab.id).all()
+    tabs = school_scoped_query(
+        SatsExamTab.query.filter_by(year_group=6).order_by(SatsExamTab.display_order, SatsExamTab.id),
+        SatsExamTab,
+    ).all()
     selected_tab = next((tab for tab in tabs if str(tab.id) == str(tracker_key)), None) if tracker_key else None
     if not selected_tab:
         selected_tab = next((tab for tab in tabs if tab.is_active), tabs[-1] if tabs else None)
     scaled_columns = []
     if selected_tab:
         scaled_columns = (
-            SatsColumnSetting.query.filter_by(year_group=6, exam_tab_id=selected_tab.id, score_type='scaled', is_active=True)
+            school_scoped_query(
+                SatsColumnSetting.query.filter_by(year_group=6, exam_tab_id=selected_tab.id, score_type='scaled', is_active=True),
+                SatsColumnSetting,
+            )
             .filter(SatsColumnSetting.column_key.in_(['maths_scaled', 'reading_scaled', 'spag_scaled']))
             .order_by(SatsColumnSetting.display_order, SatsColumnSetting.id)
             .all()
         )
-    pupils_query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6)
+    pupils_query = school_scoped_query(
+        Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6),
+        Pupil,
+    )
     pupils_query = apply_pupil_filters(pupils_query, subgroup=subgroup, filters=filters)
     pupils = pupils_query.all()
     pupil_ids = [pupil.id for pupil in pupils]
@@ -1070,7 +1080,7 @@ def build_headline_report(
     bucket_totals = {bucket: {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0} for bucket in bucket_keys}
     if pupil_ids and scaled_columns:
         results = (
-            SatsColumnResult.query.filter_by(academic_year=academic_year)
+            school_scoped_query(SatsColumnResult.query.filter_by(academic_year=academic_year), SatsColumnResult)
             .filter(SatsColumnResult.pupil_id.in_(pupil_ids), SatsColumnResult.column_id.in_([column.id for column in scaled_columns]))
             .all()
         )

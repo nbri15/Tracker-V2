@@ -5,8 +5,11 @@ from __future__ import annotations
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 
+from flask_login import current_user
+
 from app.extensions import db
 from app.models import Pupil, SatsColumnResult, SatsColumnSetting, SatsExamTab, SchoolClass, TrackerModeSetting
+from app.utils import current_school_id, school_scoped_query
 
 SATS_TRACKER_MODES = {
     'normal': 'Usual tracker',
@@ -72,10 +75,11 @@ def quantize_percent(value: float) -> float:
 def get_tracker_mode(year_group: int) -> str:
     if year_group != 6:
         return 'normal'
-    setting = TrackerModeSetting.query.filter_by(year_group=year_group).first()
+    query = school_scoped_query(TrackerModeSetting.query.filter_by(year_group=year_group), TrackerModeSetting)
+    setting = query.first()
     if setting:
         return setting.tracker_mode
-    setting = TrackerModeSetting(year_group=year_group, tracker_mode='sats')
+    setting = TrackerModeSetting(year_group=year_group, tracker_mode='sats', school_id=current_school_id())
     db.session.add(setting)
     db.session.flush()
     return setting.tracker_mode
@@ -84,9 +88,9 @@ def get_tracker_mode(year_group: int) -> str:
 def set_tracker_mode(year_group: int, tracker_mode: str) -> TrackerModeSetting:
     if tracker_mode not in SATS_TRACKER_MODES:
         raise SatsColumnValidationError('Choose a valid Year 6 tracker mode.')
-    setting = TrackerModeSetting.query.filter_by(year_group=year_group).first()
+    setting = school_scoped_query(TrackerModeSetting.query.filter_by(year_group=year_group), TrackerModeSetting).first()
     if not setting:
-        setting = TrackerModeSetting(year_group=year_group)
+        setting = TrackerModeSetting(year_group=year_group, school_id=current_school_id())
     setting.tracker_mode = tracker_mode
     db.session.add(setting)
     db.session.flush()
@@ -98,7 +102,10 @@ def get_tracker_mode_label(year_group: int) -> str:
 
 
 def _next_tab_order(year_group: int) -> int:
-    highest = db.session.query(db.func.max(SatsExamTab.display_order)).filter(SatsExamTab.year_group == year_group).scalar()
+    highest = school_scoped_query(
+        db.session.query(db.func.max(SatsExamTab.display_order)).filter(SatsExamTab.year_group == year_group),
+        SatsExamTab,
+    ).scalar()
     return (highest or 0) + 1
 
 
@@ -108,7 +115,9 @@ def _next_column_order(tab_id: int) -> int:
 
 
 def create_exam_tab_with_defaults(year_group: int, name: str, *, display_order: int | None = None, is_active: bool = True) -> SatsExamTab:
+    school_id = current_school_id()
     exam_tab = SatsExamTab(
+        school_id=school_id,
         year_group=year_group,
         name=name.strip(),
         display_order=display_order or _next_tab_order(year_group),
@@ -119,6 +128,7 @@ def create_exam_tab_with_defaults(year_group: int, name: str, *, display_order: 
     for order, row in enumerate(DEFAULT_EXAM_TAB_COLUMNS, start=1):
         db.session.add(
             SatsColumnSetting(
+                school_id=school_id,
                 year_group=year_group,
                 exam_tab_id=exam_tab.id,
                 name=row['name'],
@@ -144,14 +154,14 @@ def ensure_default_sats_columns(year_group: int = 6) -> list[SatsColumnSetting]:
 
 
 def get_sats_exam_tabs(year_group: int = 6, *, include_inactive: bool = False) -> list[SatsExamTab]:
-    query = SatsExamTab.query.filter_by(year_group=year_group)
+    query = school_scoped_query(SatsExamTab.query.filter_by(year_group=year_group), SatsExamTab)
     if not include_inactive:
         query = query.filter_by(is_active=True)
     return query.order_by(SatsExamTab.display_order, SatsExamTab.id).all()
 
 
 def get_sats_columns(year_group: int = 6, *, exam_tab_id: int | None = None, active_only: bool = False) -> list[SatsColumnSetting]:
-    query = SatsColumnSetting.query.filter_by(year_group=year_group)
+    query = school_scoped_query(SatsColumnSetting.query.filter_by(year_group=year_group), SatsColumnSetting)
     if exam_tab_id:
         query = query.filter_by(exam_tab_id=exam_tab_id)
     if active_only:
@@ -195,11 +205,11 @@ def validate_sats_column_payload(payload: dict) -> dict:
 
 def save_sats_column(year_group: int, payload: dict, *, exam_tab_id: int, column_id: int | None = None) -> SatsColumnSetting:
     cleaned = validate_sats_column_payload(payload)
-    column = SatsColumnSetting.query.get(column_id) if column_id else None
+    column = school_scoped_query(SatsColumnSetting.query, SatsColumnSetting).filter_by(id=column_id).first() if column_id else None
     if column_id and not column:
         raise SatsColumnValidationError('SATs column not found.')
     if not column:
-        column = SatsColumnSetting(year_group=year_group, exam_tab_id=exam_tab_id)
+        column = SatsColumnSetting(year_group=year_group, exam_tab_id=exam_tab_id, school_id=current_school_id())
     column.year_group = year_group
     column.exam_tab_id = exam_tab_id
     for field, value in cleaned.items():
@@ -214,7 +224,7 @@ def save_sats_column(year_group: int, payload: dict, *, exam_tab_id: int, column
 
 
 def save_sats_tab(payload: dict, tab_id: int | None = None) -> SatsExamTab:
-    tab = SatsExamTab.query.get(tab_id) if tab_id else None
+    tab = school_scoped_query(SatsExamTab.query, SatsExamTab).filter_by(id=tab_id).first() if tab_id else None
     if tab_id and not tab:
         raise SatsColumnValidationError('SATs exam tab not found.')
     name = payload.get('name', '').strip()
@@ -236,7 +246,7 @@ def save_sats_tab(payload: dict, tab_id: int | None = None) -> SatsExamTab:
 
 
 def toggle_sats_column(column_id: int) -> SatsColumnSetting:
-    column = SatsColumnSetting.query.get_or_404(column_id)
+    column = school_scoped_query(SatsColumnSetting.query, SatsColumnSetting).filter_by(id=column_id).first_or_404()
     column.is_active = not column.is_active
     db.session.add(column)
     db.session.flush()
@@ -244,7 +254,7 @@ def toggle_sats_column(column_id: int) -> SatsColumnSetting:
 
 
 def toggle_sats_tab(tab_id: int) -> SatsExamTab:
-    tab = SatsExamTab.query.get_or_404(tab_id)
+    tab = school_scoped_query(SatsExamTab.query, SatsExamTab).filter_by(id=tab_id).first_or_404()
     tab.is_active = not tab.is_active
     db.session.add(tab)
     db.session.flush()
@@ -343,7 +353,10 @@ def save_sats_tracker_results(pupils: list[Pupil], academic_year: str, columns: 
     for pupil in pupils:
         manual_values: dict[int, int | None] = {}
         for column in columns:
-            existing = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year).first()
+            existing = school_scoped_query(
+                SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year),
+                SatsColumnResult,
+            ).first()
 
             if column.score_type == 'raw':
                 # Auto-calculated fields are persisted after manual entries are parsed.
@@ -357,7 +370,12 @@ def save_sats_tracker_results(pupils: list[Pupil], academic_year: str, columns: 
                 continue
             if raw_score < 0 or raw_score > column.max_marks:
                 raise SatsColumnValidationError(f'{pupil.full_name}: {column.name} must be between 0 and {column.max_marks}.')
-            result = existing or SatsColumnResult(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year)
+            result = existing or SatsColumnResult(
+                pupil_id=pupil.id,
+                column_id=column.id,
+                academic_year=academic_year,
+                school_id=getattr(pupil, 'school_id', None),
+            )
             result.raw_score = raw_score
             db.session.add(result)
             manual_values[column.id] = raw_score
@@ -375,7 +393,10 @@ def save_sats_tracker_results(pupils: list[Pupil], academic_year: str, columns: 
                 source_value = manual_values.get(source_column.id)
                 if source_value is not None:
                     source_values.append(source_value)
-            existing_raw = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year).first()
+            existing_raw = school_scoped_query(
+                SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year),
+                SatsColumnResult,
+            ).first()
             if not source_values:
                 if existing_raw:
                     db.session.delete(existing_raw)
@@ -383,13 +404,20 @@ def save_sats_tracker_results(pupils: list[Pupil], academic_year: str, columns: 
             raw_total = sum(source_values)
             if raw_total > raw_column.max_marks:
                 raise SatsColumnValidationError(f'{pupil.full_name}: {raw_column.name} total exceeds max mark {raw_column.max_marks}.')
-            row = existing_raw or SatsColumnResult(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year)
+            row = existing_raw or SatsColumnResult(
+                pupil_id=pupil.id,
+                column_id=raw_column.id,
+                academic_year=academic_year,
+                school_id=getattr(pupil, 'school_id', None),
+            )
             row.raw_score = raw_total
             db.session.add(row)
 
 
 def build_year6_sats_overview(academic_year: str, class_id: int | None = None, exam_tab_id: int | None = None) -> dict:
-    query = SchoolClass.query.filter_by(year_group=6, is_active=True)
+    query = school_scoped_query(SchoolClass.query.filter_by(year_group=6, is_active=True), SchoolClass)
+    if getattr(current_user, 'role', None) == 'executive_admin' and current_school_id() is None:
+        return {'columns': [], 'rows': [], 'class_summaries': [], 'tabs': [], 'selected_tab': None}
     if class_id:
         query = query.filter(SchoolClass.id == class_id)
     classes = query.order_by(SchoolClass.name).all()
@@ -403,7 +431,7 @@ def build_year6_sats_overview(academic_year: str, class_id: int | None = None, e
     columns = get_sats_columns(6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=True)
 
     for school_class in classes:
-        pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+        pupils = school_class.pupils.filter_by(is_active=True, school_id=school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
         _, rows, subject_totals = build_sats_tracker_rows(pupils, academic_year, 6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=True)
         all_rows.extend(rows)
         class_summaries.append({'class': school_class, 'rows': rows, 'subject_totals': subject_totals})

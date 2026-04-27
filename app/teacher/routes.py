@@ -458,7 +458,7 @@ def interventions():
         .order_by(Intervention.is_active.desc(), Intervention.auto_flagged.desc(), Pupil.last_name, Pupil.first_name)
         .all()
     )
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = school_class.pupils.filter_by(is_active=True, school_id=school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
     return render_template(
         'teacher/interventions.html',
         school_class=school_class,
@@ -487,7 +487,7 @@ def sats_tracker():
         return redirect(url_for('dashboards.teacher_dashboard'))
 
     tracker_mode = get_tracker_mode(6)
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = school_class.pupils.filter_by(is_active=True, school_id=school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         action = request.form.get('action', 'save_results')
