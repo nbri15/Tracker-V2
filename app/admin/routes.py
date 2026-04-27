@@ -333,11 +333,12 @@ def class_detail(class_id: int):
 @admin_required
 def class_sats(class_id: int):
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
+    require_same_school(school_class)
     if school_class.year_group != 6 or not school_class.is_active:
         return _redirect_non_year6_sats_access()
     academic_year = request.args.get('academic_year', get_current_academic_year())
     selected_tab_id_raw = request.args.get('exam_tab_id', '').strip()
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = school_class.pupils.filter_by(is_active=True, school_id=school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
     columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, exam_tab_id=int(selected_tab_id_raw) if selected_tab_id_raw else None, active_only=True)
     selected_tab = overview.pop('_selected_tab', None)
     tabs = overview.pop('_tabs', get_sats_exam_tabs(6, include_inactive=True))

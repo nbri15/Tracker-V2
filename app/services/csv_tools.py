@@ -19,6 +19,7 @@ from app.models import (
     SubjectResult,
     WritingResult,
 )
+from app.utils import school_scoped_query
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
 from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
@@ -236,7 +237,7 @@ def _require_value(row: dict, column: str, *, label: str | None = None) -> str:
 
 
 def _find_class(class_name: str) -> SchoolClass:
-    school_class = SchoolClass.query.filter_by(name=class_name.strip()).first()
+    school_class = school_scoped_query(SchoolClass.query.filter_by(name=class_name.strip()), SchoolClass).first()
     if not school_class:
         raise CsvImportError(f'Class not found: {class_name}.')
     return school_class
@@ -244,7 +245,10 @@ def _find_class(class_name: str) -> SchoolClass:
 
 def _find_pupil(first_name: str, last_name: str, class_name: str) -> Pupil:
     school_class = _find_class(class_name)
-    pupil = Pupil.query.filter_by(first_name=first_name.strip(), last_name=last_name.strip(), class_id=school_class.id).first()
+    pupil = school_scoped_query(
+        Pupil.query.filter_by(first_name=first_name.strip(), last_name=last_name.strip(), class_id=school_class.id),
+        Pupil,
+    ).first()
     if not pupil:
         raise CsvImportError(f'Pupil not found: {first_name} {last_name} in {class_name}.')
     return pupil
@@ -458,7 +462,10 @@ def _find_exam_tab_by_name(tab_name: str) -> SatsExamTab:
     clean_name = tab_name.strip().lower()
     if not clean_name:
         raise CsvImportError('exam_tab is required.')
-    tab = SatsExamTab.query.filter(SatsExamTab.year_group == 6, db.func.lower(SatsExamTab.name) == clean_name).first()
+    tab = school_scoped_query(
+        SatsExamTab.query.filter(SatsExamTab.year_group == 6, db.func.lower(SatsExamTab.name) == clean_name),
+        SatsExamTab,
+    ).first()
     if not tab:
         raise CsvImportError(f'Year 6 exam tab not found: {tab_name}.')
     return tab
@@ -554,7 +561,12 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
                     raise CsvImportError(f'{column.name} must be between 0 and {column.max_marks}.')
                 existing = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year).first()
                 if existing is None:
-                    existing = SatsColumnResult(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year)
+                    existing = SatsColumnResult(
+                        pupil_id=pupil.id,
+                        column_id=column.id,
+                        academic_year=academic_year,
+                        school_id=pupil.school_id,
+                    )
                     summary.tracker_entries_created += 1
                     summary.created += 1
                 else:
@@ -588,7 +600,12 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
                     raise CsvImportError(f'{raw_column.name} total exceeds max mark {raw_column.max_marks}.')
                 existing_raw = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year).first()
                 if existing_raw is None:
-                    existing_raw = SatsColumnResult(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year)
+                    existing_raw = SatsColumnResult(
+                        pupil_id=pupil.id,
+                        column_id=raw_column.id,
+                        academic_year=academic_year,
+                        school_id=pupil.school_id,
+                    )
                     summary.tracker_entries_created += 1
                     summary.created += 1
                 elif raw_column.id not in provided_column_ids:
@@ -712,20 +729,21 @@ def export_sats_tracker_csv(academic_year: str, exam_tab: str) -> str:
     writer = csv.writer(output)
     writer.writerow(SATS_TEMPLATE_COLUMNS)
     pupils = (
-        Pupil.query.join(Pupil.school_class)
+        school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
         .filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True))
         .order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name)
         .all()
     )
-    results = (
-        SatsColumnResult.query.filter(
-            SatsColumnResult.academic_year == academic_year,
-            SatsColumnResult.pupil_id.in_([pupil.id for pupil in pupils] or [0]),
-            SatsColumnResult.column_id.in_([column.id for column in columns] or [0]),
+    results = []
+    if columns:
+        results = school_scoped_query(
+            SatsColumnResult.query.filter(
+                SatsColumnResult.academic_year == academic_year,
+                SatsColumnResult.pupil_id.in_([pupil.id for pupil in pupils] or [0]),
+                SatsColumnResult.column_id.in_([column.id for column in columns] or [0]),
+            ),
+            SatsColumnResult,
         ).all()
-        if columns
-        else []
-    )
     lookup = {(result.pupil_id, result.column_id): result.raw_score for result in results}
     for pupil in pupils:
         row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, tab.name]
@@ -747,7 +765,10 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
     header = ['pupil_name', 'class_name', 'exam_tab'] + [column.name for column in columns]
     writer = csv.writer(output)
     writer.writerow(header)
-    query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True))
+    query = school_scoped_query(
+        Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True)),
+        Pupil,
+    )
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     pupils = query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all()
