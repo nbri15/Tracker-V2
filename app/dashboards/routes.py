@@ -19,7 +19,14 @@ from app.services import (
     get_tracker_mode_label,
     sort_class_rows,
 )
-from app.utils import admin_required, get_primary_class_for_user, get_year_group_class_for_user, teacher_required
+from app.utils import (
+    admin_required,
+    demo_filter_classes,
+    demo_filter_pupils,
+    get_primary_class_for_user,
+    get_year_group_class_for_user,
+    teacher_required,
+)
 
 from . import dashboards_bp
 
@@ -49,7 +56,14 @@ def teacher_dashboard():
     summary_rows = build_dashboard_summary(school_class.id if school_class else None, academic_year)
     active_interventions = (
         Intervention.query.join(Intervention.pupil)
-        .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True))
+        .filter(
+            Intervention.is_active.is_(True),
+            Intervention.academic_year == academic_year,
+            Pupil.class_id == school_class.id,
+            Pupil.is_active.is_(True),
+            Pupil.is_demo.is_(school_class.is_demo),
+            Intervention.is_demo.is_(school_class.is_demo),
+        )
         .order_by(Pupil.last_name, Pupil.first_name)
         .all()
         if school_class
@@ -82,7 +96,7 @@ def admin_dashboard():
     sort = request.args.get('sort', 'year_group')
     pupil_filters = build_admin_pupil_filter_state(request.args)
 
-    query = SchoolClass.query.filter_by(is_active=True)
+    query = demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
     if filter_year_group:
         query = query.filter(SchoolClass.year_group == int(filter_year_group))
     if filter_teacher:
@@ -94,15 +108,15 @@ def admin_dashboard():
     class_rows = [build_class_overview_row(school_class, academic_year, subgroup, pupil_filters) for school_class in classes]
     class_rows = sort_class_rows(class_rows, sort)
     subject_cards = build_subject_overview_cards(class_rows)
-    teacher_options = User.query.filter_by(role='teacher', is_active=True).order_by(User.username).all()
-    class_options = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    teacher_options = User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo).order_by(User.username).all()
+    class_options = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
     year6_overview = build_year6_sats_overview(academic_year)
 
     context = {
         'academic_year': academic_year,
-        'total_pupils': Pupil.query.filter_by(is_active=True).count(),
-        'total_classes': SchoolClass.query.filter_by(is_active=True).count(),
-        'teacher_count': User.query.filter_by(role='teacher', is_active=True).count(),
+        'total_pupils': demo_filter_pupils(Pupil.query.filter_by(is_active=True)).count(),
+        'total_classes': demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).count(),
+        'teacher_count': User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo).count(),
         'filtered_pupil_total': sum(row['pupil_count'] for row in class_rows),
         'filtered_class_count': len(class_rows),
         'class_rows': class_rows,

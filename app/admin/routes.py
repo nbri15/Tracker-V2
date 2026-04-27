@@ -125,20 +125,20 @@ from app.services import (
     ensure_times_tables_columns,
     FoundationValidationError,
 )
-from app.utils import admin_required
+from app.utils import admin_required, demo_filter_classes, demo_filter_pupils, is_demo_user
 
 from . import admin_bp
 from .forms import AssessmentSettingForm
 
 
 def _active_class_query():
-    return SchoolClass.query.filter_by(is_active=True)
+    return demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
 
 
 def _is_active_year6_class(class_id: int | None) -> bool:
     if class_id is None:
         return False
-    return SchoolClass.query.filter_by(id=class_id, year_group=6, is_active=True).first() is not None
+    return demo_filter_classes(SchoolClass.query.filter_by(id=class_id, year_group=6, is_active=True)).first() is not None
 
 
 def _redirect_non_year6_sats_access():
@@ -147,7 +147,7 @@ def _redirect_non_year6_sats_access():
 
 
 def _teacher_options():
-    teachers = User.query.filter_by(role='teacher').all()
+    teachers = User.query.filter_by(role='teacher', is_demo=current_user.is_demo).all()
     return sort_teacher_accounts(teachers)
 
 
@@ -207,6 +207,9 @@ def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
 def classes():
     if request.method == 'POST':
         action = request.form.get('action', 'create_class')
+        if is_demo_user() and action == 'archive_class':
+            flash('This action is disabled in Demo Mode.', 'warning')
+            return redirect(url_for('admin.classes'))
         try:
             if action == 'create_class':
                 name = request.form.get('name', '').strip()
@@ -217,6 +220,7 @@ def classes():
                 school_class = SchoolClass(name=name, year_group=year_group)
                 school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
                 school_class.is_active = True
+                school_class.is_demo = current_user.is_demo
                 db.session.add(school_class)
                 flash(f'Created class {name}.', 'success')
             elif action == 'update_class':
@@ -253,7 +257,7 @@ def classes():
     subgroup = request.args.get('subgroup', 'all').strip() or 'all'
     sort = request.args.get('sort', 'year_group')
 
-    query = SchoolClass.query
+    query = demo_filter_classes(SchoolClass.query)
     if filter_year_group:
         query = query.filter(SchoolClass.year_group == int(filter_year_group))
     if filter_teacher:
@@ -276,7 +280,7 @@ def classes():
         subgroup_filters=SUBGROUP_FILTERS,
         sort_options=CLASS_SORT_OPTIONS,
         teacher_options=_teacher_options(),
-        class_options=SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all(),
     )
 
 
@@ -285,7 +289,7 @@ def classes():
 @admin_required
 def class_detail(class_id: int):
     academic_year = request.args.get('academic_year', get_current_academic_year())
-    school_class = SchoolClass.query.get_or_404(class_id)
+    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     pupil_filters = build_admin_pupil_filter_state(request.args)
     selected_subject = request.args.get('subject', 'maths').strip() or 'maths'
     selected_term = request.args.get('term', '').strip() or None
@@ -325,7 +329,7 @@ def class_detail(class_id: int):
 @login_required
 @admin_required
 def class_sats(class_id: int):
-    school_class = SchoolClass.query.get_or_404(class_id)
+    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     if school_class.year_group != 6 or not school_class.is_active:
         return _redirect_non_year6_sats_access()
     academic_year = request.args.get('academic_year', get_current_academic_year())
@@ -340,7 +344,7 @@ def class_sats(class_id: int):
         tracker_mode=get_tracker_mode(6),
         tracker_mode_label=get_tracker_mode_label(6),
         tracker_mode_options=SATS_TRACKER_MODES,
-        class_options=SchoolClass.query.filter_by(year_group=6, is_active=True).order_by(SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query.filter_by(year_group=6, is_active=True)).order_by(SchoolClass.name).all(),
         selected_class_id=school_class.id,
         columns=columns,
         all_columns=get_sats_columns(6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=False),
@@ -358,7 +362,7 @@ def class_sats(class_id: int):
 @login_required
 @admin_required
 def class_phonics(class_id: int):
-    school_class = SchoolClass.query.get_or_404(class_id)
+    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     academic_year = request.values.get('academic_year', get_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
@@ -425,7 +429,7 @@ def class_phonics(class_id: int):
 @login_required
 @admin_required
 def class_times_tables(class_id: int):
-    school_class = SchoolClass.query.get_or_404(class_id)
+    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     academic_year = request.values.get('academic_year', get_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
@@ -492,7 +496,7 @@ def class_times_tables(class_id: int):
 @login_required
 @admin_required
 def foundation_tracker():
-    class_options = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    class_options = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
     if not class_options:
         flash('No active classes are available yet.', 'warning')
         return redirect(url_for('admin.classes'))
@@ -606,6 +610,9 @@ def reception_tracker():
 def users():
     if request.method == 'POST':
         action = request.form.get('action', 'create')
+        if is_demo_user() and action == 'delete':
+            flash('This action is disabled in Demo Mode.', 'warning')
+            return redirect(url_for('admin.users'))
         try:
             if action == 'create':
                 username = request.form.get('username', '').strip()
@@ -615,12 +622,12 @@ def users():
                     raise ValueError('Username and password are required.')
                 if User.query.filter_by(username=username).first():
                     raise ValueError('That username already exists.')
-                user = User(username=username, role='teacher', is_active=True)
+                user = User(username=username, role='teacher', is_active=True, is_demo=current_user.is_demo)
                 user.set_password(password)
                 db.session.add(user)
                 db.session.flush()
                 if class_id_raw:
-                    school_class = SchoolClass.query.get_or_404(int(class_id_raw))
+                    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == int(class_id_raw)).first_or_404()
                     school_class.teacher_id = user.id
                     db.session.add(school_class)
                 flash(f'Created teacher user {username}.', 'success')
@@ -638,7 +645,7 @@ def users():
                         school_class.teacher_id = None
                         db.session.add(school_class)
                 if class_id_raw:
-                    school_class = SchoolClass.query.get_or_404(int(class_id_raw))
+                    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == int(class_id_raw)).first_or_404()
                     school_class.teacher_id = user.id
                     db.session.add(school_class)
                 db.session.add(user)
@@ -665,13 +672,13 @@ def users():
             db.session.rollback()
             flash(f'User changes could not be saved: {exc}', 'danger')
 
-    teachers = sort_teacher_accounts(User.query.order_by(User.role.desc(), User.username).all())
-    classes = SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all()
+    teachers = sort_teacher_accounts(User.query.filter_by(is_demo=current_user.is_demo).order_by(User.role.desc(), User.username).all())
+    classes = demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all()
     return render_template(
         'admin/users.html',
         teachers=teachers,
         classes=classes,
-        active_admin_count=User.query.filter_by(role='admin', is_active=True).count(),
+        active_admin_count=User.query.filter_by(role='admin', is_active=True, is_demo=current_user.is_demo).count(),
         allow_dev_bootstrap=current_app.config.get('ALLOW_DEV_BOOTSTRAP', False),
     )
 
@@ -713,7 +720,7 @@ def pupils():
     pupil_filters = build_admin_pupil_filter_state(request.args)
     class_id_raw = request.args.get('class_id', '').strip()
 
-    query = apply_admin_pupil_filters(Pupil.query, pupil_filters)
+    query = demo_filter_pupils(apply_admin_pupil_filters(Pupil.query, pupil_filters))
     if class_id_raw:
         query = query.filter(Pupil.class_id == int(class_id_raw))
     pupils = query.order_by(Pupil.last_name, Pupil.first_name).all()
@@ -723,7 +730,7 @@ def pupils():
         pupil_filters=pupil_filters,
         pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
         class_id_filter=class_id_raw,
-        class_options=SchoolClass.query.order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all(),
     )
 
 
@@ -731,8 +738,11 @@ def pupils():
 @login_required
 @admin_required
 def manage_pupil():
-    pupil = Pupil.query.get_or_404(int(request.form.get('pupil_id', '0')))
+    pupil = demo_filter_pupils(Pupil.query).filter(Pupil.id == int(request.form.get('pupil_id', '0'))).first_or_404()
     action = request.form.get('action', '').strip()
+    if is_demo_user() and action in {'archive', 'restore', 'delete'}:
+        flash('This action is disabled in Demo Mode.', 'warning')
+        return _pupil_action_redirect()
     linked_counts = _linked_pupil_record_counts(pupil.id)
     has_linked_data = any(linked_counts.values())
 
@@ -878,7 +888,7 @@ def interventions():
     subject = request.args.get('subject', '').strip()
     status = request.args.get('status', 'active').strip() or 'active'
 
-    query = Intervention.query.join(Intervention.pupil)
+    query = Intervention.query.join(Intervention.pupil).filter(Pupil.is_demo.is_(current_user.is_demo), Intervention.is_demo.is_(current_user.is_demo))
     query = query.filter(Intervention.academic_year == academic_year)
     query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
@@ -891,7 +901,7 @@ def interventions():
         class_id=class_id,
         subject=subject,
         status=status,
-        class_options=SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
         subjects=CORE_SUBJECTS,
     )
 
@@ -964,7 +974,7 @@ def sats():
         tracker_mode=get_tracker_mode(6),
         tracker_mode_label=get_tracker_mode_label(6),
         tracker_mode_options=SATS_TRACKER_MODES,
-        class_options=SchoolClass.query.filter_by(year_group=6, is_active=True).order_by(SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query.filter_by(year_group=6, is_active=True)).order_by(SchoolClass.name).all(),
         selected_class_id=selected_class_id_int,
         columns=overview['columns'],
         all_columns=get_sats_columns(6, exam_tab_id=overview['selected_tab'].id if overview.get('selected_tab') else None, active_only=False),
@@ -986,6 +996,9 @@ def promotion():
     next_year = build_next_academic_year(academic_year)
     mapping_rows = get_promotion_mapping_options()
     if request.method == 'POST':
+        if is_demo_user():
+            flash('This action is disabled in Demo Mode.', 'warning')
+            return redirect(url_for('admin.promotion', academic_year=academic_year))
         action = request.form.get('action', 'snapshot')
         try:
             if action == 'snapshot':
@@ -1062,11 +1075,15 @@ def imports():
             db.session.rollback()
             flash(f'Import failed: {exc}', 'danger')
 
-    overview = {'teachers': User.query.filter_by(role='teacher').count(), 'classes': SchoolClass.query.count(), 'pupils': Pupil.query.count()}
+    overview = {
+        'teachers': User.query.filter_by(role='teacher', is_demo=current_user.is_demo).count(),
+        'classes': demo_filter_classes(SchoolClass.query).count(),
+        'pupils': demo_filter_pupils(Pupil.query).count(),
+    }
     return render_template(
         'admin/imports.html',
         overview=overview,
-        class_options=SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
         current_year=get_current_academic_year(),
         reception_tracking_points=RECEPTION_TRACKING_POINTS,
         sats_tabs=get_sats_exam_tabs(6, include_inactive=False),

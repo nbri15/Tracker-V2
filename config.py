@@ -8,6 +8,13 @@ INSTANCE_DIR = BASE_DIR / 'instance'
 INSTANCE_DIR.mkdir(exist_ok=True)
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 def _normalize_database_uri(raw_uri: str | None) -> str:
     """Normalize DB URLs so SQLAlchemy works across local and Render environments."""
 
@@ -29,6 +36,7 @@ class Config:
     # Default hardening is safe for both environments; Production overrides as needed.
     SESSION_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_HTTPONLY = True
+    DEMO_MODE = _env_flag('DEMO_MODE', default=False)
 
 
 class DevelopmentConfig(Config):

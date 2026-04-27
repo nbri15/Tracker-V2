@@ -22,6 +22,7 @@ class Intervention(db.Model):
     note = db.Column(db.Text, nullable=True)
     auto_flagged = db.Column(db.Boolean, nullable=False, default=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     pupil = db.relationship('Pupil', back_populates='interventions')

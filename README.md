@@ -105,6 +105,32 @@ python run.py
 
 The development server starts on `http://0.0.0.0:8080/`.
 
+## Demo Mode (safe showcase mode)
+
+Enable demo mode with:
+
+```bash
+export DEMO_MODE=true
+```
+
+When enabled, the app:
+
+- shows a **Demo Mode** badge in the interface
+- shows fake demo credentials on the login page
+- supports `/demo-login` shortcuts for demo teacher/admin
+- blocks destructive actions (such as delete/archive/promotion actions)
+
+Seed fake demo data (safe to rerun and does not wipe existing data):
+
+```bash
+python seed_demo.py
+```
+
+Demo accounts:
+
+- `demo_admin` / `demo123`
+- `demo_teacher` / `demo123`
+
 ## Default local seed accounts (development only)
 
 `seed.py` refreshes local development accounts and class links. These credentials are for local/dev use only and should never be used in production.

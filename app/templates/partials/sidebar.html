@@ -3,6 +3,11 @@
     <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}"
          alt="Class Compass logo"
          class="sidebar-logo-full">
+    {% if is_demo_user() %}
+      <div class="mt-2">
+        <span class="badge text-bg-warning text-uppercase">Demo Mode</span>
+      </div>
+    {% endif %}
   </div>
 
   <nav class="nav flex-column gap-1">
@@ -12,7 +17,7 @@
     <a class="nav-link text-white {% if request.endpoint in ['pupils.directory', 'pupils.profile'] %}active{% endif %}" href="{{ url_for('pupils.directory') }}">Pupils</a>
 
     {% if current_user.is_teacher %}
-      {% set assigned_class = current_user.classes.filter_by(is_active=True).order_by('year_group', 'name').first() %}
+      {% set assigned_class = current_user.classes.filter_by(is_active=True, is_demo=current_user.is_demo).order_by('year_group', 'name').first() %}
       {% set is_reception_teacher = assigned_class and assigned_class.year_group == 0 %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Teacher area</div>
       {% if is_reception_teacher %}
@@ -30,7 +35,7 @@
           <a class="nav-link text-white {% if request.endpoint == 'teacher.times_tables' %}active{% endif %}" href="{{ url_for('teacher.times_tables') }}">Times tables</a>
         {% endif %}
         <a class="nav-link text-white {% if request.endpoint == 'teacher.interventions' %}active{% endif %}" href="{{ url_for('teacher.interventions') }}">Interventions</a>
-        {% if current_user.classes.filter_by(is_active=True, year_group=6).first() %}
+        {% if current_user.classes.filter_by(is_active=True, year_group=6, is_demo=current_user.is_demo).first() %}
           <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs / mode</a>
         {% endif %}
       {% endif %}

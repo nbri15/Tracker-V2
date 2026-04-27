@@ -71,13 +71,13 @@
                 <input type="hidden" name="pupil_id" value="{{ pupil.id }}">
                 <input type="hidden" name="action" value="{{ 'archive' if pupil.is_active else 'restore' }}">
                 <input type="hidden" name="next" value="{{ request.full_path }}">
-                <button class="btn btn-outline-secondary btn-sm" onclick="return confirm('{{ 'Archive' if pupil.is_active else 'Restore' }} {{ pupil.full_name }}? {{ 'Archive keeps all historical data and hides the pupil from active lists.' if pupil.is_active else 'Restore returns the pupil to active lists.' }}');">{{ 'Archive' if pupil.is_active else 'Restore' }}</button>
+                <button class="btn btn-outline-secondary btn-sm" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %} onclick="return confirm('{{ 'Archive' if pupil.is_active else 'Restore' }} {{ pupil.full_name }}? {{ 'Archive keeps all historical data and hides the pupil from active lists.' if pupil.is_active else 'Restore returns the pupil to active lists.' }}');">{{ 'Archive' if pupil.is_active else 'Restore' }}</button>
               </form>
               <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
                 <input type="hidden" name="pupil_id" value="{{ pupil.id }}">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="next" value="{{ request.full_path }}">
-                <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanently delete {{ pupil.full_name }}? This cannot be undone. Delete only succeeds when no linked records exist; otherwise archive instead.');">Delete</button>
+                <button class="btn btn-outline-danger btn-sm" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %} onclick="return confirm('Permanently delete {{ pupil.full_name }}? This cannot be undone. Delete only succeeds when no linked records exist; otherwise archive instead.');">Delete</button>
               </form>
             </td>
           </tr>

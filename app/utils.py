@@ -2,10 +2,10 @@
 
 from functools import wraps
 
-from flask import abort, flash, redirect, url_for
+from flask import abort, current_app, flash, redirect, url_for
 from flask_login import current_user
 
-from app.models import SchoolClass
+from app.models import Pupil, SchoolClass
 
 
 def role_required(*roles):
@@ -50,7 +50,7 @@ def get_primary_class_for_user(user):
     if not user.is_authenticated:
         return None
     return (
-        SchoolClass.query.filter_by(teacher_id=user.id, is_active=True)
+        demo_filter_classes(SchoolClass.query.filter_by(teacher_id=user.id, is_active=True))
         .order_by(SchoolClass.year_group, SchoolClass.name)
         .first()
     )
@@ -62,7 +62,36 @@ def get_year_group_class_for_user(user, year_group: int):
     if not user.is_authenticated:
         return None
     return (
-        SchoolClass.query.filter_by(teacher_id=user.id, is_active=True, year_group=year_group)
+        demo_filter_classes(SchoolClass.query.filter_by(teacher_id=user.id, is_active=True, year_group=year_group))
         .order_by(SchoolClass.name)
         .first()
     )
+
+
+def is_demo_user(user=None) -> bool:
+    """Return whether a user should be treated as a demo-scoped account."""
+
+    target_user = user if user is not None else current_user
+    return bool(getattr(target_user, 'is_authenticated', False) and getattr(target_user, 'is_demo', False))
+
+
+def demo_filter_classes(query):
+    """Apply class-level demo segregation for the current user."""
+
+    if not getattr(current_user, 'is_authenticated', False):
+        return query
+    return query.filter(SchoolClass.is_demo.is_(is_demo_user()))
+
+
+def demo_filter_pupils(query):
+    """Apply pupil-level demo segregation for the current user."""
+
+    if not getattr(current_user, 'is_authenticated', False):
+        return query
+    return query.filter(Pupil.is_demo.is_(is_demo_user()))
+
+
+def is_demo_mode_enabled() -> bool:
+    """Return whether the app is running in demo mode."""
+
+    return bool(current_app.config.get('DEMO_MODE', False))

@@ -265,13 +265,13 @@
                   <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
                   <input type="hidden" name="action" value="{{ 'archive' if row.pupil.is_active else 'restore' }}">
                   <input type="hidden" name="next" value="{{ request.full_path }}">
-                  <button class="btn btn-outline-secondary btn-sm" onclick="return confirm('{{ 'Archive' if row.pupil.is_active else 'Restore' }} {{ row.name }}? {{ 'This will hide them from active lists but keep historical data.' if row.pupil.is_active else 'This will return them to active lists.' }}');">{{ 'Archive' if row.pupil.is_active else 'Restore' }}</button>
+                  <button class="btn btn-outline-secondary btn-sm" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %} onclick="return confirm('{{ 'Archive' if row.pupil.is_active else 'Restore' }} {{ row.name }}? {{ 'This will hide them from active lists but keep historical data.' if row.pupil.is_active else 'This will return them to active lists.' }}');">{{ 'Archive' if row.pupil.is_active else 'Restore' }}</button>
                 </form>
                 <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
                   <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
                   <input type="hidden" name="action" value="delete">
                   <input type="hidden" name="next" value="{{ request.full_path }}">
-                  <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanent delete {{ row.name }}? This cannot be undone. Delete only works when no linked records exist; otherwise archive should be used.');">Delete</button>
+                  <button class="btn btn-outline-danger btn-sm" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %} onclick="return confirm('Permanent delete {{ row.name }}? This cannot be undone. Delete only works when no linked records exist; otherwise archive should be used.');">Delete</button>
                 </form>
               </td>
             </tr>
@@ -331,13 +331,13 @@
                   <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
                   <input type="hidden" name="action" value="{{ 'archive' if row.pupil.is_active else 'restore' }}">
                   <input type="hidden" name="next" value="{{ request.full_path }}">
-                  <button class="btn btn-outline-secondary btn-sm" onclick="return confirm('{{ 'Archive' if row.pupil.is_active else 'Restore' }} {{ row.name }}?');">{{ 'Archive' if row.pupil.is_active else 'Restore' }}</button>
+                  <button class="btn btn-outline-secondary btn-sm" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %} onclick="return confirm('{{ 'Archive' if row.pupil.is_active else 'Restore' }} {{ row.name }}?');">{{ 'Archive' if row.pupil.is_active else 'Restore' }}</button>
                 </form>
                 <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
                   <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">
                   <input type="hidden" name="action" value="delete">
                   <input type="hidden" name="next" value="{{ request.full_path }}">
-                  <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanent delete {{ row.name }}? This cannot be undone and is blocked if linked records exist.');">Delete</button>
+                  <button class="btn btn-outline-danger btn-sm" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %} onclick="return confirm('Permanent delete {{ row.name }}? This cannot be undone and is blocked if linked records exist.');">Delete</button>
                 </form>
               </td>
             </tr>
