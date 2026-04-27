@@ -188,27 +188,82 @@ a:hover {
 
 .auth-shell {
   min-height: 100vh;
+  background: var(--cc-bg);
 }
 
 .auth-login-page {
-  background: radial-gradient(circle at 8% 18%, #1d63e0 0%, #0b2f75 45%, #06183b 100%);
-  padding: 2rem 0;
+  min-height: 100vh;
+  background: var(--cc-bg);
 }
 
-.auth-login-grid {
-  display: grid;
-  gap: 1.25rem;
-  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 460px);
+.auth-topbar {
+  background: var(--cc-navy);
+  border-bottom: 4px solid rgba(245, 173, 34, 0.85);
+}
+
+.auth-topbar-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.auth-topbar-title {
+  color: #fff;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.auth-topbar-tagline {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.84rem;
+}
+
+.auth-login-wrap {
+  display: flex;
+  justify-content: center;
   align-items: center;
-  max-width: 980px;
-}
-
-.auth-login-intro {
-  padding: 2.3rem;
+  padding: 2.25rem 1rem 2.75rem;
 }
 
 .auth-login-card {
+  width: 100%;
+  max-width: 640px;
   border-radius: 1rem;
+  box-shadow: 0 20px 48px rgba(7, 31, 79, 0.14);
+}
+
+.auth-card-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+
+.auth-login-card .form-control {
+  min-height: 3rem;
+}
+
+.auth-login-card .btn-primary {
+  min-height: 3rem;
+}
+
+.auth-login-footer {
+  border-top: 1px solid #edf1f7;
+}
+
+@media (max-width: 768px) {
+  .auth-topbar .container {
+    justify-content: center !important;
+    text-align: center;
+  }
+
+  .auth-login-wrap {
+    padding-top: 1.5rem;
+  }
+
+  .auth-login-card {
+    max-width: 100%;
+  }
 }
 
 .spreadsheet-wrap {

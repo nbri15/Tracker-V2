@@ -3,37 +3,48 @@
 {% block title %}Sign in{% endblock %}
 
 {% block auth_content %}
-<div class="auth-login-page min-vh-100 d-flex align-items-center justify-content-center">
-  <div class="auth-login-grid container">
-    <div class="auth-login-intro">
-      <div class="brand-mark mb-3" aria-hidden="true">CC</div>
-      <h1 class="display-6 fw-semibold text-white mb-3">Class Compass</h1>
-      <p class="lead text-white-50 mb-2">Guiding pupil progress with clarity.</p>
-      <p class="text-white-50 mb-0">A focused tracker experience for teachers and school leaders.</p>
-    </div>
-    <div class="card shadow-sm border-0 auth-login-card">
-      <div class="card-body p-4 p-md-5">
-        <div class="mb-4">
-          <h2 class="h4 mb-2">Welcome back</h2>
-          <p class="text-muted mb-0">Sign in to access dashboards and assessment areas.</p>
+<div class="auth-login-page">
+  <header class="auth-topbar" role="banner">
+    <div class="container d-flex align-items-center justify-content-between py-3">
+      <div class="d-flex align-items-center gap-3">
+        <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}" alt="Class Compass" class="auth-topbar-logo">
+        <div>
+          <div class="auth-topbar-title">Class Compass</div>
+          <div class="auth-topbar-tagline">Guiding pupil progress with clarity.</div>
         </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container auth-login-wrap">
+    <div class="card border-0 auth-login-card">
+      <div class="card-body p-4 p-md-5">
+        <div class="text-center mb-4">
+          <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}" alt="Class Compass logo" class="auth-card-logo mb-3">
+          <h1 class="h2 mb-2">Welcome back</h1>
+          <p class="text-muted mb-0">Sign in to access your school dashboards and assessment tools.</p>
+        </div>
+
         <form method="post" novalidate>
           {{ form.hidden_tag() }}
           <div class="mb-3">
             {{ form.username.label(class='form-label') }}
-            {{ form.username(class='form-control form-control-lg', placeholder='Enter username') }}
+            {{ form.username(class='form-control form-control-lg', placeholder='Enter username', autocomplete='username') }}
           </div>
           <div class="mb-3">
             {{ form.password.label(class='form-label') }}
-            {{ form.password(class='form-control form-control-lg', placeholder='Enter password') }}
+            {{ form.password(class='form-control form-control-lg', placeholder='Enter password', autocomplete='current-password') }}
           </div>
-          <div class="d-grid gap-2">
-            {{ form.submit(class='btn btn-primary btn-lg') }}
+          <div class="d-grid">
+            {{ form.submit(class='btn btn-primary btn-lg', value='Sign in') }}
           </div>
         </form>
-        <div class="mt-4 small text-muted">
-          Please sign in with your school username and password.
-        </div>
+
+        <p class="small text-muted text-center mt-4 mb-0">Forgotten your password? Contact your school administrator.</p>
+      </div>
+
+      <div class="auth-login-footer px-4 px-md-5 pb-4 pb-md-5 text-center">
+        <small class="text-muted">Privacy Policy · Terms of Use</small>
       </div>
     </div>
   </div>
