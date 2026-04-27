@@ -11,6 +11,7 @@ class Pupil(db.Model):
     __tablename__ = 'pupils'
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     first_name = db.Column(db.String(80), nullable=False, index=True)
     last_name = db.Column(db.String(80), nullable=False, index=True)
     gender = db.Column(db.String(20), nullable=False)

@@ -11,6 +11,7 @@ class AcademicYear(db.Model):
     __tablename__ = 'academic_years'
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     name = db.Column(db.String(20), nullable=False, unique=True)
     is_current = db.Column(db.Boolean, nullable=False, default=False)
     is_archived = db.Column(db.Boolean, nullable=False, default=False)
@@ -30,6 +31,7 @@ class PupilClassHistory(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False, index=True)
     class_name = db.Column(db.String(120), nullable=False)

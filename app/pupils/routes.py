@@ -28,7 +28,7 @@ from app.models import (
     WritingResult,
 )
 from app.services import format_progress_delta, progress_theme
-from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, teacher_or_admin_required
+from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, require_same_school, teacher_or_admin_required
 
 from . import pupils_bp
 
@@ -79,6 +79,7 @@ def directory():
 @teacher_or_admin_required
 def profile(pupil_id: int):
     pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
     if not _can_view_pupil(pupil):
         abort(403)
 
@@ -155,7 +156,7 @@ def profile(pupil_id: int):
         'pupils/profile.html',
         pupil=pupil,
         can_archive=_can_archive_pupil(pupil),
-        can_restore=current_user.is_admin and not pupil.is_active,
+        can_restore=current_user.can_manage_school and not pupil.is_active,
         latest_summary=latest_summary,
         subject_history_cards=subject_history_cards,
         subject_rows=subject_rows,
@@ -186,6 +187,7 @@ def archive(pupil_id: int):
         flash('This action is disabled in Demo Mode.', 'warning')
         return redirect(url_for('pupils.profile', pupil_id=pupil_id))
     pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
     if not _can_archive_pupil(pupil):
         abort(403)
     if not pupil.is_active:
@@ -207,7 +209,8 @@ def restore(pupil_id: int):
         flash('This action is disabled in Demo Mode.', 'warning')
         return redirect(url_for('pupils.profile', pupil_id=pupil_id))
     pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
-    if not current_user.is_admin:
+    require_same_school(pupil)
+    if not current_user.can_manage_school:
         abort(403)
     if pupil.is_active:
         flash(f'{pupil.full_name} is already active.', 'info')
@@ -281,14 +284,14 @@ def _apply_status_filter(query, status: str):
 
 
 def _can_view_pupil(pupil: Pupil) -> bool:
-    if current_user.is_admin:
+    if current_user.can_manage_school:
         return True
     teacher_class_ids = {school_class.id for school_class in demo_filter_classes(current_user.classes.filter_by(is_active=True)).all()}
     return pupil.is_active and pupil.class_id in teacher_class_ids
 
 
 def _can_archive_pupil(pupil: Pupil) -> bool:
-    if current_user.is_admin:
+    if current_user.can_manage_school:
         return True
     teacher_class_ids = {school_class.id for school_class in demo_filter_classes(current_user.classes.filter_by(is_active=True)).all()}
     return pupil.class_id in teacher_class_ids

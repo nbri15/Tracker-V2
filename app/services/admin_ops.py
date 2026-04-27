@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.extensions import db
-from app.models import AcademicYear, Pupil, PupilClassHistory, SchoolClass, User
+from app.models import AcademicYear, Pupil, PupilClassHistory, School, SchoolClass, User
 from .assessments import get_current_academic_year
 
 
@@ -18,7 +18,7 @@ class DefaultLogin:
 
 
 # NOTE: Default accounts below are for local development and test seeding only.
-DEFAULT_ADMIN = DefaultLogin(username='admin', password='admin123', role='admin')
+DEFAULT_ADMIN = DefaultLogin(username='admin', password='admin123', role='school_admin')
 DEFAULT_TEACHERS = [DefaultLogin(username=f'teacher{year}', password=f'teacher{year}', role='teacher', year_group=year) for year in range(1, 7)]
 
 
@@ -26,7 +26,7 @@ def sort_teacher_accounts(users: list[User]) -> list[User]:
     def sort_key(user: User):
         suffix = ''.join(char for char in user.username if char.isdigit())
         suffix_value = int(suffix) if suffix else 999
-        return (user.role != 'admin', suffix_value, user.username.lower())
+        return (user.role not in {'school_admin', 'admin', 'executive_admin'}, suffix_value, user.username.lower())
 
     return sorted(users, key=sort_key)
 
@@ -53,9 +53,15 @@ def build_next_academic_year(academic_year: str) -> str:
 
 def ensure_default_logins_and_classes() -> dict:
     ensure_academic_year(mark_current=True)
+    default_school = School.query.filter_by(slug='barrow-school').first()
+    if not default_school:
+        default_school = School(name='Barrow School', slug='barrow-school', is_active=True, is_demo=False)
+        db.session.add(default_school)
+        db.session.flush()
     admin = User.query.filter_by(username=DEFAULT_ADMIN.username).first() or User(username=DEFAULT_ADMIN.username)
     admin.role = DEFAULT_ADMIN.role
     admin.is_active = True
+    admin.school_id = default_school.id
     admin.set_password(DEFAULT_ADMIN.password)
     db.session.add(admin)
 
@@ -65,6 +71,7 @@ def ensure_default_logins_and_classes() -> dict:
         teacher.username = login.username
         teacher.role = login.role
         teacher.is_active = True
+        teacher.school_id = default_school.id
         teacher.set_password(login.password)
         db.session.add(teacher)
         db.session.flush()
@@ -78,6 +85,7 @@ def ensure_default_logins_and_classes() -> dict:
         school_class.year_group = year_group
         school_class.teacher_id = teacher.id
         school_class.is_active = True
+        school_class.school_id = default_school.id
         db.session.add(school_class)
         db.session.flush()
         class_lookup[year_group] = school_class
@@ -86,6 +94,7 @@ def ensure_default_logins_and_classes() -> dict:
     reception_class.name = 'Reception'
     reception_class.year_group = 0
     reception_class.is_active = True
+    reception_class.school_id = default_school.id
     db.session.add(reception_class)
     db.session.flush()
 

@@ -10,6 +10,7 @@ from flask_login import current_user, login_required
 
 from app.extensions import db
 from app.models import (
+    School,
     AssessmentSetting,
     FoundationResult,
     GapScore,
@@ -125,7 +126,7 @@ from app.services import (
     ensure_times_tables_columns,
     FoundationValidationError,
 )
-from app.utils import admin_required, demo_filter_classes, demo_filter_pupils, is_demo_user
+from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, require_same_school, school_scoped_query
 
 from . import admin_bp
 from .forms import AssessmentSettingForm
@@ -147,7 +148,7 @@ def _redirect_non_year6_sats_access():
 
 
 def _teacher_options():
-    teachers = User.query.filter_by(role='teacher', is_demo=current_user.is_demo).all()
+    teachers = school_scoped_query(User, User.query).filter_by(role='teacher', is_demo=current_user.is_demo).all()
     return sort_teacher_accounts(teachers)
 
 
@@ -217,7 +218,7 @@ def classes():
                 teacher_id_raw = request.form.get('teacher_id', '').strip()
                 if not name:
                     raise ValueError('Class name is required.')
-                school_class = SchoolClass(name=name, year_group=year_group)
+                school_class = SchoolClass(name=name, year_group=year_group, school_id=current_user.school_id)
                 school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
                 school_class.is_active = True
                 school_class.is_demo = current_user.is_demo
@@ -225,6 +226,7 @@ def classes():
                 flash(f'Created class {name}.', 'success')
             elif action == 'update_class':
                 school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
+                require_same_school(school_class)
                 new_name = request.form.get(f'name_{school_class.id}', '').strip()
                 new_year_group = int(request.form.get(f'year_group_{school_class.id}', school_class.year_group))
                 teacher_id_raw = request.form.get(f'teacher_id_{school_class.id}', '').strip()
@@ -241,6 +243,7 @@ def classes():
                 flash(f'Updated class {school_class.name}.', 'success')
             elif action == 'archive_class':
                 school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
+                require_same_school(school_class)
                 school_class.is_active = False
                 db.session.add(school_class)
                 flash(f'Archived class {school_class.name}.', 'success')
@@ -622,7 +625,7 @@ def users():
                     raise ValueError('Username and password are required.')
                 if User.query.filter_by(username=username).first():
                     raise ValueError('That username already exists.')
-                user = User(username=username, role='teacher', is_active=True, is_demo=current_user.is_demo)
+                user = User(username=username, role='teacher', is_active=True, is_demo=current_user.is_demo, school_id=current_user.school_id)
                 user.set_password(password)
                 db.session.add(user)
                 db.session.flush()
@@ -633,6 +636,7 @@ def users():
                 flash(f'Created teacher user {username}.', 'success')
             elif action == 'update':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
+                require_same_school(user)
                 username = request.form.get(f'username_{user.id}', '').strip()
                 class_id_raw = request.form.get(f'class_id_{user.id}', '').strip()
                 if username and username != user.username:
@@ -652,9 +656,10 @@ def users():
                 flash(f'Updated {user.username}.', 'success')
             elif action == 'delete':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
+                require_same_school(user)
                 if user.id == current_user.id:
                     raise ValueError('You cannot delete your own account while logged in.')
-                if user.is_admin and User.query.filter_by(role='admin', is_active=True).count() <= 1:
+                if user.can_manage_school and school_scoped_query(User, User.query.filter(User.role.in_(['school_admin','admin']), User.is_active.is_(True))).count() <= 1:
                     raise ValueError('You cannot delete the last remaining active admin user.')
                 for school_class in user.classes.all():
                     school_class.teacher_id = None
@@ -672,13 +677,13 @@ def users():
             db.session.rollback()
             flash(f'User changes could not be saved: {exc}', 'danger')
 
-    teachers = sort_teacher_accounts(User.query.filter_by(is_demo=current_user.is_demo).order_by(User.role.desc(), User.username).all())
+    teachers = sort_teacher_accounts(school_scoped_query(User, User.query.filter_by(is_demo=current_user.is_demo)).order_by(User.role.desc(), User.username).all())
     classes = demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all()
     return render_template(
         'admin/users.html',
         teachers=teachers,
         classes=classes,
-        active_admin_count=User.query.filter_by(role='admin', is_active=True, is_demo=current_user.is_demo).count(),
+        active_admin_count=school_scoped_query(User, User.query.filter(User.role.in_(['school_admin', 'admin']), User.is_active.is_(True), User.is_demo == current_user.is_demo)).count(),
         allow_dev_bootstrap=current_app.config.get('ALLOW_DEV_BOOTSTRAP', False),
     )
 
@@ -688,7 +693,8 @@ def users():
 @admin_required
 def reset_user_password(user_id: int):
     user = User.query.get_or_404(user_id)
-    if user.is_admin:
+    require_same_school(user)
+    if user.is_executive_admin:
         flash('Admin passwords cannot be reset from this page.', 'warning')
         return redirect(url_for('admin.users'))
 

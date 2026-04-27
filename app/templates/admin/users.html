@@ -59,7 +59,7 @@
                       <button
                         class="btn btn-outline-danger btn-sm"
                         {% if disable_delete %}disabled{% endif %}
-                        title="{% if demo_mode %}This action is disabled in Demo Mode.{% elif user.id == current_user.id %}You cannot delete your own account.{% elif user.is_admin and active_admin_count <= 1 %}You cannot delete the last active admin.{% else %}Delete user{% endif %}"
+                        title="{% if demo_mode %}This action is disabled in Demo Mode.{% elif user.id == current_user.id %}You cannot delete your own account.{% elif user.is_admin and active_admin_count <= 1 %}You cannot delete the last active school admin.{% else %}Delete user{% endif %}"
                       >
                         Delete
                       </button>

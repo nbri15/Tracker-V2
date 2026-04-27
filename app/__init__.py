@@ -53,12 +53,14 @@ def register_blueprints(app: Flask) -> None:
     from .dashboards import dashboards_bp
     from .teacher import teacher_bp
     from .pupils import pupils_bp
+    from .executive import executive_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
     app.register_blueprint(teacher_bp)
     app.register_blueprint(pupils_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(executive_bp)
 
 
 @login_manager.user_loader
@@ -139,14 +141,14 @@ def register_cli_commands(app: Flask) -> None:
 
         from .models import User
 
-        existing_admin = User.query.filter_by(role='admin').first()
+        existing_admin = User.query.filter(User.role.in_(['admin', 'executive_admin'])).first()
         if existing_admin:
             click.echo(f"Admin user already exists ({existing_admin.username}). No changes made.")
             return
         if len(password) < 8:
             raise click.ClickException('Admin password must be at least 8 characters long.')
 
-        user = User(username=username.strip(), role='admin', is_active=True, require_password_change=force_password_change)
+        user = User(username=username.strip(), role='executive_admin', is_active=True, require_password_change=force_password_change)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -168,11 +170,11 @@ def bootstrap_admin_from_env(app: Flask) -> None:
         if not inspector.has_table(User.__tablename__):
             return
 
-        existing_admin = User.query.filter_by(role='admin').first()
+        existing_admin = User.query.filter(User.role.in_(['admin', 'executive_admin'])).first()
         if existing_admin:
             return
 
-        user = User(username=username, role='admin', is_active=True)
+        user = User(username=username, role='executive_admin', is_active=True)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -193,23 +195,34 @@ def bootstrap_runtime_schema(app: Flask) -> None:
         inspector = inspect(db.engine)
 
         table_columns = {
+            'schools': {
+                'name': 'VARCHAR(140)',
+                'slug': 'VARCHAR(140)',
+                'is_active': 'BOOLEAN DEFAULT TRUE',
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+            },
             'pupils': {
                 'strengths_notes': 'TEXT',
                 'next_steps_notes': 'TEXT',
                 'general_notes': 'TEXT',
                 'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
             },
             'subject_results': {
                 'assessment_year_group': 'INTEGER',
+                'school_id': 'INTEGER',
             },
             'users': {
                 'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
             },
             'school_classes': {
                 'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
             },
             'interventions': {
                 'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
             },
         }
 

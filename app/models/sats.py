@@ -14,6 +14,7 @@ class TrackerModeSetting(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
     tracker_mode = db.Column(db.String(20), nullable=False, default='normal')
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -31,6 +32,7 @@ class SatsExamTab(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
     display_order = db.Column(db.Integer, nullable=False, default=1)
@@ -53,6 +55,7 @@ class SatsColumnSetting(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
     exam_tab_id = db.Column(db.Integer, db.ForeignKey('sats_exam_tabs.id'), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
@@ -83,6 +86,7 @@ class SatsColumnResult(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     column_id = db.Column(db.Integer, db.ForeignKey('sats_column_settings.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False, index=True)
@@ -106,6 +110,7 @@ class SatsResult(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     subject = db.Column(db.String(20), nullable=False)
     assessment_point = db.Column(db.Integer, nullable=False)
@@ -131,6 +136,7 @@ class SatsWritingResult(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     assessment_point = db.Column(db.Integer, nullable=False)
     academic_year = db.Column(db.String(20), nullable=False)

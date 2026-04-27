@@ -24,6 +24,7 @@ from app.utils import (
     demo_filter_classes,
     demo_filter_pupils,
     get_primary_class_for_user,
+    school_scoped_query,
     get_year_group_class_for_user,
     teacher_required,
 )
@@ -41,7 +42,9 @@ def home():
 @dashboards_bp.route('/dashboard')
 @login_required
 def index():
-    if current_user.is_admin:
+    if current_user.is_executive_admin:
+        return redirect(url_for('executive.schools'))
+    if current_user.can_manage_school:
         return redirect(url_for('dashboards.admin_dashboard'))
     return redirect(url_for('dashboards.teacher_dashboard'))
 
@@ -108,7 +111,7 @@ def admin_dashboard():
     class_rows = [build_class_overview_row(school_class, academic_year, subgroup, pupil_filters) for school_class in classes]
     class_rows = sort_class_rows(class_rows, sort)
     subject_cards = build_subject_overview_cards(class_rows)
-    teacher_options = User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo).order_by(User.username).all()
+    teacher_options = school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).order_by(User.username).all()
     class_options = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
     year6_overview = build_year6_sats_overview(academic_year)
 
@@ -116,7 +119,7 @@ def admin_dashboard():
         'academic_year': academic_year,
         'total_pupils': demo_filter_pupils(Pupil.query.filter_by(is_active=True)).count(),
         'total_classes': demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).count(),
-        'teacher_count': User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo).count(),
+        'teacher_count': school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).count(),
         'filtered_pupil_total': sum(row['pupil_count'] for row in class_rows),
         'filtered_class_count': len(class_rows),
         'class_rows': class_rows,

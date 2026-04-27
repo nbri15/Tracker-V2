@@ -17,7 +17,7 @@ from .intervention import Intervention
 from .pupil import Pupil
 from .reception import ReceptionTrackerEntry
 from .sats import SatsColumnResult, SatsColumnSetting, SatsExamTab, SatsResult, SatsWritingResult, TrackerModeSetting
-from .school import SchoolClass
+from .school import School, SchoolClass
 from .user import User
 from .writing import WritingResult
 
@@ -39,6 +39,7 @@ __all__ = [
     'SatsExamTab',
     'SatsResult',
     'SatsWritingResult',
+    'School',
     'SchoolClass',
     'SubjectResult',
     'TimesTableScore',
