@@ -828,9 +828,9 @@ def settings():
                 flash(f"Saved {format_subject_name(setting.subject)} {setting.term.title()} settings for Year {setting.year_group}.", 'success')
             else:
                 setting_id = int(request.form.get('setting_id', '0'))
-                setting = AssessmentSetting.query.get_or_404(setting_id)
+                setting = school_scoped_query(AssessmentSetting, AssessmentSetting.query).filter(AssessmentSetting.id == setting_id).first_or_404()
                 payload = validate_setting_payload(_parse_setting_form(prefix=str(setting.id)))
-                existing = AssessmentSetting.query.filter_by(year_group=payload['year_group'], subject=payload['subject'], term=payload['term']).first()
+                existing = school_scoped_query(AssessmentSetting, AssessmentSetting.query).filter_by(year_group=payload['year_group'], subject=payload['subject'], term=payload['term']).first()
                 if existing and existing.id != setting.id:
                     raise AssessmentValidationError('A setting already exists for that year group, subject, and term.')
                 update_assessment_setting(setting, payload)
@@ -841,7 +841,7 @@ def settings():
             db.session.rollback()
             flash(f'Settings could not be saved: {exc}', 'danger')
 
-    settings_query = AssessmentSetting.query
+    settings_query = school_scoped_query(AssessmentSetting, AssessmentSetting.query)
     if filter_year_group:
         settings_query = settings_query.filter(AssessmentSetting.year_group == int(filter_year_group))
     if filter_subject:
@@ -855,7 +855,7 @@ def settings():
         form.year_group.data = int(filter_year_group)
         form.subject.data = filter_subject
         form.term.data = filter_term
-        setting = AssessmentSetting.query.filter_by(year_group=int(filter_year_group), subject=filter_subject, term=filter_term).first()
+        setting = school_scoped_query(AssessmentSetting, AssessmentSetting.query).filter_by(year_group=int(filter_year_group), subject=filter_subject, term=filter_term).first()
         if setting:
             form.paper_1_name.data = setting.paper_1_name
             form.paper_1_max.data = setting.paper_1_max
@@ -901,8 +901,8 @@ def interventions():
     subject = request.args.get('subject', '').strip()
     status = request.args.get('status', 'active').strip() or 'active'
 
-    query = Intervention.query.join(Intervention.pupil).filter(Pupil.is_demo.is_(current_user.is_demo), Intervention.is_demo.is_(current_user.is_demo))
-    query = query.filter(Intervention.academic_year == academic_year)
+    query = school_scoped_query(Intervention, Intervention.query).join(Intervention.pupil)
+    query = query.filter(Intervention.academic_year == academic_year, Pupil.is_demo.is_(current_user.is_demo), Intervention.is_demo.is_(current_user.is_demo))
     query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
 

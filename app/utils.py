@@ -27,9 +27,9 @@ def role_required(*roles):
 
 
 def admin_required(view_func):
-    """Require the current user to be a school admin or executive admin."""
+    """Require the current user to be a school admin."""
 
-    return role_required('school_admin', 'executive_admin', 'admin')(view_func)
+    return role_required('school_admin', 'admin')(view_func)
 
 
 def executive_admin_required(view_func):
@@ -47,7 +47,7 @@ def teacher_required(view_func):
 def teacher_or_admin_required(view_func):
     """Allow teachers and admin roles to access a route."""
 
-    return role_required('teacher', 'school_admin', 'executive_admin', 'admin')(view_func)
+    return role_required('teacher', 'school_admin', 'admin')(view_func)
 
 
 def current_school_id() -> int | None:
