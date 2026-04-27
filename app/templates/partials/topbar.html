@@ -4,6 +4,17 @@
     <h2 class="h4 mb-0">{{ page_heading|default('Dashboard') }}</h2>
   </div>
   <div class="d-flex align-items-center gap-3">
+    {% if current_user.is_executive_admin and accessible_schools %}
+      <form method="get" class="d-flex align-items-center gap-2">
+        <label for="school_id" class="small text-muted mb-0">School</label>
+        <select id="school_id" name="school_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All schools</option>
+          {% for school in accessible_schools %}
+            <option value="{{ school.id }}" {% if selected_school_id == school.id %}selected{% endif %}>{{ school.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    {% endif %}
     {% if is_demo_user() %}
       <span class="badge text-bg-warning text-uppercase">Demo Mode</span>
     {% endif %}

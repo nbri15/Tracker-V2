@@ -79,6 +79,16 @@ def require_same_school(obj) -> None:
         abort(403)
 
 
+def require_exec_admin() -> None:
+    if not getattr(current_user, 'is_executive_admin', False):
+        abort(403)
+
+
+def require_school_admin() -> None:
+    if not (getattr(current_user, 'is_executive_admin', False) or getattr(current_user, 'is_school_admin', False)):
+        abort(403)
+
+
 def school_scoped_query(model, query=None):
     """Apply school scoping to a model query that has a school_id column."""
 
@@ -92,6 +102,12 @@ def school_scoped_query(model, query=None):
         if not getattr(current_user, 'is_executive_admin', False):
             return scoped.filter(model.school_id == getattr(current_user, 'school_id', None))
     return scoped
+
+
+def restrict_to_current_school(query, model):
+    """Alias helper used across routes/services for school-aware query scoping."""
+
+    return school_scoped_query(model, query)
 
 
 def get_primary_class_for_user(user):
@@ -116,15 +132,35 @@ def get_year_group_class_for_user(user, year_group: int):
 
 def is_demo_user(user=None) -> bool:
     target_user = user if user is not None else current_user
-    return bool(getattr(target_user, 'is_authenticated', False) and getattr(target_user, 'is_demo', False))
+    if not getattr(target_user, 'is_authenticated', False):
+        return False
+    if getattr(target_user, 'is_executive_admin', False):
+        selected_school_id = current_school_id()
+        if selected_school_id is None:
+            return False
+        from app.models import School
+
+        selected_school = School.query.get(selected_school_id)
+        return bool(selected_school and selected_school.is_demo)
+    return bool(getattr(target_user, 'is_demo', False))
 
 
 def demo_filter_classes(query):
-    return school_scoped_query(SchoolClass, query).filter(SchoolClass.is_demo.is_(is_demo_user())) if getattr(current_user, 'is_authenticated', False) else query
+    if not getattr(current_user, 'is_authenticated', False):
+        return query
+    scoped = school_scoped_query(SchoolClass, query)
+    if getattr(current_user, 'is_executive_admin', False) and current_school_id() is None:
+        return scoped
+    return scoped.filter(SchoolClass.is_demo.is_(is_demo_user()))
 
 
 def demo_filter_pupils(query):
-    return school_scoped_query(Pupil, query).filter(Pupil.is_demo.is_(is_demo_user())) if getattr(current_user, 'is_authenticated', False) else query
+    if not getattr(current_user, 'is_authenticated', False):
+        return query
+    scoped = school_scoped_query(Pupil, query)
+    if getattr(current_user, 'is_executive_admin', False) and current_school_id() is None:
+        return scoped
+    return scoped.filter(Pupil.is_demo.is_(is_demo_user()))
 
 
 def is_demo_mode_enabled() -> bool:
