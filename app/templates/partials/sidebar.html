@@ -11,10 +11,10 @@
   </div>
 
   <nav class="nav flex-column gap-1">
-
-  <nav class="nav flex-column gap-1">
     <a class="nav-link text-white {% if request.endpoint in ['dashboards.teacher_dashboard', 'dashboards.admin_dashboard'] %}active{% endif %}" href="{{ url_for('dashboards.index') }}">Dashboard</a>
-    <a class="nav-link text-white {% if request.endpoint in ['pupils.directory', 'pupils.profile'] %}active{% endif %}" href="{{ url_for('pupils.directory') }}">Pupils</a>
+    {% if not current_user.is_executive_admin %}
+      <a class="nav-link text-white {% if request.endpoint in ['pupils.directory', 'pupils.profile'] %}active{% endif %}" href="{{ url_for('pupils.directory') }}">Pupils</a>
+    {% endif %}
 
     {% if current_user.is_teacher %}
       {% set assigned_class = current_user.classes.filter_by(is_active=True, is_demo=current_user.is_demo).order_by('year_group', 'name').first() %}
@@ -41,7 +41,7 @@
       {% endif %}
     {% endif %}
 
-    {% if current_user.can_manage_school %}
+    {% if current_user.is_school_admin %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
       <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail', 'admin.class_sats', 'admin.class_phonics', 'admin.class_times_tables'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Users</a>
@@ -54,7 +54,8 @@
       <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
       <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports</a>
     {% endif %}
-      {% if current_user.is_executive_admin %}
+
+    {% if current_user.is_executive_admin %}
       <div class="text-uppercase small text-white-50 mt-3 mb-1">Executive</div>
       <a class="nav-link text-white {% if request.endpoint in ['executive.schools', 'executive.school_detail'] %}active{% endif %}" href="{{ url_for('executive.schools') }}">Schools</a>
     {% endif %}
