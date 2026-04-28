@@ -7,11 +7,27 @@ import zipfile
 from datetime import datetime
 
 from flask import Response, flash, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy import text
 
 from app.extensions import db
-from app.models import Pupil, School, SchoolClass, User
+from app.models import (
+    FoundationResult,
+    GapScore,
+    Intervention,
+    PhonicsScore,
+    Pupil,
+    ReceptionTrackerEntry,
+    SatsColumnResult,
+    SatsResult,
+    SatsWritingResult,
+    School,
+    SchoolClass,
+    SubjectResult,
+    TimesTableScore,
+    User,
+    WritingResult,
+)
 from app.services.admin_ops import initialise_school_data
 from app.utils import executive_admin_required
 
@@ -90,6 +106,74 @@ def _table_to_csv_bytes(rows: list[dict]) -> bytes:
     return output.getvalue().encode('utf-8')
 
 
+def _is_last_executive_admin(user: User) -> bool:
+    if not user.is_executive_admin:
+        return False
+    active_count = User.query.filter_by(role='executive_admin', is_active=True).count()
+    return active_count <= 1
+
+
+def _can_delete_user(user: User, actor: User) -> tuple[bool, str | None]:
+    if user.id == actor.id:
+        return False, 'You cannot delete your own account.'
+    if user.is_executive_admin and User.query.filter_by(role='executive_admin').count() <= 1:
+        return False, 'You cannot delete the last executive admin.'
+    if SchoolClass.query.filter_by(teacher_id=user.id).count() > 0:
+        return False, 'User is assigned to one or more classes.'
+    if FoundationResult.query.filter_by(updated_by_user_id=user.id).count() > 0:
+        return False, 'User has audit history on foundation tracker entries.'
+    return True, None
+
+
+def _school_data_counts(school_id: int) -> dict[str, int]:
+    return {
+        'users': User.query.filter_by(school_id=school_id).count(),
+        'pupils': Pupil.query.filter_by(school_id=school_id).count(),
+        'classes': SchoolClass.query.filter_by(school_id=school_id).count(),
+        'subject_results': SubjectResult.query.filter_by(school_id=school_id).count(),
+        'writing_results': WritingResult.query.filter_by(school_id=school_id).count(),
+        'foundation_results': FoundationResult.query.filter_by(school_id=school_id).count(),
+        'gap_scores': GapScore.query.filter_by(school_id=school_id).count(),
+        'phonics_scores': PhonicsScore.query.filter_by(school_id=school_id).count(),
+        'times_table_scores': TimesTableScore.query.filter_by(school_id=school_id).count(),
+        'reception_entries': ReceptionTrackerEntry.query.filter_by(school_id=school_id).count(),
+        'interventions': Intervention.query.filter_by(school_id=school_id).count(),
+        'sats_results': SatsResult.query.filter_by(school_id=school_id).count(),
+        'sats_writing_results': SatsWritingResult.query.filter_by(school_id=school_id).count(),
+        'sats_column_results': SatsColumnResult.query.filter_by(school_id=school_id).count(),
+    }
+
+
+def _can_delete_school(school: School) -> tuple[bool, str | None]:
+    counts = _school_data_counts(school.id)
+    if counts['users'] > 0:
+        return False, 'School still has users.'
+    if counts['pupils'] > 0:
+        return False, 'School still has pupils.'
+    if counts['classes'] > 0:
+        return False, 'School still has classes.'
+    has_results = any(
+        counts[key] > 0
+        for key in (
+            'subject_results',
+            'writing_results',
+            'foundation_results',
+            'gap_scores',
+            'phonics_scores',
+            'times_table_scores',
+            'reception_entries',
+            'sats_results',
+            'sats_writing_results',
+            'sats_column_results',
+        )
+    )
+    if has_results:
+        return False, 'School still has assessment results.'
+    if counts['interventions'] > 0:
+        return False, 'School still has interventions.'
+    return True, None
+
+
 def _build_zip_export(table_rows: dict[str, list[dict]], scope: str) -> tuple[bytes, str]:
     output = io.BytesIO()
     with zipfile.ZipFile(output, mode='w', compression=zipfile.ZIP_DEFLATED) as archive:
@@ -141,7 +225,12 @@ def schools():
         return redirect(url_for('executive.schools'))
 
     schools_list = School.query.order_by(School.name).all()
-    return render_template('executive/schools.html', schools=schools_list)
+    school_delete_state = {
+        school.id: {'can_delete': can_delete, 'reason': reason}
+        for school in schools_list
+        for can_delete, reason in [_can_delete_school(school)]
+    }
+    return render_template('executive/schools.html', schools=schools_list, school_delete_state=school_delete_state)
 
 
 @executive_bp.route('/users')
@@ -149,7 +238,152 @@ def schools():
 @executive_admin_required
 def users():
     users_list = User.query.join(School, User.school_id == School.id, isouter=True).order_by(User.created_at.desc()).all()
-    return render_template('executive/users.html', users=users_list)
+    user_delete_state = {
+        user.id: {'can_delete': can_delete, 'reason': reason}
+        for user in users_list
+        for can_delete, reason in [_can_delete_user(user, current_user)]
+    }
+    return render_template('executive/users.html', users=users_list, user_delete_state=user_delete_state, is_last_executive_admin=_is_last_executive_admin)
+
+
+@executive_bp.route('/users/<int:user_id>/confirm-deactivate')
+@login_required
+@executive_admin_required
+def confirm_deactivate_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user.id:
+        flash('You cannot deactivate your own account.', 'danger')
+        return redirect(url_for('executive.users'))
+    if user.is_executive_admin and _is_last_executive_admin(user):
+        flash('You cannot deactivate the last executive admin.', 'danger')
+        return redirect(url_for('executive.users'))
+    return render_template('executive/confirm_deactivate_user.html', user=user)
+
+
+@executive_bp.route('/users/<int:user_id>/deactivate', methods=['POST'])
+@login_required
+@executive_admin_required
+def deactivate_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user.id:
+        flash('You cannot deactivate your own account.', 'danger')
+        return redirect(url_for('executive.users'))
+    if user.is_executive_admin and _is_last_executive_admin(user):
+        flash('You cannot deactivate the last executive admin.', 'danger')
+        return redirect(url_for('executive.users'))
+    if not user.is_active:
+        flash(f'{user.username} is already inactive.', 'warning')
+        return redirect(url_for('executive.users'))
+    user.is_active = False
+    db.session.add(user)
+    db.session.commit()
+    flash(f'{user.username} has been deactivated.', 'success')
+    return redirect(url_for('executive.users'))
+
+
+@executive_bp.route('/users/<int:user_id>/reactivate', methods=['POST'])
+@login_required
+@executive_admin_required
+def reactivate_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    if user.is_active:
+        flash(f'{user.username} is already active.', 'warning')
+        return redirect(url_for('executive.users'))
+    user.is_active = True
+    db.session.add(user)
+    db.session.commit()
+    flash(f'{user.username} has been reactivated.', 'success')
+    return redirect(url_for('executive.users'))
+
+
+@executive_bp.route('/users/<int:user_id>/delete', methods=['POST'])
+@login_required
+@executive_admin_required
+def delete_user(user_id: int):
+    user = User.query.get_or_404(user_id)
+    can_delete, reason = _can_delete_user(user, current_user)
+    if not can_delete:
+        flash(reason or 'User cannot be deleted safely.', 'danger')
+        return redirect(url_for('executive.users'))
+    username = user.username
+    db.session.delete(user)
+    db.session.commit()
+    flash(f'{username} has been deleted.', 'success')
+    return redirect(url_for('executive.users'))
+
+
+@executive_bp.route('/schools/<int:school_id>/confirm-deactivate')
+@login_required
+@executive_admin_required
+def confirm_deactivate_school(school_id: int):
+    school = School.query.get_or_404(school_id)
+    return render_template('executive/confirm_deactivate_school.html', school=school)
+
+
+@executive_bp.route('/schools/<int:school_id>/deactivate', methods=['POST'])
+@login_required
+@executive_admin_required
+def deactivate_school(school_id: int):
+    school = School.query.get_or_404(school_id)
+    if not school.is_active:
+        flash(f'{school.name} is already inactive.', 'warning')
+        return redirect(url_for('executive.schools'))
+    school.is_active = False
+    db.session.add(school)
+    db.session.commit()
+    flash(f'{school.name} has been deactivated.', 'success')
+    return redirect(url_for('executive.schools'))
+
+
+@executive_bp.route('/schools/<int:school_id>/reactivate', methods=['POST'])
+@login_required
+@executive_admin_required
+def reactivate_school(school_id: int):
+    school = School.query.get_or_404(school_id)
+    if school.is_active:
+        flash(f'{school.name} is already active.', 'warning')
+        return redirect(url_for('executive.schools'))
+    school.is_active = True
+    db.session.add(school)
+    db.session.commit()
+    flash(f'{school.name} has been reactivated.', 'success')
+    return redirect(url_for('executive.schools'))
+
+
+@executive_bp.route('/schools/<int:school_id>/confirm-delete')
+@login_required
+@executive_admin_required
+def confirm_delete_school(school_id: int):
+    school = School.query.get_or_404(school_id)
+    can_delete, reason = _can_delete_school(school)
+    if not can_delete:
+        flash(reason or 'School cannot be deleted safely.', 'danger')
+        return redirect(url_for('executive.schools'))
+    requires_explicit_confirmation = school.name in {'Barrow School', 'Demo School'}
+    return render_template(
+        'executive/confirm_delete_school.html',
+        school=school,
+        requires_explicit_confirmation=requires_explicit_confirmation,
+    )
+
+
+@executive_bp.route('/schools/<int:school_id>/delete', methods=['POST'])
+@login_required
+@executive_admin_required
+def delete_school(school_id: int):
+    school = School.query.get_or_404(school_id)
+    can_delete, reason = _can_delete_school(school)
+    if not can_delete:
+        flash(reason or 'School cannot be deleted safely.', 'danger')
+        return redirect(url_for('executive.schools'))
+    if school.name in {'Barrow School', 'Demo School'} and request.form.get('confirm_school_name', '').strip() != school.name:
+        flash(f'Type "{school.name}" to confirm deleting this protected school.', 'danger')
+        return redirect(url_for('executive.confirm_delete_school', school_id=school.id))
+    school_name = school.name
+    db.session.delete(school)
+    db.session.commit()
+    flash(f'{school_name} has been deleted.', 'success')
+    return redirect(url_for('executive.schools'))
 
 
 @executive_bp.route('/users/<int:user_id>/reset-password', methods=['POST'])

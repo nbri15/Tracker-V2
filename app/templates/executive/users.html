@@ -15,6 +15,7 @@
             <th>Type</th>
             <th>Created</th>
             <th>Reset password</th>
+            <th>Owner controls</th>
           </tr>
         </thead>
         <tbody>
@@ -39,6 +40,32 @@
                 {% else %}
                   <span class="text-muted small">Restricted</span>
                 {% endif %}
+              </td>
+              <td>
+                <div class="d-flex flex-wrap gap-2">
+                  {% if user.id == current_user.id %}
+                    <span class="text-muted small">Your account</span>
+                  {% elif user.is_active %}
+                    {% if user.role == 'executive_admin' and is_last_executive_admin(user) %}
+                      <span class="text-muted small">Last executive admin</span>
+                    {% else %}
+                      <a class="btn btn-sm btn-outline-warning" href="{{ url_for('executive.confirm_deactivate_user', user_id=user.id) }}">Deactivate</a>
+                    {% endif %}
+                  {% else %}
+                    <form method="post" action="{{ url_for('executive.reactivate_user', user_id=user.id) }}">
+                      <button class="btn btn-sm btn-outline-success">Reactivate</button>
+                    </form>
+                  {% endif %}
+
+                  {% set delete_state = user_delete_state.get(user.id) %}
+                  {% if delete_state and delete_state.can_delete %}
+                    <form method="post" action="{{ url_for('executive.delete_user', user_id=user.id) }}" onsubmit="return confirm('Delete this user permanently? This cannot be undone.');">
+                      <button class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                  {% elif delete_state and delete_state.reason %}
+                    <span class="text-muted small">{{ delete_state.reason }}</span>
+                  {% endif %}
+                </div>
               </td>
             </tr>
           {% endfor %}

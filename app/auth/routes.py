@@ -23,7 +23,9 @@ def login():
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data.strip()).first()
-        if user and user.is_active and user.check_password(form.password.data):
+        credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
+        school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or user.school.is_active))
+        if credentials_valid and school_active_or_exec:
             login_user(user)
             if user.require_password_change:
                 flash('Please set a new password before continuing.', 'warning')
@@ -34,7 +36,10 @@ def login():
                 return redirect(next_page)
             return redirect(url_for('dashboards.index'))
 
-        flash('Invalid username or password.', 'danger')
+        if credentials_valid and not school_active_or_exec:
+            flash('Your school is inactive. Contact an executive administrator.', 'danger')
+        else:
+            flash('Invalid username or password.', 'danger')
 
     return render_template('auth/login.html', form=form)
 
@@ -54,6 +59,9 @@ def demo_login():
     user = User.query.filter_by(username=username, is_active=True).first()
     if not user:
         flash('Demo account is missing. Run seed_demo.py to create demo users.', 'danger')
+        return redirect(url_for('auth.login'))
+    if not user.is_executive_admin and user.school and not user.school.is_active:
+        flash('Demo school is inactive.', 'danger')
         return redirect(url_for('auth.login'))
     login_user(user)
     flash(f'Signed in as {username}.', 'success')
