@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -28,7 +29,7 @@ from app.models import (
     WritingResult,
 )
 from app.services import format_progress_delta, progress_theme
-from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, require_same_school, teacher_or_admin_required
+from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, teacher_or_admin_required
 
 from . import pupils_bp
 
@@ -156,7 +157,7 @@ def profile(pupil_id: int):
         'pupils/profile.html',
         pupil=pupil,
         can_archive=_can_archive_pupil(pupil),
-        can_restore=current_user.can_manage_school and not pupil.is_active,
+        can_restore=current_user.can_manage_school and pupil.is_archived,
         latest_summary=latest_summary,
         subject_history_cards=subject_history_cards,
         subject_rows=subject_rows,
@@ -190,12 +191,25 @@ def archive(pupil_id: int):
     require_same_school(pupil)
     if not _can_archive_pupil(pupil):
         abort(403)
-    if not pupil.is_active:
+    if pupil.is_archived:
         flash(f'{pupil.full_name} is already archived.', 'info')
         return _redirect_to_pupil_source(pupil.id)
 
+    archive_reason = request.form.get('archive_reason', '').strip() or 'Archived by admin'
+    now = datetime.now(timezone.utc)
     pupil.is_active = False
+    pupil.is_archived = True
+    pupil.archived_at = now
+    pupil.archived_by_user_id = current_user.id
+    pupil.archive_reason = archive_reason
     db.session.add(pupil)
+    log_audit_event(
+        action='pupil_archived',
+        target_type='pupil',
+        target_id=pupil.id,
+        school_id=pupil.school_id,
+        details=f'reason={archive_reason}',
+    )
     db.session.commit()
     flash(f'{pupil.full_name} has been archived.', 'success')
     return _redirect_to_pupil_source(pupil.id)
@@ -212,12 +226,22 @@ def restore(pupil_id: int):
     require_same_school(pupil)
     if not current_user.can_manage_school:
         abort(403)
-    if pupil.is_active:
+    if not pupil.is_archived:
         flash(f'{pupil.full_name} is already active.', 'info')
         return _redirect_to_pupil_source(pupil.id)
 
     pupil.is_active = True
+    pupil.is_archived = False
+    pupil.archived_at = None
+    pupil.archived_by_user_id = None
+    pupil.archive_reason = None
     db.session.add(pupil)
+    log_audit_event(
+        action='pupil_restored',
+        target_type='pupil',
+        target_id=pupil.id,
+        school_id=pupil.school_id,
+    )
     db.session.commit()
     flash(f'{pupil.full_name} has been restored to active lists.', 'success')
     return _redirect_to_pupil_source(pupil.id)
@@ -233,7 +257,7 @@ def _build_pupil_filters(args) -> dict:
         'laps': (args.get('laps') or 'all').strip() or 'all',
         'service_child': (args.get('service_child') or 'all').strip() or 'all',
         'send_flag': (args.get('send_flag') or 'all').strip() or 'all',
-        'status': (args.get('status') or 'all').strip() or 'all',
+        'status': (args.get('status') or 'current').strip() or 'current',
     }
 
 
@@ -275,11 +299,11 @@ def _apply_common_filters(query, filters: dict):
 def _apply_status_filter(query, status: str):
     normalized = (status or 'all').lower()
     if normalized in {'current', 'active'}:
-        return query.filter(Pupil.is_active.is_(True))
+        return query.filter(Pupil.is_archived.is_(False))
     if normalized == 'archived':
-        return query.filter(Pupil.is_active.is_(False))
+        return query.filter(Pupil.is_archived.is_(True))
     if normalized == 'previous':
-        return query.filter(Pupil.is_active.is_(True), Pupil.class_history.any())
+        return query.filter(Pupil.is_archived.is_(False), Pupil.class_history.any())
     return query
 
 
@@ -287,14 +311,11 @@ def _can_view_pupil(pupil: Pupil) -> bool:
     if current_user.can_manage_school:
         return True
     teacher_class_ids = {school_class.id for school_class in demo_filter_classes(current_user.classes.filter_by(is_active=True)).all()}
-    return pupil.is_active and pupil.class_id in teacher_class_ids
+    return not pupil.is_archived and pupil.class_id in teacher_class_ids
 
 
 def _can_archive_pupil(pupil: Pupil) -> bool:
-    if current_user.can_manage_school:
-        return True
-    teacher_class_ids = {school_class.id for school_class in demo_filter_classes(current_user.classes.filter_by(is_active=True)).all()}
-    return pupil.class_id in teacher_class_ids
+    return current_user.can_manage_school
 
 
 def _redirect_to_pupil_source(pupil_id: int):

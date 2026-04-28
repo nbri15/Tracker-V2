@@ -16,6 +16,8 @@
       <a class="nav-link text-white {% if request.endpoint in ['executive.schools', 'executive.school_detail'] %}active{% endif %}" href="{{ url_for('executive.schools') }}">Schools</a>
       <a class="nav-link text-white {% if request.endpoint == 'executive.users' %}active{% endif %}" href="{{ url_for('executive.users') }}">Users</a>
       <a class="nav-link text-white {% if request.endpoint == 'executive.export_data' %}active{% endif %}" href="{{ url_for('executive.export_data') }}">Data export</a>
+      <a class="nav-link text-white {% if request.endpoint == 'executive.archived_schools' %}active{% endif %}" href="{{ url_for('executive.archived_schools') }}">Archived schools</a>
+      <a class="nav-link text-white {% if request.endpoint == 'executive.audit_log' %}active{% endif %}" href="{{ url_for('executive.audit_log') }}">Audit log</a>
       <a class="nav-link text-white" href="{{ url_for('auth.logout') }}">Logout</a>
     {% else %}
       <a class="nav-link text-white {% if request.endpoint in ['dashboards.teacher_dashboard', 'dashboards.admin_dashboard'] %}active{% endif %}" href="{{ url_for('dashboards.index') }}">Dashboard</a>
@@ -58,6 +60,7 @@
         <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
         <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports</a>
+        <a class="nav-link text-white {% if request.endpoint in ['admin.archived_pupils', 'admin.confirm_permanent_delete_pupil'] %}active{% endif %}" href="{{ url_for('admin.archived_pupils') }}">Archived pupils</a>
       {% endif %}
     {% endif %}
   </nav>

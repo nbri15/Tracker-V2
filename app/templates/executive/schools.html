@@ -1,7 +1,10 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card shadow-sm mb-3"><div class="card-body">
-  <h3 class="h5">Schools</h3>
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h3 class="h5 mb-0">Schools</h3>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('executive.schools', show_archived='0' if show_archived else '1') }}">{{ 'Hide archived' if show_archived else 'Show archived' }}</a>
+  </div>
   <form method="post" class="row g-2 mb-3">
     <input type="hidden" name="action" value="create">
     <div class="col"><input class="form-control" name="name" placeholder="School name" required></div>
@@ -14,22 +17,15 @@
     <tr><th>Name</th><th>Slug</th><th>Status</th><th>Owner controls</th><th></th></tr>
     {% for school in schools %}
     <tr>
-      <td>{{ school.name }}</td><td>{{ school.slug }}</td><td>{{ 'Active' if school.is_active else 'Inactive' }}{% if school.is_demo %} · Demo{% endif %}</td>
+      <td>{{ school.name }}</td><td>{{ school.slug }}</td><td>{% if school.is_archived %}Archived{% elif school.is_active %}Active{% else %}Inactive{% endif %}{% if school.is_demo %} · Demo{% endif %}</td>
       <td>
         <div class="d-flex flex-wrap gap-2">
-          {% if school.is_active %}
-            <a class="btn btn-sm btn-outline-warning" href="{{ url_for('executive.confirm_deactivate_school', school_id=school.id) }}">Deactivate</a>
+          {% if not school.is_archived %}
+            <a class="btn btn-sm btn-outline-warning" href="{{ url_for('executive.confirm_deactivate_school', school_id=school.id) }}">Archive</a>
           {% else %}
             <form method="post" action="{{ url_for('executive.reactivate_school', school_id=school.id) }}">
-              <button class="btn btn-sm btn-outline-success">Reactivate</button>
+              <button class="btn btn-sm btn-outline-success">Restore</button>
             </form>
-          {% endif %}
-
-          {% set delete_state = school_delete_state.get(school.id) %}
-          {% if delete_state and delete_state.can_delete %}
-            <a class="btn btn-sm btn-outline-danger" href="{{ url_for('executive.confirm_delete_school', school_id=school.id) }}">Delete school</a>
-          {% elif delete_state and delete_state.reason %}
-            <span class="text-muted small">{{ delete_state.reason }}</span>
           {% endif %}
         </div>
       </td>

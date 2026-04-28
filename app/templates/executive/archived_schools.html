@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Archived schools{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <strong>Archived schools</strong>
+    <span class="small text-muted">{{ schools|length }} archived school(s)</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Name</th><th>Archived at</th><th>Reason</th><th class="text-end">Actions</th></tr></thead>
+      <tbody>
+        {% for school in schools %}
+          <tr>
+            <td>{{ school.name }}</td>
+            <td>{{ school.archived_at.strftime('%Y-%m-%d %H:%M') if school.archived_at else '—' }}</td>
+            <td>{{ school.archive_reason or '—' }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-danger" href="{{ url_for('executive.confirm_delete_school', school_id=school.id) }}">Permanent delete</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-center py-4 text-muted">No archived schools.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -2,14 +2,17 @@
 {% block content %}
 <div class="card shadow-sm">
   <div class="card-body">
-    <h3 class="h5">Deactivate school?</h3>
-    <p class="text-muted">This will block login for users at <strong>{{ school.name }}</strong>. Executive admins can still log in.</p>
+    <h3 class="h5">Archive school?</h3>
+    <p class="text-muted">This will block login for users at <strong>{{ school.name }}</strong>. Executive admins can still log in and restore later.</p>
     <div class="alert alert-warning mb-3">
-      Deactivation is reversible and recommended before permanent deletion.
+      Archiving is reversible and keeps all school data for retention/GDPR workflows.
     </div>
-    <form method="post" action="{{ url_for('executive.deactivate_school', school_id=school.id) }}" class="d-flex gap-2">
-      <button class="btn btn-warning">Deactivate school</button>
-      <a class="btn btn-outline-secondary" href="{{ url_for('executive.schools') }}">Cancel</a>
+    <form method="post" action="{{ url_for('executive.deactivate_school', school_id=school.id) }}" class="d-flex flex-column gap-2">
+      <input class="form-control" name="archive_reason" placeholder="Archive reason (optional)">
+      <div class="d-flex gap-2">
+        <button class="btn btn-warning">Archive school</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('executive.schools') }}">Cancel</a>
+      </div>
     </form>
   </div>
 </div>

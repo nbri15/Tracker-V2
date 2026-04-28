@@ -12,6 +12,7 @@ from .assessment import (
     TimesTableScore,
     TimesTableTestColumn,
 )
+from .audit import AuditLog
 from .history import AcademicYear, PupilClassHistory
 from .intervention import Intervention
 from .pupil import Pupil
@@ -23,6 +24,7 @@ from .writing import WritingResult
 
 __all__ = [
     'AcademicYear',
+    'AuditLog',
     'AssessmentSetting',
     'FoundationResult',
     'GapQuestion',

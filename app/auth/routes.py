@@ -24,7 +24,7 @@ def login():
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data.strip()).first()
         credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
-        school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or user.school.is_active))
+        school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
         if credentials_valid and school_active_or_exec:
             login_user(user)
             if user.require_password_change:
@@ -60,7 +60,7 @@ def demo_login():
     if not user:
         flash('Demo account is missing. Run seed_demo.py to create demo users.', 'danger')
         return redirect(url_for('auth.login'))
-    if not user.is_executive_admin and user.school and not user.school.is_active:
+    if not user.is_executive_admin and user.school and (not user.school.is_active or user.school.is_archived):
         flash('Demo school is inactive.', 'danger')
         return redirect(url_for('auth.login'))
     login_user(user)

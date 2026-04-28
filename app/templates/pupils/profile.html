@@ -8,6 +8,7 @@
   {% if can_archive %}
     <form method="post" action="{{ url_for('pupils.archive', pupil_id=pupil.id) }}" onsubmit="return confirm('Are you sure you want to archive this pupil? This will remove them from active lists but keep all historical data.');">
       <input type="hidden" name="next" value="{{ request.path }}">
+      <input type="hidden" name="archive_reason" value="Archived from pupil profile">
       <button type="submit" class="btn btn-outline-warning btn-sm">Archive pupil</button>
     </form>
   {% elif can_restore %}

@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Confirm permanent pupil delete{% endblock %}
+{% set page_heading = 'Confirm permanent pupil delete' %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="h5">Permanently delete {{ pupil.full_name }}?</h3>
+    <div class="alert alert-danger">
+      This permanently deletes linked records (subject results, writing, SATs, GAP scores, interventions, notes/history, and tracker entries). This cannot be undone.
+    </div>
+    <ul class="small text-muted mb-3">
+      {% for label, count in linked_counts.items() %}
+        <li>{{ label|capitalize }}: {{ count }}</li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="{{ url_for('admin.permanent_delete_pupil', pupil_id=pupil.id) }}" class="d-flex flex-column gap-3">
+      <div>
+        <label class="form-label">Type <strong>DELETE</strong> to confirm.</label>
+        <input class="form-control" name="confirm_delete_text" required>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-danger">Permanent delete</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.archived_pupils') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
