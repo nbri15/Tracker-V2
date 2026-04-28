@@ -24,7 +24,11 @@ class User(UserMixin, db.Model):
     require_password_change = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
-    school = db.relationship('School', back_populates='users')
+    school = db.relationship(
+        'School',
+        back_populates='users',
+        foreign_keys=[school_id],
+    )
     classes = db.relationship('SchoolClass', back_populates='teacher', lazy='dynamic')
 
     def set_password(self, password: str) -> None:
