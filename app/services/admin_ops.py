@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from flask_login import current_user
 
 from app.extensions import db
-from app.models import AcademicYear, Pupil, PupilClassHistory, School, SchoolClass, User
+from app.models import AcademicYear, AssessmentSetting, Pupil, PupilClassHistory, School, SchoolClass, TrackerModeSetting, User
 from app.utils import school_scoped_query
-from .assessments import get_current_academic_year
+from .assessments import get_current_academic_year, get_setting_defaults
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,46 @@ class DefaultLogin:
 # NOTE: Default accounts below are for local development and test seeding only.
 DEFAULT_ADMIN = DefaultLogin(username='admin', password='admin123', role='school_admin')
 DEFAULT_TEACHERS = [DefaultLogin(username=f'teacher{year}', password=f'teacher{year}', role='teacher', year_group=year) for year in range(1, 7)]
+
+
+def initialise_school_data(school_id: int) -> None:
+    # Tracker modes (Years 1–6)
+    for year in range(1, 7):
+        if not TrackerModeSetting.query.filter_by(school_id=school_id, year_group=year).first():
+            db.session.add(TrackerModeSetting(
+                school_id=school_id,
+                year_group=year,
+                tracker_mode='normal',
+            ))
+
+    # Assessment settings
+    for year in range(1, 7):
+        for subject in ['maths', 'reading', 'spag']:
+            for term in ['autumn', 'spring', 'summer']:
+                if not AssessmentSetting.query.filter_by(
+                    school_id=school_id,
+                    year_group=year,
+                    subject=subject,
+                    term=term,
+                ).first():
+                    db.session.add(AssessmentSetting(
+                        school_id=school_id,
+                        year_group=year,
+                        subject=subject,
+                        term=term,
+                        **get_setting_defaults(subject),
+                    ))
+
+    # Year 6 SATs default mode
+    sats_mode = TrackerModeSetting.query.filter_by(
+        school_id=school_id,
+        year_group=6,
+    ).first()
+
+    if sats_mode:
+        sats_mode.tracker_mode = 'sats'
+
+    db.session.commit()
 
 
 def sort_teacher_accounts(users: list[User]) -> list[User]:

@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.extensions import db
 from app.models import Pupil, School, SchoolClass, User
+from app.services.admin_ops import initialise_school_data
 from app.utils import executive_admin_required
 
 from . import executive_bp
@@ -126,6 +127,7 @@ def schools():
             )
             db.session.add(school)
             db.session.commit()
+            initialise_school_data(school.id)
             flash(f'Created school {school.name}.', 'success')
         elif action == 'update':
             school = School.query.get_or_404(int(request.form.get('school_id', '0')))
