@@ -22,9 +22,18 @@ class School(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    users = db.relationship('User', back_populates='school', lazy='dynamic')
+    users = db.relationship(
+        'User',
+        back_populates='school',
+        foreign_keys='User.school_id',
+        lazy='dynamic',
+    )
     classes = db.relationship('SchoolClass', back_populates='school', lazy='dynamic')
-    archived_by_user = db.relationship('User')
+    archived_by_user = db.relationship(
+        'User',
+        foreign_keys=[archived_by_user_id],
+        post_update=True,
+    )
 
     def __repr__(self) -> str:
         return f'<School {self.slug}>'
