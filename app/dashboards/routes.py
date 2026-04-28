@@ -36,7 +36,7 @@ from . import dashboards_bp
 def home():
     if current_user.is_authenticated:
         return redirect(url_for('dashboards.index'))
-    return redirect(url_for('auth.login'))
+    return render_template('public_home.html')
 
 
 @dashboards_bp.route('/dashboard')
