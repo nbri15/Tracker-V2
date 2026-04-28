@@ -10,11 +10,29 @@
     <div class="col-auto form-check"><input class="form-check-input" type="checkbox" name="is_demo"> demo</div>
     <div class="col-auto"><button class="btn btn-primary">Add school</button></div>
   </form>
-  <table class="table table-sm">
-    <tr><th>Name</th><th>Slug</th><th>Status</th><th></th></tr>
+  <table class="table table-sm align-middle">
+    <tr><th>Name</th><th>Slug</th><th>Status</th><th>Owner controls</th><th></th></tr>
     {% for school in schools %}
     <tr>
       <td>{{ school.name }}</td><td>{{ school.slug }}</td><td>{{ 'Active' if school.is_active else 'Inactive' }}{% if school.is_demo %} · Demo{% endif %}</td>
+      <td>
+        <div class="d-flex flex-wrap gap-2">
+          {% if school.is_active %}
+            <a class="btn btn-sm btn-outline-warning" href="{{ url_for('executive.confirm_deactivate_school', school_id=school.id) }}">Deactivate</a>
+          {% else %}
+            <form method="post" action="{{ url_for('executive.reactivate_school', school_id=school.id) }}">
+              <button class="btn btn-sm btn-outline-success">Reactivate</button>
+            </form>
+          {% endif %}
+
+          {% set delete_state = school_delete_state.get(school.id) %}
+          {% if delete_state and delete_state.can_delete %}
+            <a class="btn btn-sm btn-outline-danger" href="{{ url_for('executive.confirm_delete_school', school_id=school.id) }}">Delete school</a>
+          {% elif delete_state and delete_state.reason %}
+            <span class="text-muted small">{{ delete_state.reason }}</span>
+          {% endif %}
+        </div>
+      </td>
       <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('executive.school_detail', school_id=school.id) }}">Open</a></td>
     </tr>
     {% endfor %}
