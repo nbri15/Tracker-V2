@@ -40,6 +40,13 @@
           </div>
         </form>
 
+
+        <p style="margin-top:15px; font-size:12px;">
+          By using this platform you agree to our
+          <a href="{{ url_for('legal.terms') }}">Terms</a> and
+          <a href="{{ url_for('legal.privacy') }}">Privacy Policy</a>.
+        </p>
+
         {% if demo_mode %}
           <div class="alert alert-warning mt-4 mb-0">
             <strong>Demo Mode</strong> is enabled. All accounts and pupil records shown here are fake demonstration data.
@@ -60,7 +67,7 @@
       </div>
 
       <div class="auth-login-footer px-4 px-md-5 pb-4 pb-md-5 text-center">
-        <small class="text-muted">Privacy Policy · Terms of Use</small>
+        <small class="text-muted"><a href="{{ url_for('legal.privacy') }}">Privacy Policy</a> · <a href="{{ url_for('legal.terms') }}">Terms of Use</a></small>
       </div>
     </div>
   </div>
