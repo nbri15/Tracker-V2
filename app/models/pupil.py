@@ -20,6 +20,10 @@ class Pupil(db.Model):
     service_child = db.Column(db.Boolean, nullable=False, default=False, index=True)
     class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    is_archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    archive_reason = db.Column(db.Text, nullable=True)
     is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
     strengths_notes = db.Column(db.Text, nullable=True)
     next_steps_notes = db.Column(db.Text, nullable=True)
@@ -27,6 +31,7 @@ class Pupil(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     school_class = db.relationship('SchoolClass', back_populates='pupils')
+    archived_by_user = db.relationship('User')
     subject_results = db.relationship('SubjectResult', back_populates='pupil', cascade='all, delete-orphan')
     writing_results = db.relationship('WritingResult', back_populates='pupil', cascade='all, delete-orphan')
     interventions = db.relationship('Intervention', back_populates='pupil', cascade='all, delete-orphan')

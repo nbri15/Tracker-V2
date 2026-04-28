@@ -12,24 +12,35 @@ from sqlalchemy import text
 
 from app.extensions import db
 from app.models import (
+    AcademicYear,
+    AssessmentSetting,
+    AuditLog,
     FoundationResult,
+    GapQuestion,
+    GapTemplate,
     GapScore,
     Intervention,
     PhonicsScore,
     Pupil,
+    PupilClassHistory,
     ReceptionTrackerEntry,
     SatsColumnResult,
+    SatsColumnSetting,
+    SatsExamTab,
     SatsResult,
     SatsWritingResult,
     School,
     SchoolClass,
     SubjectResult,
     TimesTableScore,
+    TimesTableTestColumn,
+    PhonicsTestColumn,
+    TrackerModeSetting,
     User,
     WritingResult,
 )
 from app.services.admin_ops import initialise_school_data
-from app.utils import executive_admin_required
+from app.utils import executive_admin_required, log_audit_event
 
 from . import executive_bp
 
@@ -145,33 +156,41 @@ def _school_data_counts(school_id: int) -> dict[str, int]:
 
 
 def _can_delete_school(school: School) -> tuple[bool, str | None]:
-    counts = _school_data_counts(school.id)
-    if counts['users'] > 0:
-        return False, 'School still has users.'
-    if counts['pupils'] > 0:
-        return False, 'School still has pupils.'
-    if counts['classes'] > 0:
-        return False, 'School still has classes.'
-    has_results = any(
-        counts[key] > 0
-        for key in (
-            'subject_results',
-            'writing_results',
-            'foundation_results',
-            'gap_scores',
-            'phonics_scores',
-            'times_table_scores',
-            'reception_entries',
-            'sats_results',
-            'sats_writing_results',
-            'sats_column_results',
-        )
-    )
-    if has_results:
-        return False, 'School still has assessment results.'
-    if counts['interventions'] > 0:
-        return False, 'School still has interventions.'
+    if not school.is_archived:
+        return False, 'Archive the school before permanent deletion.'
     return True, None
+
+
+def _permanently_delete_school_data(school: School) -> None:
+    school_id = school.id
+
+    User.query.filter(User.school_id == school_id, User.role != 'executive_admin').delete(synchronize_session=False)
+
+    SubjectResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    WritingResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    Intervention.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    FoundationResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    PhonicsScore.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    TimesTableScore.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    ReceptionTrackerEntry.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SatsColumnResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SatsResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SatsWritingResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    GapScore.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    PupilClassHistory.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    Pupil.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+
+    GapQuestion.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    GapTemplate.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    AssessmentSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    PhonicsTestColumn.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    TimesTableTestColumn.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SatsColumnSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SatsExamTab.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    TrackerModeSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    AcademicYear.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SchoolClass.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    AuditLog.query.filter_by(school_id=school_id).delete(synchronize_session=False)
 
 
 def _build_zip_export(table_rows: dict[str, list[dict]], scope: str) -> tuple[bytes, str]:
@@ -224,13 +243,17 @@ def schools():
             flash(f'Updated {school.name}.', 'success')
         return redirect(url_for('executive.schools'))
 
-    schools_list = School.query.order_by(School.name).all()
+    show_archived = request.args.get('show_archived') == '1'
+    schools_query = School.query
+    if not show_archived:
+        schools_query = schools_query.filter(School.is_archived.is_(False))
+    schools_list = schools_query.order_by(School.name).all()
     school_delete_state = {
         school.id: {'can_delete': can_delete, 'reason': reason}
         for school in schools_list
         for can_delete, reason in [_can_delete_school(school)]
     }
-    return render_template('executive/schools.html', schools=schools_list, school_delete_state=school_delete_state)
+    return render_template('executive/schools.html', schools=schools_list, school_delete_state=school_delete_state, show_archived=show_archived)
 
 
 @executive_bp.route('/users')
@@ -325,13 +348,18 @@ def confirm_deactivate_school(school_id: int):
 @executive_admin_required
 def deactivate_school(school_id: int):
     school = School.query.get_or_404(school_id)
-    if not school.is_active:
-        flash(f'{school.name} is already inactive.', 'warning')
+    if school.is_archived:
+        flash(f'{school.name} is already archived.', 'warning')
         return redirect(url_for('executive.schools'))
     school.is_active = False
+    school.is_archived = True
+    school.archived_at = datetime.utcnow()
+    school.archived_by_user_id = current_user.id
+    school.archive_reason = request.form.get('archive_reason', '').strip() or 'Archived by executive admin'
     db.session.add(school)
+    log_audit_event('school_archived', 'school', school.id, school_id=school.id, details=f'reason={school.archive_reason}')
     db.session.commit()
-    flash(f'{school.name} has been deactivated.', 'success')
+    flash(f'{school.name} has been archived.', 'success')
     return redirect(url_for('executive.schools'))
 
 
@@ -340,13 +368,18 @@ def deactivate_school(school_id: int):
 @executive_admin_required
 def reactivate_school(school_id: int):
     school = School.query.get_or_404(school_id)
-    if school.is_active:
+    if not school.is_archived:
         flash(f'{school.name} is already active.', 'warning')
         return redirect(url_for('executive.schools'))
     school.is_active = True
+    school.is_archived = False
+    school.archived_at = None
+    school.archived_by_user_id = None
+    school.archive_reason = None
     db.session.add(school)
+    log_audit_event('school_restored', 'school', school.id, school_id=school.id)
     db.session.commit()
-    flash(f'{school.name} has been reactivated.', 'success')
+    flash(f'{school.name} has been restored.', 'success')
     return redirect(url_for('executive.schools'))
 
 
@@ -364,6 +397,7 @@ def confirm_delete_school(school_id: int):
         'executive/confirm_delete_school.html',
         school=school,
         requires_explicit_confirmation=requires_explicit_confirmation,
+        school_counts=_school_data_counts(school.id),
     )
 
 
@@ -376,14 +410,28 @@ def delete_school(school_id: int):
     if not can_delete:
         flash(reason or 'School cannot be deleted safely.', 'danger')
         return redirect(url_for('executive.schools'))
+    if request.form.get('confirm_delete_text', '').strip() != 'DELETE SCHOOL':
+        flash('Type DELETE SCHOOL to confirm permanent deletion.', 'danger')
+        return redirect(url_for('executive.confirm_delete_school', school_id=school.id))
     if school.name in {'Barrow School', 'Demo School'} and request.form.get('confirm_school_name', '').strip() != school.name:
         flash(f'Type "{school.name}" to confirm deleting this protected school.', 'danger')
         return redirect(url_for('executive.confirm_delete_school', school_id=school.id))
     school_name = school.name
+    school_id_value = school.id
+    _permanently_delete_school_data(school)
     db.session.delete(school)
+    log_audit_event('school_permanently_deleted', 'school', school_id_value, school_id=school_id_value, details=f'name={school_name}')
     db.session.commit()
     flash(f'{school_name} has been deleted.', 'success')
-    return redirect(url_for('executive.schools'))
+    return redirect(url_for('executive.archived_schools'))
+
+
+@executive_bp.route('/archive/schools')
+@login_required
+@executive_admin_required
+def archived_schools():
+    schools_list = School.query.filter(School.is_archived.is_(True)).order_by(School.archived_at.desc(), School.name.asc()).all()
+    return render_template('executive/archived_schools.html', schools=schools_list)
 
 
 @executive_bp.route('/users/<int:user_id>/reset-password', methods=['POST'])
@@ -445,6 +493,11 @@ def export_data():
         else:
             file_bytes, filename = _build_zip_export(rows_by_table, scope_name)
             mimetype = 'application/zip'
+
+        target_school_id = selected_school.id if selected_school else None
+        target_school_name = selected_school.name if selected_school else 'all-schools'
+        log_audit_event('export_downloaded', 'school_export', target_school_id or 0, school_id=target_school_id, details=f'scope={scope};school={target_school_name};format={output_format}')
+        db.session.commit()
 
         return Response(
             file_bytes,
@@ -525,3 +578,11 @@ def reset_school_user_password(school_id: int, user_id: int):
     db.session.commit()
     flash(f'Password reset for {user.username} at {school.name}.', 'success')
     return redirect(url_for('executive.school_detail', school_id=school.id))
+
+
+@executive_bp.route('/audit-log')
+@login_required
+@executive_admin_required
+def audit_log():
+    records = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(500).all()
+    return render_template('executive/audit_log.html', records=records)

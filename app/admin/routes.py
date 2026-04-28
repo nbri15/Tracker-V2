@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import datetime, timezone
 
 from flask import Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -18,6 +19,7 @@ from app.models import (
     PhonicsScore,
     Pupil,
     PupilClassHistory,
+    ReceptionTrackerEntry,
     SatsColumnResult,
     SatsResult,
     SatsWritingResult,
@@ -126,7 +128,7 @@ from app.services import (
     ensure_times_tables_columns,
     FoundationValidationError,
 )
-from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, require_same_school, school_scoped_query
+from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, school_scoped_query
 
 from . import admin_bp
 from .forms import AssessmentSettingForm
@@ -170,6 +172,7 @@ PUPIL_LINKED_MODELS = (
     ('phonics scores', PhonicsScore),
     ('times tables scores', TimesTableScore),
     ('foundation judgements', FoundationResult),
+    ('reception tracker entries', ReceptionTrackerEntry),
     ('class history records', PupilClassHistory),
 )
 
@@ -751,6 +754,58 @@ def pupils():
     )
 
 
+@admin_bp.route('/archive/pupils')
+@login_required
+@admin_required
+def archived_pupils():
+    archived_rows = (
+        demo_filter_pupils(Pupil.query)
+        .filter(Pupil.is_archived.is_(True))
+        .order_by(Pupil.archived_at.desc(), Pupil.last_name.asc(), Pupil.first_name.asc())
+        .all()
+    )
+    return render_template('admin/archived_pupils.html', pupils=archived_rows)
+
+
+@admin_bp.route('/archive/pupils/<int:pupil_id>/confirm-delete')
+@login_required
+@admin_required
+def confirm_permanent_delete_pupil(pupil_id: int):
+    pupil = demo_filter_pupils(Pupil.query).filter(Pupil.id == pupil_id, Pupil.is_archived.is_(True)).first_or_404()
+    linked_counts = _linked_pupil_record_counts(pupil.id)
+    return render_template('admin/confirm_delete_pupil.html', pupil=pupil, linked_counts=linked_counts)
+
+
+@admin_bp.route('/archive/pupils/<int:pupil_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def permanent_delete_pupil(pupil_id: int):
+    if is_demo_user():
+        flash('This action is disabled in Demo Mode.', 'warning')
+        return redirect(url_for('admin.archived_pupils'))
+    pupil = demo_filter_pupils(Pupil.query).filter(Pupil.id == pupil_id, Pupil.is_archived.is_(True)).first_or_404()
+    if request.form.get('confirm_delete_text', '').strip() != 'DELETE':
+        flash('Type DELETE to confirm permanent deletion.', 'danger')
+        return redirect(url_for('admin.confirm_permanent_delete_pupil', pupil_id=pupil.id))
+
+    for _, model in PUPIL_LINKED_MODELS:
+        model.query.filter_by(pupil_id=pupil.id, school_id=pupil.school_id).delete(synchronize_session=False)
+    pupil_name = pupil.full_name
+    pupil_id_value = pupil.id
+    school_id = pupil.school_id
+    db.session.delete(pupil)
+    log_audit_event(
+        action='pupil_permanently_deleted',
+        target_type='pupil',
+        target_id=pupil_id_value,
+        school_id=school_id,
+        details=f'name={pupil_name}',
+    )
+    db.session.commit()
+    flash(f'{pupil_name} and linked records were permanently deleted.', 'success')
+    return redirect(url_for('admin.archived_pupils'))
+
+
 @admin_bp.route('/pupils/manage', methods=['POST'])
 @login_required
 @admin_required
@@ -766,25 +821,37 @@ def manage_pupil():
     try:
         if action == 'archive':
             pupil.is_active = False
+            pupil.is_archived = True
+            pupil.archived_at = datetime.now(timezone.utc)
+            pupil.archived_by_user_id = current_user.id
+            pupil.archive_reason = request.form.get('archive_reason', '').strip() or 'Archived by admin'
             db.session.add(pupil)
+            log_audit_event(
+                action='pupil_archived',
+                target_type='pupil',
+                target_id=pupil.id,
+                school_id=pupil.school_id,
+                details=f'reason={pupil.archive_reason}',
+            )
             db.session.commit()
             flash(f'Archived {pupil.full_name}. They are now hidden from active lists.', 'success')
         elif action == 'restore':
             pupil.is_active = True
+            pupil.is_archived = False
+            pupil.archived_at = None
+            pupil.archived_by_user_id = None
+            pupil.archive_reason = None
             db.session.add(pupil)
+            log_audit_event(
+                action='pupil_restored',
+                target_type='pupil',
+                target_id=pupil.id,
+                school_id=pupil.school_id,
+            )
             db.session.commit()
             flash(f'Restored {pupil.full_name}. They are active again.', 'success')
         elif action == 'delete':
-            if has_linked_data:
-                summary = _linked_record_summary(linked_counts)
-                flash(
-                    f'Permanent delete blocked for {pupil.full_name}. Linked data exists ({summary}). Archive this pupil instead.',
-                    'danger',
-                )
-                return _pupil_action_redirect()
-            db.session.delete(pupil)
-            db.session.commit()
-            flash(f'Permanently deleted {pupil.full_name}.', 'success')
+            flash('Permanent deletion is only available from Archived pupils after confirmation.', 'warning')
         else:
             flash('Unknown pupil action.', 'warning')
     except ValueError as exc:

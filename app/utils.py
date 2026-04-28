@@ -5,7 +5,7 @@ from functools import wraps
 from flask import abort, current_app, flash, g, redirect, request, url_for
 from flask_login import current_user
 
-from app.models import Pupil, SchoolClass
+from app.models import AuditLog, Pupil, SchoolClass
 
 
 def role_required(*roles):
@@ -177,3 +177,21 @@ def demo_filter_pupils(query):
 
 def is_demo_mode_enabled() -> bool:
     return bool(current_app.config.get('DEMO_MODE', False))
+
+
+def log_audit_event(action: str, target_type: str, target_id: int, school_id: int | None = None, details: str | None = None) -> None:
+    """Persist an audit log record for critical archive/delete/export workflows."""
+
+    if not getattr(current_user, 'is_authenticated', False):
+        return
+    db = AuditLog.query.session
+    db.add(
+        AuditLog(
+            user_id=current_user.id,
+            school_id=school_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            details=details,
+        )
+    )

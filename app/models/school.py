@@ -14,12 +14,17 @@ class School(db.Model):
     name = db.Column(db.String(140), nullable=False, unique=True)
     slug = db.Column(db.String(140), nullable=False, unique=True, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    archive_reason = db.Column(db.Text, nullable=True)
     is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     users = db.relationship('User', back_populates='school', lazy='dynamic')
     classes = db.relationship('SchoolClass', back_populates='school', lazy='dynamic')
+    archived_by_user = db.relationship('User')
 
     def __repr__(self) -> str:
         return f'<School {self.slug}>'

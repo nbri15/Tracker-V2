@@ -2,22 +2,30 @@
 {% block content %}
 <div class="card shadow-sm">
   <div class="card-body">
-    <h3 class="h5">Delete empty school?</h3>
+    <h3 class="h5">Permanently delete archived school?</h3>
     <p class="text-muted mb-2">You are deleting <strong>{{ school.name }}</strong>. This action is permanent and cannot be undone.</p>
     <div class="alert alert-danger mb-3">
-      Only completely empty schools can be deleted. Deactivate first when unsure.
+      This deletes users (except executive admins), pupils and pupil-linked data, classes, settings/config, SATs/GAP/interventions rows, then the school itself.
+      Strongly recommended: download a data export first.
     </div>
+    <ul class="small text-muted mb-3">
+      {% for label, value in school_counts.items() %}<li>{{ label|replace('_', ' ')|title }}: {{ value }}</li>{% endfor %}
+    </ul>
 
     <form method="post" action="{{ url_for('executive.delete_school', school_id=school.id) }}" class="d-flex flex-column gap-3">
+      <div>
+        <label class="form-label">Type <strong>DELETE SCHOOL</strong> to confirm deletion.</label>
+        <input class="form-control" name="confirm_delete_text" required>
+      </div>
       {% if requires_explicit_confirmation %}
         <div>
-          <label class="form-label">Type <strong>{{ school.name }}</strong> to confirm deletion.</label>
+          <label class="form-label">Protected school: type <strong>{{ school.name }}</strong> for extra confirmation.</label>
           <input class="form-control" name="confirm_school_name" required>
         </div>
       {% endif %}
       <div class="d-flex gap-2">
-        <button class="btn btn-danger">Delete school</button>
-        <a class="btn btn-outline-secondary" href="{{ url_for('executive.schools') }}">Cancel</a>
+        <button class="btn btn-danger">Permanent delete school</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('executive.archived_schools') }}">Cancel</a>
       </div>
     </form>
   </div>
