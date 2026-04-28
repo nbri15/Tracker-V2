@@ -54,6 +54,7 @@ def register_blueprints(app: Flask) -> None:
     from .teacher import teacher_bp
     from .pupils import pupils_bp
     from .executive import executive_bp
+    from .legal import legal_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
@@ -61,6 +62,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(pupils_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(executive_bp)
+    app.register_blueprint(legal_bp)
 
 
 @login_manager.user_loader
