@@ -17,10 +17,10 @@ def is_ks1_year_group(year_group: int | None) -> bool:
     return year_group in KS1_YEAR_GROUPS
 
 
-def ensure_phonics_columns(year_group: int) -> list[PhonicsTestColumn]:
+def ensure_phonics_columns(year_group: int, school_id: int) -> list[PhonicsTestColumn]:
     columns = (
         PhonicsTestColumn.query
-        .filter_by(year_group=year_group)
+        .filter_by(school_id=school_id, year_group=year_group, is_active=True)
         .order_by(PhonicsTestColumn.display_order, PhonicsTestColumn.id)
         .all()
     )
@@ -31,6 +31,7 @@ def ensure_phonics_columns(year_group: int) -> list[PhonicsTestColumn]:
         db.session.add(
             PhonicsTestColumn(
                 year_group=year_group,
+                school_id=school_id,
                 name=name,
                 display_order=display_order,
                 is_active=True,
@@ -39,7 +40,7 @@ def ensure_phonics_columns(year_group: int) -> list[PhonicsTestColumn]:
     db.session.flush()
     return (
         PhonicsTestColumn.query
-        .filter_by(year_group=year_group)
+        .filter_by(school_id=school_id, year_group=year_group, is_active=True)
         .order_by(PhonicsTestColumn.display_order, PhonicsTestColumn.id)
         .all()
     )
@@ -58,8 +59,8 @@ def _parse_score(raw_value: str, pupil: Pupil, column: PhonicsTestColumn) -> int
     return parsed
 
 
-def save_phonics_columns(year_group: int, form_data) -> list[PhonicsTestColumn]:
-    columns = ensure_phonics_columns(year_group)
+def save_phonics_columns(year_group: int, school_id: int, form_data) -> list[PhonicsTestColumn]:
+    columns = ensure_phonics_columns(year_group, school_id)
     for index, column in enumerate(columns, start=1):
         name = (form_data.get(f'column_name_{column.id}', '') or '').strip()
         column.name = name or f'Test {index}'
@@ -78,8 +79,8 @@ def save_phonics_columns(year_group: int, form_data) -> list[PhonicsTestColumn]:
     return sorted(columns, key=lambda item: (item.display_order, item.id))
 
 
-def add_phonics_column(year_group: int, form_data) -> PhonicsTestColumn:
-    columns = ensure_phonics_columns(year_group)
+def add_phonics_column(year_group: int, school_id: int, form_data) -> PhonicsTestColumn:
+    columns = ensure_phonics_columns(year_group, school_id)
     name = (form_data.get('new_column_name', '') or '').strip() or f'Test {len(columns) + 1}'
     display_raw = (form_data.get('new_column_order', '') or '').strip()
     try:
@@ -89,6 +90,7 @@ def add_phonics_column(year_group: int, form_data) -> PhonicsTestColumn:
 
     column = PhonicsTestColumn(
         year_group=year_group,
+        school_id=school_id,
         name=name,
         display_order=display_order,
         is_active=True,
@@ -98,12 +100,13 @@ def add_phonics_column(year_group: int, form_data) -> PhonicsTestColumn:
     return column
 
 
-def build_phonics_tracker_rows(pupils: list[Pupil], columns: list[PhonicsTestColumn], academic_year: str) -> list[dict]:
+def build_phonics_tracker_rows(pupils: list[Pupil], columns: list[PhonicsTestColumn], academic_year: str, school_id: int) -> list[dict]:
     column_ids = [column.id for column in columns]
     score_rows = (
         PhonicsScore.query
         .filter(
             PhonicsScore.academic_year == academic_year,
+            PhonicsScore.school_id == school_id,
             PhonicsScore.pupil_id.in_([pupil.id for pupil in pupils]) if pupils else False,
             PhonicsScore.phonics_test_column_id.in_(column_ids) if column_ids else False,
         )
@@ -132,13 +135,14 @@ def build_phonics_tracker_rows(pupils: list[Pupil], columns: list[PhonicsTestCol
     return rows
 
 
-def save_phonics_scores(pupils: list[Pupil], columns: list[PhonicsTestColumn], academic_year: str, form_data) -> None:
+def save_phonics_scores(pupils: list[Pupil], columns: list[PhonicsTestColumn], academic_year: str, school_id: int, form_data) -> None:
     pupil_ids = [pupil.id for pupil in pupils]
     column_ids = [column.id for column in columns]
     existing_rows = (
         PhonicsScore.query
         .filter(
             PhonicsScore.academic_year == academic_year,
+            PhonicsScore.school_id == school_id,
             PhonicsScore.pupil_id.in_(pupil_ids) if pupil_ids else False,
             PhonicsScore.phonics_test_column_id.in_(column_ids) if column_ids else False,
         )
@@ -156,6 +160,7 @@ def save_phonics_scores(pupils: list[Pupil], columns: list[PhonicsTestColumn], a
                 continue
             record = existing or PhonicsScore(
                 pupil_id=pupil.id,
+                school_id=school_id,
                 academic_year=academic_year,
                 phonics_test_column_id=column.id,
             )
