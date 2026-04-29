@@ -147,7 +147,7 @@ def phonics():
         return redirect(url_for('dashboards.teacher_dashboard'))
 
     pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
-    columns = ensure_phonics_columns(school_class.year_group)
+    columns = ensure_phonics_columns(school_class.year_group, current_user.school_id)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
     sort_state = build_table_sort_state(request.values, allowed_columns=sortable_columns, default_column='name')
@@ -164,22 +164,22 @@ def phonics():
         action = request.form.get('action', 'save_scores')
         try:
             if action == 'save_columns':
-                columns = save_phonics_columns(school_class.year_group, request.form)
+                columns = save_phonics_columns(school_class.year_group, current_user.school_id, request.form)
                 flash('Phonics test columns updated.', 'success')
             elif action == 'add_column':
-                column = add_phonics_column(school_class.year_group, request.form)
+                column = add_phonics_column(school_class.year_group, current_user.school_id, request.form)
                 flash(f'Added phonics column {column.name}.', 'success')
             else:
-                save_phonics_scores(pupils, columns, academic_year, request.form)
+                save_phonics_scores(pupils, columns, academic_year, current_user.school_id, request.form)
                 flash('Phonics scores saved.', 'success')
             db.session.commit()
             return redirect(url_for('teacher.phonics', academic_year=academic_year, search=filters['search'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Phonics changes could not be saved: {exc}', 'danger')
-            columns = ensure_phonics_columns(school_class.year_group)
+            columns = ensure_phonics_columns(school_class.year_group, current_user.school_id)
 
-    rows = build_phonics_tracker_rows(pupils, columns, academic_year)
+    rows = build_phonics_tracker_rows(pupils, columns, academic_year, current_user.school_id)
     rows = sort_phonics_tracker_rows(rows, sort_state['column'], sort_state['direction'])
     return render_template(
         'teacher/phonics_tracker.html',
