@@ -104,6 +104,7 @@ SUBJECT_META = {
     'spag': {'title': 'SPaG'},
     'writing': {'title': 'Writing'},
 }
+JOIN_YEAR_GROUP_CHOICES = [(0, 'Reception')] + [(year, f'Year {year}') for year in range(1, 7)]
 
 
 @teacher_bp.route('/maths', methods=['GET', 'POST'])
@@ -572,6 +573,7 @@ def sats_tracker():
         overview=overview,
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
         sats_score_type_choices=SATS_SCORE_TYPES,
+        join_year_group_choices=JOIN_YEAR_GROUP_CHOICES,
     )
 
 
@@ -705,6 +707,14 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
     if not first_name or not last_name:
         flash('Enter both first and last name before adding a pupil.', 'danger')
         return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
+    join_year_group_raw = request.form.get('join_year_group', '').strip()
+    if join_year_group_raw == '':
+        flash('Select the year joined school before adding a pupil.', 'danger')
+        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
+    join_year_group = int(join_year_group_raw)
+    if join_year_group < 0 or join_year_group > 6:
+        flash('Year joined school must be between Reception and Year 6.', 'danger')
+        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
 
     duplicate = Pupil.query.filter(
         Pupil.class_id == school_class.id,
@@ -725,6 +735,7 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
         pupil_premium=request.form.get('pupil_premium') == 'on',
         laps=request.form.get('laps') == 'on',
         service_child=request.form.get('service_child') == 'on',
+        join_year_group=join_year_group,
         class_id=school_class.id,
         is_active=True,
         is_demo=school_class.is_demo,
@@ -987,6 +998,7 @@ def render_subject_page(subject_key: str):
         setting=setting,
         active_interventions=active_interventions,
         header_state=_table_header_state(context['sort_state'], SUBJECT_SORTABLE_COLUMNS),
+        join_year_group_choices=JOIN_YEAR_GROUP_CHOICES,
         **context,
     )
 
@@ -1068,5 +1080,6 @@ def render_writing_page():
         rows=rows,
         writing_band_choices=WRITING_BAND_CHOICES,
         header_state=_table_header_state(context['sort_state'], WRITING_SORTABLE_COLUMNS),
+        join_year_group_choices=JOIN_YEAR_GROUP_CHOICES,
         **context,
     )

@@ -25,6 +25,7 @@
     <div class="card-body">
       <h4 class="mb-1">{{ pupil.full_name }} — Year {{ pupil.school_class.year_group }}</h4>
       <p class="mb-2 text-muted">Class: {{ pupil.school_class.name }}</p>
+      <p class="mb-2 text-muted">Year Joined School: {% if pupil.join_year_group == 0 %}Reception{% elif pupil.join_year_group is not none %}Year {{ pupil.join_year_group }}{% else %}—{% endif %}</p>
       <div class="d-flex flex-wrap gap-2 mb-3">
         <span class="badge text-bg-secondary">PP: {{ 'Yes' if pupil.pupil_premium else 'No' }}</span>
         <span class="badge text-bg-secondary">LAPS: {{ 'Yes' if pupil.laps else 'No' }}</span>
