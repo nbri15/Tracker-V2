@@ -19,6 +19,7 @@ class Pupil(db.Model):
     laps = db.Column(db.Boolean, nullable=False, default=False, index=True)
     service_child = db.Column(db.Boolean, nullable=False, default=False, index=True)
     join_year_group = db.Column(db.Integer, nullable=True)
+    join_date = db.Column(db.Date, nullable=True)
     class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
     is_archived = db.Column(db.Boolean, nullable=False, default=False, index=True)

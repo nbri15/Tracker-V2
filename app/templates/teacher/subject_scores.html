@@ -306,7 +306,8 @@
         <div class="col-md-1 form-check mt-4"><input class="form-check-input" type="checkbox" name="pupil_premium" id="quick_pp"><label class="form-check-label small" for="quick_pp">PP</label></div>
         <div class="col-md-1 form-check mt-4"><input class="form-check-input" type="checkbox" name="laps" id="quick_laps"><label class="form-check-label small" for="quick_laps">LAPS</label></div>
         <div class="col-md-2 form-check mt-4"><input class="form-check-input" type="checkbox" name="service_child" id="quick_service"><label class="form-check-label small" for="quick_service">Service child</label></div>
-        <div class="col-md-2"><label class="form-label">Year Joined School</label><select name="join_year_group" class="form-select form-select-sm" required>{% for value, label in join_year_group_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><label class="form-label">Year Joined School</label><select name="join_year_group" class="form-select form-select-sm">{% for value, label in join_year_group_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><label class="form-label">Join Date</label><input type="date" name="join_date" class="form-control form-control-sm"></div>
         <div class="col-md-2 text-md-end"><button type="submit" class="btn btn-primary btn-sm">Save new pupil</button></div>
       </form>
     </div>

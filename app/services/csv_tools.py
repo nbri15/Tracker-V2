@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass, field
+from datetime import date
 
 from app.extensions import db
 from app.models import (
@@ -263,17 +264,37 @@ def _has_any_writing_data(row: dict) -> bool:
 
 
 def _parse_join_year_group(row: dict) -> int | None:
-    if 'join_year_group' not in row:
+    join_year_group_key = next((key for key in ('join_year_group', 'year_joined', 'joined_year_group') if key in row), None)
+    if join_year_group_key is None:
         return None
-    raw = _clean_value(row.get('join_year_group'))
+    raw = _clean_value(row.get(join_year_group_key))
     if raw is None:
         return None
-    if not raw.isdigit():
-        raise CsvImportError('join_year_group must be an integer from 0 to 6.')
-    value = int(raw)
+    normalized = raw.lower().replace(' ', '')
+    aliases = {'reception': 0, 'rec': 0, 'r': 0}
+    for year in range(1, 7):
+        aliases[str(year)] = year
+        aliases[f'y{year}'] = year
+        aliases[f'year{year}'] = year
+    if normalized in aliases:
+        value = aliases[normalized]
+    else:
+        raise CsvImportError('join_year_group must be a year from Reception to Year 6.')
     if value < 0 or value > 6:
-        raise CsvImportError('join_year_group must be an integer from 0 to 6.')
+        raise CsvImportError('join_year_group must be a year from Reception to Year 6.')
     return value
+
+
+def _parse_join_date(row: dict) -> date | None:
+    if 'join_date' not in row:
+        return None
+    raw = _clean_value(row.get('join_date'))
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise CsvImportError('join_date must be in YYYY-MM-DD format.') from exc
 
 
 def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> bool:
@@ -286,8 +307,10 @@ def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> 
         'class_id': school_class.id,
         'is_active': True,
     }
-    if 'join_year_group' in row:
+    if any(key in row for key in ('join_year_group', 'year_joined', 'joined_year_group')):
         updates['join_year_group'] = _parse_join_year_group(row)
+    if 'join_date' in row:
+        updates['join_date'] = _parse_join_date(row)
     for field, value in updates.items():
         if getattr(pupil, field) != value:
             setattr(pupil, field, value)
@@ -385,6 +408,7 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                         service_child=_parse_bool(row.get('service_child')),
                         class_id=school_class.id,
                         join_year_group=_parse_join_year_group(row),
+                        join_date=_parse_join_date(row),
                         is_active=True,
                     )
                     db.session.add(pupil)

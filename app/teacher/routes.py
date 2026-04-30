@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
@@ -104,7 +106,7 @@ SUBJECT_META = {
     'spag': {'title': 'SPaG'},
     'writing': {'title': 'Writing'},
 }
-JOIN_YEAR_GROUP_CHOICES = [(0, 'Reception')] + [(year, f'Year {year}') for year in range(1, 7)]
+JOIN_YEAR_GROUP_CHOICES = [('', 'Unknown'), (0, 'Reception')] + [(year, f'Year {year}') for year in range(1, 7)]
 
 
 @teacher_bp.route('/maths', methods=['GET', 'POST'])
@@ -708,13 +710,20 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
         flash('Enter both first and last name before adding a pupil.', 'danger')
         return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
     join_year_group_raw = request.form.get('join_year_group', '').strip()
-    if join_year_group_raw == '':
-        flash('Select the year joined school before adding a pupil.', 'danger')
-        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
-    join_year_group = int(join_year_group_raw)
-    if join_year_group < 0 or join_year_group > 6:
+    join_year_group = None
+    if join_year_group_raw != '':
+        join_year_group = int(join_year_group_raw)
+    if join_year_group is not None and (join_year_group < 0 or join_year_group > 6):
         flash('Year joined school must be between Reception and Year 6.', 'danger')
         return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
+    join_date_raw = request.form.get('join_date', '').strip()
+    parsed_join_date = None
+    if join_date_raw:
+        try:
+            parsed_join_date = date.fromisoformat(join_date_raw)
+        except ValueError:
+            flash('Join date must be a valid date.', 'danger')
+            return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
 
     duplicate = Pupil.query.filter(
         Pupil.class_id == school_class.id,
@@ -736,6 +745,7 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
         laps=request.form.get('laps') == 'on',
         service_child=request.form.get('service_child') == 'on',
         join_year_group=join_year_group,
+        join_date=parsed_join_date,
         class_id=school_class.id,
         is_active=True,
         is_demo=school_class.is_demo,
