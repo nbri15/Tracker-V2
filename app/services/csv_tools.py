@@ -262,6 +262,20 @@ def _has_any_writing_data(row: dict) -> bool:
     return any(_clean_value(row.get(column)) for columns in COMBINED_WRITING_COLUMNS.values() for column in columns)
 
 
+def _parse_join_year_group(row: dict) -> int | None:
+    if 'join_year_group' not in row:
+        return None
+    raw = _clean_value(row.get('join_year_group'))
+    if raw is None:
+        return None
+    if not raw.isdigit():
+        raise CsvImportError('join_year_group must be an integer from 0 to 6.')
+    value = int(raw)
+    if value < 0 or value > 6:
+        raise CsvImportError('join_year_group must be an integer from 0 to 6.')
+    return value
+
+
 def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> bool:
     changed = False
     updates = {
@@ -272,6 +286,8 @@ def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> 
         'class_id': school_class.id,
         'is_active': True,
     }
+    if 'join_year_group' in row:
+        updates['join_year_group'] = _parse_join_year_group(row)
     for field, value in updates.items():
         if getattr(pupil, field) != value:
             setattr(pupil, field, value)
@@ -368,6 +384,7 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                         laps=_parse_bool(row.get('laps')),
                         service_child=_parse_bool(row.get('service_child')),
                         class_id=school_class.id,
+                        join_year_group=_parse_join_year_group(row),
                         is_active=True,
                     )
                     db.session.add(pupil)
