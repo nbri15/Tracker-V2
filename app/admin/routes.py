@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from flask import Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -852,6 +852,16 @@ def manage_pupil():
             flash(f'Restored {pupil.full_name}. They are active again.', 'success')
         elif action == 'delete':
             flash('Permanent deletion is only available from Archived pupils after confirmation.', 'warning')
+        elif action == 'update_profile':
+            join_year_group_raw = request.form.get('join_year_group', '').strip()
+            pupil.join_year_group = int(join_year_group_raw) if join_year_group_raw != '' else None
+            if pupil.join_year_group is not None and (pupil.join_year_group < 0 or pupil.join_year_group > 6):
+                raise ValueError('Year Joined School must be between Reception and Year 6.')
+            join_date_raw = request.form.get('join_date', '').strip()
+            pupil.join_date = date.fromisoformat(join_date_raw) if join_date_raw else None
+            db.session.add(pupil)
+            db.session.commit()
+            flash(f'Updated profile fields for {pupil.full_name}.', 'success')
         else:
             flash('Unknown pupil action.', 'warning')
     except ValueError as exc:

@@ -97,6 +97,7 @@
           <th>PP</th>
           <th>LAPS</th>
           <th>Service</th>
+          <th>Year Joined School</th>
           <th>SEND/EHCP</th>
           <th>Reading</th>
           <th>Writing</th>
@@ -115,6 +116,7 @@
             <td>{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
             <td>{{ 'Yes' if pupil.laps else 'No' }}</td>
             <td>{{ 'Yes' if pupil.service_child else 'No' }}</td>
+            <td>{% if pupil.join_year_group == 0 %}Reception{% elif pupil.join_year_group is not none %}Year {{ pupil.join_year_group }}{% else %}Unknown{% endif %}</td>
             <td><span class="text-muted">—</span></td>
             <td>{{ latest.get('reading') or '—' }}</td>
             <td>{{ latest.get('writing') or '—' }}</td>
