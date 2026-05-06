@@ -175,6 +175,25 @@ a:hover {
   letter-spacing: 0.04em;
 }
 
+.table-sticky .checkbox-cell,
+.table .checkbox-cell {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  text-align: center;
+  vertical-align: middle;
+  padding: 4px;
+  white-space: nowrap;
+}
+
+.table-sticky .checkbox-cell input[type="checkbox"],
+.table .checkbox-cell input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
 .table-responsive {
   scrollbar-color: #b6c6df #f2f5fb;
 }
