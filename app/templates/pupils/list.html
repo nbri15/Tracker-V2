@@ -94,11 +94,11 @@
           <th>Class</th>
           <th>Year</th>
           <th>Gender</th>
-          <th>PP</th>
-          <th>LAPS</th>
-          <th>Service</th>
+          <th class="checkbox-cell">PP</th>
+          <th class="checkbox-cell">LAPS</th>
+          <th class="checkbox-cell">Service</th>
           <th>Year Joined School</th>
-          <th>SEND/EHCP</th>
+          <th class="checkbox-cell">SEND/EHCP</th>
           <th>Reading</th>
           <th>Writing</th>
           <th>Maths</th>
@@ -113,11 +113,11 @@
             <td>{{ pupil.school_class.name }}</td>
             <td>Year {{ pupil.school_class.year_group }}</td>
             <td>{{ pupil.gender }}</td>
-            <td>{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
-            <td>{{ 'Yes' if pupil.laps else 'No' }}</td>
-            <td>{{ 'Yes' if pupil.service_child else 'No' }}</td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.laps else 'No' }}</td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.service_child else 'No' }}</td>
             <td>{% if pupil.join_year_group == 0 %}Reception{% elif pupil.join_year_group is not none %}Year {{ pupil.join_year_group }}{% else %}Unknown{% endif %}</td>
-            <td><span class="text-muted">—</span></td>
+            <td class="checkbox-cell"><span class="text-muted">—</span></td>
             <td>{{ latest.get('reading') or '—' }}</td>
             <td>{{ latest.get('writing') or '—' }}</td>
             <td>{{ latest.get('maths') or '—' }}</td>
