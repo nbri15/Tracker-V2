@@ -31,7 +31,7 @@
         <span class="badge text-bg-secondary">PP: {{ 'Yes' if pupil.pupil_premium else 'No' }}</span>
         <span class="badge text-bg-secondary">LAPS: {{ 'Yes' if pupil.laps else 'No' }}</span>
         <span class="badge text-bg-secondary">Service: {{ 'Yes' if pupil.service_child else 'No' }}</span>
-        <span class="badge text-bg-secondary">SEND/EHCP: —</span>
+        <span class="badge text-bg-secondary">SEND: {{ 'Yes' if pupil.send else 'No' }}</span>
       </div>
       <div class="row g-2">
         {% for subject_key, label in [('reading','Reading'), ('maths','Maths'), ('spag','SPaG'), ('writing','Writing'), ('overall','Overall')] %}
@@ -81,6 +81,12 @@
     <div class="card-header bg-white"><strong>Notes & report writing</strong></div>
     <div class="card-body">
       <form method="post">
+      {% if current_user.can_manage_school %}<div class="d-flex gap-3 mb-3">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="pupil_premium" id="p_pp" {% if pupil.pupil_premium %}checked{% endif %}><label class="form-check-label" for="p_pp">Pupil Premium</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="laps" id="p_laps" {% if pupil.laps %}checked{% endif %}><label class="form-check-label" for="p_laps">LAPS</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="service_child" id="p_service" {% if pupil.service_child %}checked{% endif %}><label class="form-check-label" for="p_service">Service child</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="send" id="p_send" {% if pupil.send %}checked{% endif %}><label class="form-check-label" for="p_send">SEND</label></div>
+      </div>{% endif %}
         <div class="mb-3">
           <label class="form-label">Strengths</label>
           <textarea class="form-control" name="strengths_notes" rows="3">{{ pupil.strengths_notes or '' }}</textarea>

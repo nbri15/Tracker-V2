@@ -81,6 +81,7 @@ SUBGROUP_FILTERS = {
     'pp': 'Pupil Premium',
     'laps': 'LAPS',
     'service_child': 'Service child',
+    'send': 'SEND',
 }
 BOOLEAN_FILTER_CHOICES = {
     'all': 'All',
@@ -348,6 +349,8 @@ def apply_pupil_subgroup(query, subgroup: str):
         return query.filter(Pupil.laps.is_(True))
     if subgroup == 'service_child':
         return query.filter(Pupil.service_child.is_(True))
+    if subgroup == 'send':
+        return query.filter(Pupil.send.is_(True))
     return query
 
 
@@ -368,6 +371,7 @@ def apply_admin_pupil_filters(query, filters: dict | None = None):
         ('pupil_premium', Pupil.pupil_premium),
         ('laps', Pupil.laps),
         ('service_child', Pupil.service_child),
+        ('send', Pupil.send),
     ):
         value = (filters.get(filter_name) or '').strip()
         if value == 'yes':
@@ -395,6 +399,7 @@ def build_admin_pupil_filter_state(args) -> dict:
         'pupil_premium': (args.get('pupil_premium', 'all') or 'all').strip() or 'all',
         'laps': (args.get('laps', 'all') or 'all').strip() or 'all',
         'service_child': (args.get('service_child', 'all') or 'all').strip() or 'all',
+        'send': (args.get('send', 'all') or 'all').strip() or 'all',
         'search': (args.get('search', '') or '').strip(),
     }
 
@@ -1186,6 +1191,8 @@ def _build_pupil_flag_summary(pupil: Pupil) -> str:
         flags.append('LAPS')
     if pupil.service_child:
         flags.append('Service')
+    if pupil.send:
+        flags.append('SEND')
     return ' · '.join(flags) if flags else '—'
 
 
@@ -1253,6 +1260,7 @@ def _build_class_detail_subject_rows(
             'pupil_premium': pupil.pupil_premium,
             'laps': pupil.laps,
             'service_child': pupil.service_child,
+            'send': pupil.send,
             'flags': _build_pupil_flag_summary(pupil),
         }
         if subject in CORE_SUBJECTS:
@@ -1310,6 +1318,7 @@ def _build_class_detail_sats_rows(school_class: SchoolClass, academic_year: str,
             'pupil_premium': pupil.pupil_premium,
             'laps': pupil.laps,
             'service_child': pupil.service_child,
+            'send': pupil.send,
             'flags': _build_pupil_flag_summary(pupil),
             'subjects': {},
         }

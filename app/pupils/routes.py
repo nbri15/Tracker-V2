@@ -86,6 +86,11 @@ def profile(pupil_id: int):
 
     if request.method == 'POST':
         pupil.strengths_notes = request.form.get('strengths_notes', '').strip() or None
+        if current_user.can_manage_school:
+            pupil.pupil_premium = request.form.get('pupil_premium') == 'on'
+            pupil.laps = request.form.get('laps') == 'on'
+            pupil.service_child = request.form.get('service_child') == 'on'
+            pupil.send = request.form.get('send') == 'on'
         pupil.next_steps_notes = request.form.get('next_steps_notes', '').strip() or None
         pupil.general_notes = request.form.get('general_notes', '').strip() or None
         db.session.add(pupil)
@@ -275,6 +280,7 @@ def _apply_common_filters(query, filters: dict):
         ('pp', Pupil.pupil_premium),
         ('laps', Pupil.laps),
         ('service_child', Pupil.service_child),
+        ('send_flag', Pupil.send),
     ):
         value = filters.get(key)
         if value == 'yes':
