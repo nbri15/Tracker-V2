@@ -32,6 +32,7 @@ COMBINED_PUPIL_COLUMNS = [
     'pupil_premium',
     'laps',
     'service_child',
+    'send',
     'class_name',
     'academic_year',
 ]
@@ -259,6 +260,14 @@ def _has_any_subject_data(row: dict) -> bool:
     return any(_clean_value(row.get(column)) for columns_by_term in COMBINED_SUBJECT_SCORE_COLUMNS.values() for columns in columns_by_term.values() for column in columns)
 
 
+
+
+def _get_send_value(row: dict) -> str | None:
+    for key in ('send', 'SEND', 'sen', 'SEN', 'special_educational_needs', 'special educational needs'):
+        if key in row:
+            return row.get(key)
+    return None
+
 def _has_any_writing_data(row: dict) -> bool:
     return any(_clean_value(row.get(column)) for columns in COMBINED_WRITING_COLUMNS.values() for column in columns)
 
@@ -304,6 +313,7 @@ def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> 
         'pupil_premium': _parse_bool(row.get('pupil_premium')),
         'laps': _parse_bool(row.get('laps')),
         'service_child': _parse_bool(row.get('service_child')),
+        'send': _parse_bool(_get_send_value(row)),
         'class_id': school_class.id,
         'is_active': True,
     }
@@ -406,6 +416,7 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                         pupil_premium=_parse_bool(row.get('pupil_premium')),
                         laps=_parse_bool(row.get('laps')),
                         service_child=_parse_bool(row.get('service_child')),
+                        send=_parse_bool(_get_send_value(row)),
                         class_id=school_class.id,
                         join_year_group=_parse_join_year_group(row),
                         join_date=_parse_join_date(row),
@@ -729,12 +740,12 @@ def export_class_overview_csv(academic_year: str, class_id: int | None = None) -
 def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'academic_year'])
+    writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'send', 'academic_year'])
     query = Pupil.query.join(Pupil.school_class)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     for pupil in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, academic_year or 'current'])
+        writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, pupil.send, academic_year or 'current'])
     return output.getvalue()
 
 

@@ -18,6 +18,7 @@ class Pupil(db.Model):
     pupil_premium = db.Column(db.Boolean, nullable=False, default=False, index=True)
     laps = db.Column(db.Boolean, nullable=False, default=False, index=True)
     service_child = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    send = db.Column(db.Boolean, nullable=False, default=False, index=True)
     join_year_group = db.Column(db.Integer, nullable=True)
     join_date = db.Column(db.Date, nullable=True)
     class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False, index=True)

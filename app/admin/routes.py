@@ -733,10 +733,37 @@ def reset_user_password(user_id: int):
     return render_template('admin/reset_password.html', user=user)
 
 
-@admin_bp.route('/pupils')
+@admin_bp.route('/pupils', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def pupils():
+    if request.method == 'POST':
+        first_name = request.form.get('first_name', '').strip()
+        last_name = request.form.get('last_name', '').strip()
+        class_id = int(request.form.get('class_id', '0') or 0)
+        school_class = demo_filter_classes(SchoolClass.query.filter_by(id=class_id, school_id=current_user.school_id, is_active=True)).first()
+        if not first_name or not last_name or not school_class:
+            flash('Enter pupil names and select a valid class in your school.', 'danger')
+            return redirect(url_for('admin.pupils'))
+        pupil = Pupil(
+            first_name=first_name,
+            last_name=last_name,
+            gender=request.form.get('gender', '').strip() or 'Unknown',
+            pupil_premium=request.form.get('pupil_premium') == 'on',
+            laps=request.form.get('laps') == 'on',
+            service_child=request.form.get('service_child') == 'on',
+            send=request.form.get('send') == 'on',
+            join_year_group=int(request.form.get('join_year_group')) if (request.form.get('join_year_group') or '').strip() != '' else None,
+            class_id=school_class.id,
+            school_id=current_user.school_id,
+            is_active=True,
+            is_demo=current_user.is_demo,
+        )
+        db.session.add(pupil)
+        db.session.commit()
+        flash(f'Added {pupil.full_name}.', 'success')
+        return redirect(url_for('admin.pupils'))
+
     pupil_filters = build_admin_pupil_filter_state(request.args)
     class_id_raw = request.args.get('class_id', '').strip()
 
@@ -859,6 +886,10 @@ def manage_pupil():
                 raise ValueError('Year Joined School must be between Reception and Year 6.')
             join_date_raw = request.form.get('join_date', '').strip()
             pupil.join_date = date.fromisoformat(join_date_raw) if join_date_raw else None
+            pupil.pupil_premium = request.form.get('pupil_premium') == 'on'
+            pupil.laps = request.form.get('laps') == 'on'
+            pupil.service_child = request.form.get('service_child') == 'on'
+            pupil.send = request.form.get('send') == 'on'
             db.session.add(pupil)
             db.session.commit()
             flash(f'Updated profile fields for {pupil.full_name}.', 'success')
