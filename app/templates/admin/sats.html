@@ -27,18 +27,23 @@
             <a class="btn btn-sm {% if selected_tab and tab.id == selected_tab.id %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('admin.sats', academic_year=academic_year, class_id=selected_class_id, exam_tab_id=tab.id) }}">{{ tab.name }}</a>
           {% endfor %}
         </div>
-        <form method="post" class="form-grid mb-2">
+        <form method="post" class="form-grid exam-tabs-form mb-2">
           <input type="hidden" name="action" value="save_tab">
           <input type="hidden" name="academic_year" value="{{ academic_year }}">
           {% if selected_class_id %}<input type="hidden" name="class_id" value="{{ selected_class_id }}">{% endif %}
           {% if selected_tab %}<input type="hidden" name="exam_tab_id" value="{{ selected_tab.id }}">{% endif %}
           <div class="col-md-5"><label class="form-label">Tab name</label><input type="text" class="form-control" name="tab_name" placeholder="Autumn 3" required></div>
           <div class="col-md-3"><label class="form-label">Order</label><input type="number" min="1" class="form-control" name="tab_display_order" value="{{ tabs|length + 1 }}" required></div>
-          <div class="col-md-2 form-check mt-4"><input class="form-check-input" type="checkbox" name="tab_is_active" id="tab_is_active" checked><label class="form-check-label" for="tab_is_active">Active</label></div>
+          <div class="col-md-2 mt-4">
+            <label class="form-check compact-check" for="tab_is_active">
+              <input class="form-check-input" type="checkbox" name="tab_is_active" id="tab_is_active" checked>
+              <span>Active</span>
+            </label>
+          </div>
           <div class="col-md-2"><button class="btn btn-outline-primary w-100" title="Add tab">+</button></div>
         </form>
         {% if selected_tab %}
-        <form method="post" class="form-grid border-top pt-3">
+        <form method="post" class="form-grid exam-tabs-form border-top pt-3">
           <input type="hidden" name="action" value="save_tab">
           <input type="hidden" name="tab_id" value="{{ selected_tab.id }}">
           <input type="hidden" name="academic_year" value="{{ academic_year }}">
@@ -46,7 +51,12 @@
           <input type="hidden" name="exam_tab_id" value="{{ selected_tab.id }}">
           <div class="col-md-5"><label class="form-label">Edit selected tab</label><input type="text" class="form-control" name="tab_name" value="{{ selected_tab.name }}" required></div>
           <div class="col-md-3"><label class="form-label">Order</label><input type="number" min="1" class="form-control" name="tab_display_order" value="{{ selected_tab.display_order }}" required></div>
-          <div class="col-md-2 form-check mt-4"><input class="form-check-input" type="checkbox" name="tab_is_active" id="tab_is_active_existing" {% if selected_tab.is_active %}checked{% endif %}><label class="form-check-label" for="tab_is_active_existing">Active</label></div>
+          <div class="col-md-2 mt-4">
+            <label class="form-check compact-check" for="tab_is_active_existing">
+              <input class="form-check-input" type="checkbox" name="tab_is_active" id="tab_is_active_existing" {% if selected_tab.is_active %}checked{% endif %}>
+              <span>Active</span>
+            </label>
+          </div>
           <div class="col-md-2 d-flex gap-2"><button class="btn btn-primary btn-sm w-100">Save</button></div>
         </form>
         {% endif %}

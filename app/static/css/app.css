@@ -709,6 +709,30 @@ a:hover {
   align-items: center;
 }
 
+.exam-tabs-form {
+  grid-template-columns: minmax(180px, 1fr) 120px 90px minmax(140px, 1fr);
+}
+
+.compact-check,
+.form-check.compact-check {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: fit-content !important;
+}
+
+.compact-check input[type="checkbox"] {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
+  flex: 0 0 18px !important;
+  margin: 0 !important;
+  appearance: auto !important;
+}
+
 .compact-filter-row .form-label {
   font-size: 0.78rem;
   margin-bottom: 0.25rem;
