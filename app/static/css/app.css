@@ -175,22 +175,34 @@ a:hover {
   letter-spacing: 0.04em;
 }
 
-.table-sticky .checkbox-cell,
-.table .checkbox-cell {
-  width: 40px;
-  min-width: 40px;
-  max-width: 40px;
+.table-sticky {
+  table-layout: fixed;
+}
+
+.table-sticky th.checkbox-cell,
+.table-sticky td.checkbox-cell,
+.table th.checkbox-cell,
+.table td.checkbox-cell {
+  width: 42px !important;
+  min-width: 42px !important;
+  max-width: 42px !important;
   text-align: center;
   vertical-align: middle;
   padding: 4px;
   white-space: nowrap;
 }
 
+.table-sticky th.checkbox-cell,
+.table-sticky td.checkbox-cell {
+  overflow: hidden;
+}
+
 .table-sticky .checkbox-cell input[type="checkbox"],
 .table .checkbox-cell input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  margin: 0;
+  margin: 0 auto;
+  display: block;
   cursor: pointer;
 }
 
