@@ -107,10 +107,10 @@
         </select>
       </div>
       <div class="col-md-2">
-        <label class="form-label">Subgroup view</label>
-        <select name="subgroup" class="form-select">
-          {% for value, label in subgroup_filters.items() %}
-            <option value="{{ value }}" {% if subgroup == value %}selected{% endif %}>{{ label }}</option>
+        <label class="form-label">SEND</label>
+        <select name="send" class="form-select">
+          {% for value, label in boolean_filter_choices.items() %}
+            <option value="{{ value }}" {% if pupil_filters.send == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
