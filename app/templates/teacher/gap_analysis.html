@@ -106,7 +106,7 @@
             <table class="table table-sm align-middle mb-0 spreadsheet-table gap-table js-gap-table" data-paper-key="{{ paper.key }}">
               <thead class="table-light sticky-top">
                 <tr>
-                  <th class="sticky-col gap-name-col">Pupil</th>
+                  <th class="sticky-col gap-name-col"></th>
                   {% for question in paper.questions %}
                     <th class="gap-question-col">
                       <input type="hidden" name="question_id[]" value="{{ question.id }}">

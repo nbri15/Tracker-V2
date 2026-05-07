@@ -7,7 +7,6 @@ from app.models import Intervention, Pupil, SchoolClass, User
 from app.services import (
     BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
-    SUBGROUP_FILTERS,
     build_admin_pupil_filter_state,
     build_class_overview_row,
     build_dashboard_summary,
@@ -95,7 +94,6 @@ def admin_dashboard():
     filter_year_group = request.args.get('year_group', '').strip()
     filter_teacher = request.args.get('teacher_id', '').strip()
     filter_class = request.args.get('class_id', '').strip()
-    subgroup = request.args.get('subgroup', 'all').strip() or 'all'
     sort = request.args.get('sort', 'year_group')
     pupil_filters = build_admin_pupil_filter_state(request.args)
 
@@ -108,7 +106,7 @@ def admin_dashboard():
         query = query.filter(SchoolClass.id == int(filter_class))
 
     classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
-    class_rows = [build_class_overview_row(school_class, academic_year, subgroup, pupil_filters) for school_class in classes]
+    class_rows = [build_class_overview_row(school_class, academic_year, filters=pupil_filters) for school_class in classes]
     class_rows = sort_class_rows(class_rows, sort)
     subject_cards = build_subject_overview_cards(class_rows)
     teacher_options = school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).order_by(User.username).all()
@@ -127,9 +125,7 @@ def admin_dashboard():
         'filter_year_group': filter_year_group,
         'filter_teacher': filter_teacher,
         'filter_class': filter_class,
-        'subgroup': subgroup,
         'pupil_filters': pupil_filters,
-        'subgroup_filters': SUBGROUP_FILTERS,
         'boolean_filter_choices': BOOLEAN_FILTER_CHOICES,
         'gender_options': get_gender_filter_options(class_id=int(filter_class)) if filter_class else get_gender_filter_options(),
         'sort': sort,
