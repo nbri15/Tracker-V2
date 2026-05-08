@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from flask import Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+
+from sqlalchemy import and_, func, or_
 
 from app.extensions import db
 from app.models import (
@@ -192,6 +194,13 @@ def _linked_record_summary(linked_counts: dict[str, int]) -> str:
 def _pupil_action_redirect():
     next_url = request.form.get('next', '').strip()
     return redirect(next_url or url_for('admin.pupils'))
+
+
+def _school_scope_filter(model):
+    school_id = current_school_id()
+    if school_id is not None and hasattr(model, 'school_id'):
+        return model.school_id == school_id
+    return True
 
 
 def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
@@ -1452,3 +1461,71 @@ def export_history():
     academic_year = request.args.get('academic_year', get_current_academic_year())
     csv_text = export_history_csv(academic_year)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=promotion_history_export.csv'})
+
+
+@admin_bp.route('/data-quality')
+@login_required
+@admin_required
+def data_quality():
+    selected_term = request.args.get('term') or TERMS[-1]
+    academic_year = request.args.get('academic_year') or get_current_academic_year()
+    pupil_query = demo_filter_pupils(Pupil.query.filter_by(is_active=True))
+    class_query = demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
+
+    issues = []
+    issues.append({'issue': 'Pupils without class', 'count': pupil_query.filter(Pupil.class_id.is_(None)).count(), 'action_link': url_for('admin.pupils')})
+    issues.append({'issue': 'Pupils missing gender', 'count': pupil_query.filter(func.coalesce(Pupil.gender, '') == '').count(), 'action_link': url_for('admin.pupils')})
+    issues.append({'issue': 'Pupils missing PP/LAPS/Service/SEND values', 'count': pupil_query.filter(or_(Pupil.pupil_premium.is_(None), Pupil.laps.is_(None), Pupil.service_child.is_(None), Pupil.send.is_(None))).count(), 'action_link': url_for('admin.pupils')})
+    issues.append({'issue': 'Pupils without join year group', 'count': pupil_query.filter(Pupil.join_year_group.is_(None)).count(), 'action_link': url_for('admin.pupils')})
+
+    duplicates = (
+        pupil_query.with_entities(Pupil.first_name, Pupil.last_name, Pupil.class_id, func.count(Pupil.id).label('dup_count'))
+        .group_by(Pupil.first_name, Pupil.last_name, Pupil.class_id)
+        .having(func.count(Pupil.id) > 1)
+        .all()
+    )
+    issues.append({'issue': 'Duplicate pupil names in same class', 'count': len(duplicates), 'action_link': url_for('admin.pupils')})
+    issues.append({'issue': 'Classes with no teacher', 'count': class_query.filter(SchoolClass.teacher_id.is_(None)).count(), 'action_link': url_for('admin.classes')})
+
+    teachers_no_class = school_scoped_query(User, User.query).filter_by(role='teacher', is_active=True, is_demo=is_demo_user()).outerjoin(SchoolClass, and_(SchoolClass.teacher_id == User.id, SchoolClass.is_active.is_(True))).filter(SchoolClass.id.is_(None)).count()
+    issues.append({'issue': 'Teachers with no class', 'count': teachers_no_class, 'action_link': url_for('admin.users')})
+
+    active_pupil_count = pupil_query.count()
+    assessed_ids = {pid for (pid,) in school_scoped_query(SubjectResult, SubjectResult.query.with_entities(SubjectResult.pupil_id).filter_by(academic_year=academic_year, term=selected_term).distinct()).all()}
+    issues.append({'issue': f'Missing scores for {selected_term.title()} {academic_year}', 'count': max(active_pupil_count - len(assessed_ids), 0), 'action_link': url_for('admin.classes', academic_year=academic_year)})
+
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    recent_ids = {pid for (pid,) in school_scoped_query(SubjectResult, SubjectResult.query.with_entities(SubjectResult.pupil_id).filter(SubjectResult.updated_at >= thirty_days_ago).distinct()).all()}
+    issues.append({'issue': 'Pupils with no recent assessment data (30 days)', 'count': max(active_pupil_count - len(recent_ids), 0), 'action_link': url_for('admin.classes')})
+
+    live_archived = pupil_query.filter(Pupil.is_archived.is_(True)).count()
+    issues.append({'issue': 'Archived pupils still in live tables', 'count': live_archived, 'action_link': url_for('admin.archived_pupils')})
+
+    return render_template('admin/data_quality.html', issues=issues, terms=TERMS, selected_term=selected_term, academic_year=academic_year)
+
+
+@admin_bp.route('/setup-checklist')
+@login_required
+@admin_required
+def setup_checklist():
+    school_id = current_school_id()
+    classes_count = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).count()
+    teachers_count = school_scoped_query(User, User.query).filter_by(role='teacher', is_active=True, is_demo=is_demo_user()).count()
+    assigned_teacher_count = demo_filter_classes(SchoolClass.query.filter(SchoolClass.teacher_id.is_not(None), SchoolClass.is_active.is_(True))).count()
+    pupils_count = demo_filter_pupils(Pupil.query.filter_by(is_active=True)).count()
+    settings_count = school_scoped_query(AssessmentSetting, AssessmentSetting.query).count()
+    send_quality_ok = demo_filter_pupils(Pupil.query.filter_by(is_active=True)).filter(Pupil.send.is_(None)).count() == 0
+    school = School.query.get(school_id) if school_id else None
+
+    items = [
+        {'label': 'School created', 'complete': school is not None, 'link': url_for('dashboards.index')},
+        {'label': 'Classes created', 'complete': classes_count > 0, 'link': url_for('admin.classes')},
+        {'label': 'Teachers created', 'complete': teachers_count > 0, 'link': url_for('admin.users')},
+        {'label': 'Teachers assigned to classes', 'complete': assigned_teacher_count > 0, 'link': url_for('admin.classes')},
+        {'label': 'Pupils uploaded', 'complete': pupils_count > 0, 'link': url_for('admin.imports')},
+        {'label': 'Assessment settings completed', 'complete': settings_count > 0, 'link': url_for('admin.settings')},
+        {'label': 'SEND/PP/LAPS/Service data checked', 'complete': send_quality_ok, 'link': url_for('admin.pupils')},
+        {'label': 'Privacy/terms links active', 'complete': True, 'link': url_for('auth.login')},
+        {'label': 'Demo data not mixed with real school', 'complete': school is None or (school.is_demo == is_demo_user()), 'link': url_for('admin.pupils')},
+    ]
+    return render_template('admin/setup_checklist.html', items=items)
