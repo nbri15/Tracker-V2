@@ -1467,7 +1467,13 @@ def export_history():
 @login_required
 @admin_required
 def data_quality():
-    selected_term = request.args.get('term') or TERMS[-1]
+    term_options = [('autumn', 'Autumn'), ('spring', 'Spring'), ('summer', 'Summer')]
+    valid_terms = {value for value, _label in term_options}
+    selected_term = (request.args.get('term') or 'summer').strip().lower()
+    if selected_term not in valid_terms:
+        selected_term = 'summer'
+    selected_term_label = dict(term_options)[selected_term]
+
     academic_year = request.args.get('academic_year') or get_current_academic_year()
     pupil_query = demo_filter_pupils(Pupil.query.filter_by(is_active=True))
     class_query = demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
@@ -1491,8 +1497,19 @@ def data_quality():
     issues.append({'issue': 'Teachers with no class', 'count': teachers_no_class, 'action_link': url_for('admin.users')})
 
     active_pupil_count = pupil_query.count()
-    assessed_ids = {pid for (pid,) in school_scoped_query(SubjectResult, SubjectResult.query.with_entities(SubjectResult.pupil_id).filter_by(academic_year=academic_year, term=selected_term).distinct()).all()}
-    issues.append({'issue': f'Missing scores for {selected_term.title()} {academic_year}', 'count': max(active_pupil_count - len(assessed_ids), 0), 'action_link': url_for('admin.classes', academic_year=academic_year)})
+    assessed_ids = {
+        pid
+        for (pid,) in school_scoped_query(
+            SubjectResult,
+            SubjectResult.query.with_entities(SubjectResult.pupil_id)
+            .filter(
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.term.in_([selected_term, selected_term_label]),
+            )
+            .distinct(),
+        ).all()
+    }
+    issues.append({'issue': f'Missing scores for {selected_term_label} {academic_year}', 'count': max(active_pupil_count - len(assessed_ids), 0), 'action_link': url_for('admin.classes', academic_year=academic_year)})
 
     thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
     recent_ids = {pid for (pid,) in school_scoped_query(SubjectResult, SubjectResult.query.with_entities(SubjectResult.pupil_id).filter(SubjectResult.updated_at >= thirty_days_ago).distinct()).all()}
@@ -1501,7 +1518,14 @@ def data_quality():
     live_archived = pupil_query.filter(Pupil.is_archived.is_(True)).count()
     issues.append({'issue': 'Archived pupils still in live tables', 'count': live_archived, 'action_link': url_for('admin.archived_pupils')})
 
-    return render_template('admin/data_quality.html', issues=issues, terms=TERMS, selected_term=selected_term, academic_year=academic_year)
+    return render_template(
+        'admin/data_quality.html',
+        issues=issues,
+        term_options=term_options,
+        selected_term=selected_term,
+        selected_term_label=selected_term_label,
+        academic_year=academic_year,
+    )
 
 
 @admin_bp.route('/setup-checklist')

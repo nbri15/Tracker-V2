@@ -3,7 +3,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h4 mb-0">Data Quality</h1>
 </div>
-<div class="card shadow-sm mb-4"><div class="card-body"><form method="get" class="form-grid"><div class="col-md-3"><label class="form-label">Academic year</label><input class="form-control" name="academic_year" value="{{ academic_year }}"></div><div class="col-md-3"><label class="form-label">Term</label><select class="form-select" name="term">{% for term in terms %}<option value="{{ term }}" {% if term==selected_term %}selected{% endif %}>{{ term|title }}</option>{% endfor %}</select></div><div class="form-actions"><button class="btn btn-primary">Apply</button></div></form></div></div>
+<div class="card shadow-sm mb-4"><div class="card-body"><form method="get" class="form-grid"><div class="col-md-3"><label class="form-label">Academic year</label><input class="form-control" name="academic_year" value="{{ academic_year }}"></div><div class="col-md-3"><label class="form-label">Term</label><select class="form-select" name="term">{% for value, label in term_options %}<option value="{{ value }}" {% if selected_term == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div class="form-actions"><button class="btn btn-primary">Apply</button></div></form></div></div>
 <div class="row g-3">
   {% for item in issues %}
   <div class="col-md-6 col-lg-4">
