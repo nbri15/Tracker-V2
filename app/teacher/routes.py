@@ -703,55 +703,21 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
         flash('No active class is assigned to your account yet.', 'warning')
         return _quick_add_redirect(redirect_endpoint, context, **extra_params)
 
-    first_name = request.form.get('first_name', '').strip()
-    last_name = request.form.get('last_name', '').strip()
-    gender = request.form.get('gender', '').strip() or 'Unknown'
-    if not first_name or not last_name:
-        flash('Enter both first and last name before adding a pupil.', 'danger')
-        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
-    join_year_group_raw = request.form.get('join_year_group', '').strip()
-    join_year_group = None
-    if join_year_group_raw != '':
-        join_year_group = int(join_year_group_raw)
-    if join_year_group is not None and (join_year_group < 0 or join_year_group > 6):
-        flash('Year joined school must be between Reception and Year 6.', 'danger')
-        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
-    join_date_raw = request.form.get('join_date', '').strip()
-    parsed_join_date = None
-    if join_date_raw:
-        try:
-            parsed_join_date = date.fromisoformat(join_date_raw)
-        except ValueError:
-            flash('Join date must be a valid date.', 'danger')
-            return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
-
-    duplicate = Pupil.query.filter(
-        Pupil.class_id == school_class.id,
-        func.lower(Pupil.first_name) == first_name.lower(),
-        func.lower(Pupil.last_name) == last_name.lower(),
-    ).first()
-    if duplicate:
-        flash(
-            f'{duplicate.full_name} already exists in {school_class.name}. Check names before creating a duplicate record.',
-            'warning',
-        )
-        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
-
-    pupil = Pupil(
-        first_name=first_name,
-        last_name=last_name,
-        gender=gender,
+    pupil, error = create_quick_add_pupil(
+        school_class=school_class,
+        first_name=request.form.get('first_name', ''),
+        last_name=request.form.get('last_name', ''),
+        gender=request.form.get('gender', ''),
         pupil_premium=request.form.get('pupil_premium') == 'on',
         laps=request.form.get('laps') == 'on',
         service_child=request.form.get('service_child') == 'on',
-        join_year_group=join_year_group,
-        join_date=parsed_join_date,
-        class_id=school_class.id,
-        is_active=True,
-        is_demo=school_class.is_demo,
+        send=request.form.get('send') == 'on',
+        join_year_group_raw=request.form.get('join_year_group', ''),
+        join_date_raw=request.form.get('join_date', ''),
     )
-    db.session.add(pupil)
-    db.session.commit()
+    if error:
+        flash(error, 'danger')
+        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
     flash(f'Added {pupil.full_name} to {school_class.name}.', 'success')
     return _quick_add_redirect(redirect_endpoint, context, **extra_params)
 

@@ -747,31 +747,7 @@ def reset_user_password(user_id: int):
 @admin_required
 def pupils():
     if request.method == 'POST':
-        first_name = request.form.get('first_name', '').strip()
-        last_name = request.form.get('last_name', '').strip()
-        class_id = int(request.form.get('class_id', '0') or 0)
-        school_class = demo_filter_classes(SchoolClass.query.filter_by(id=class_id, school_id=current_user.school_id, is_active=True)).first()
-        if not first_name or not last_name or not school_class:
-            flash('Enter pupil names and select a valid class in your school.', 'danger')
-            return redirect(url_for('admin.pupils'))
-        pupil = Pupil(
-            first_name=first_name,
-            last_name=last_name,
-            gender=request.form.get('gender', '').strip() or 'Unknown',
-            pupil_premium=request.form.get('pupil_premium') == 'on',
-            laps=request.form.get('laps') == 'on',
-            service_child=request.form.get('service_child') == 'on',
-            send=request.form.get('send') == 'on',
-            join_year_group=int(request.form.get('join_year_group')) if (request.form.get('join_year_group') or '').strip() != '' else None,
-            class_id=school_class.id,
-            school_id=current_user.school_id,
-            is_active=True,
-            is_demo=current_user.is_demo,
-        )
-        db.session.add(pupil)
-        db.session.commit()
-        flash(f'Added {pupil.full_name}.', 'success')
-        return redirect(url_for('admin.pupils'))
+        return _handle_admin_quick_add_form_redirect()
 
     pupil_filters = build_admin_pupil_filter_state(request.args)
     class_id_raw = request.args.get('class_id', '').strip()
@@ -789,6 +765,66 @@ def pupils():
         class_options=demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all(),
     )
 
+
+
+
+def _selected_school_id_for_admin_actions() -> int | None:
+    return current_user.school_id if not current_user.is_executive_admin else current_school_id()
+
+
+def _resolve_admin_quick_add_class(class_id_raw: str):
+    class_id = int(class_id_raw or 0)
+    school_id = _selected_school_id_for_admin_actions()
+    if class_id <= 0 or school_id is None:
+        return None
+    return demo_filter_classes(SchoolClass.query.filter_by(id=class_id, school_id=school_id, is_active=True)).first()
+
+
+def _handle_admin_quick_add_form_redirect():
+    school_class = _resolve_admin_quick_add_class(request.form.get('class_id', '0'))
+    pupil, error = create_quick_add_pupil(
+        school_class=school_class,
+        first_name=request.form.get('first_name', ''),
+        last_name=request.form.get('last_name', ''),
+        gender=request.form.get('gender', ''),
+        pupil_premium=request.form.get('pupil_premium') == 'on',
+        laps=request.form.get('laps') == 'on',
+        service_child=request.form.get('service_child') == 'on',
+        send=request.form.get('send') == 'on',
+        join_year_group_raw=request.form.get('join_year_group', ''),
+        join_date_raw=request.form.get('join_date', ''),
+    )
+    if error:
+        flash(error, 'danger')
+    else:
+        flash(f'Added {pupil.full_name}.', 'success')
+    return redirect(url_for('admin.pupils'))
+
+
+@admin_bp.route('/api/admin/pupils/quick-add', methods=['POST'])
+@login_required
+def admin_quick_add_api():
+    if current_user.role not in {'school_admin', 'admin', 'executive_admin'}:
+        return jsonify({'ok': False, 'error': 'Forbidden'}), 403
+    source = request.json if request.is_json else request.form
+    school_class = _resolve_admin_quick_add_class(source.get('class_id', '0'))
+    if current_user.is_executive_admin and _selected_school_id_for_admin_actions() is None:
+        return jsonify({'ok': False, 'error': 'Select a school before adding pupils.'}), 400
+    pupil, error = create_quick_add_pupil(
+        school_class=school_class,
+        first_name=source.get('first_name', ''),
+        last_name=source.get('last_name', ''),
+        gender=source.get('gender', ''),
+        pupil_premium=source.get('pupil_premium') in (True, 'true', 'on', '1', 1),
+        laps=source.get('laps') in (True, 'true', 'on', '1', 1),
+        service_child=source.get('service_child') in (True, 'true', 'on', '1', 1),
+        send=source.get('send') in (True, 'true', 'on', '1', 1),
+        join_year_group_raw=source.get('join_year_group', ''),
+        join_date_raw=source.get('join_date', ''),
+    )
+    if error:
+        return jsonify({'ok': False, 'error': error}), 400
+    return jsonify({'ok': True, 'pupil_id': pupil.id, 'name': pupil.full_name})
 
 @admin_bp.route('/archive/pupils')
 @login_required

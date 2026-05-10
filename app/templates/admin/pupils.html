@@ -41,11 +41,11 @@
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Quick add pupil</strong></div>
   <div class="card-body">
-    <form method="post" class="row g-2 align-items-end">
+    <form method="post" class="row g-2 align-items-end" id="adminQuickAddForm">
       <div class="col-md-2"><label class="form-label">First name</label><input name="first_name" class="form-control form-control-sm" required></div>
       <div class="col-md-2"><label class="form-label">Last name</label><input name="last_name" class="form-control form-control-sm" required></div>
       <div class="col-md-2"><label class="form-label">Class</label><select name="class_id" class="form-select form-select-sm" required>{% for school_class in class_options %}<option value="{{ school_class.id }}">Year {{ school_class.year_group }} · {{ school_class.name }}</option>{% endfor %}</select></div>
-      <div class="col-md-2"><label class="form-label">Gender</label><input name="gender" class="form-control form-control-sm" placeholder="Male/Female"></div>
+      <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="Unknown">Unknown</option><option>Male</option><option>Female</option></select></div>
       <div class="col-md-2"><label class="form-label">Year joined</label><select name="join_year_group" class="form-select form-select-sm"><option value="">Unknown</option><option value="0">Reception</option>{% for year in range(1, 7) %}<option value="{{ year }}">Year {{ year }}</option>{% endfor %}</select></div>
       <div class="col-md-2 d-flex gap-2">
         <div class="form-check"><input class="form-check-input" type="checkbox" name="pupil_premium" id="qa_pp"><label class="form-check-label" for="qa_pp">PP</label></div>
@@ -53,7 +53,7 @@
         <div class="form-check"><input class="form-check-input" type="checkbox" name="service_child" id="qa_service"><label class="form-check-label" for="qa_service">Service</label></div>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="send" id="qa_send"><label class="form-check-label" for="qa_send">SEND</label></div>
       </div>
-      <div class="col-12"><button class="btn btn-primary btn-sm">Add pupil</button></div>
+      <div class="col-12 d-flex align-items-center gap-2"><button class="btn btn-primary btn-sm" type="submit">Add pupil</button><span id="adminQuickAddStatus" class="small"></span></div>
     </form>
   </div>
 </div>
@@ -121,3 +121,32 @@
   </div>
 </div>
 {% endblock %}
+
+<script>
+(function () {
+  const form = document.getElementById('adminQuickAddForm');
+  const status = document.getElementById('adminQuickAddStatus');
+  if (!form) return;
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    status.textContent = 'Saving...';
+    status.className = 'small text-muted';
+    const data = new FormData(form);
+    try {
+      const response = await fetch("{{ url_for('admin.admin_quick_add_api') }}", { method: 'POST', body: data });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        status.textContent = payload.error || 'Could not add pupil.';
+        status.className = 'small text-danger';
+        return;
+      }
+      status.textContent = `Added ${payload.name}. Reloading...`;
+      status.className = 'small text-success';
+      window.location.reload();
+    } catch (err) {
+      status.textContent = 'Network error while adding pupil.';
+      status.className = 'small text-danger';
+    }
+  });
+})();
+</script>
