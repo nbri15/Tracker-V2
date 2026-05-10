@@ -20,6 +20,40 @@
   <button class="btn btn-outline-primary btn-sm js-download-pdf" data-pdf-target="#pupil-profile-pdf" data-pdf-filename="{{ pupil.full_name|replace(' ', '_')|lower }}-summary.pdf">Download Pupil Summary PDF</button>
 </div>
 
+
+{% if current_user.can_manage_school %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>Add another pupil to this class</strong></div>
+  <div class="card-body">
+    <form id="profileQuickAddForm" class="row g-2 align-items-end">
+      <input type="hidden" name="class_id" value="{{ pupil.class_id }}">
+      <div class="col-md-2"><label class="form-label">First name</label><input name="first_name" class="form-control form-control-sm" required></div>
+      <div class="col-md-2"><label class="form-label">Last name</label><input name="last_name" class="form-control form-control-sm" required></div>
+      <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="Unknown">Unknown</option><option>Male</option><option>Female</option></select></div>
+      <div class="col-md-2"><label class="form-label">Year Joined School</label><select name="join_year_group" class="form-select form-select-sm"><option value="">Unknown</option><option value="0">Reception</option>{% for year in range(1, 7) %}<option value="{{ year }}">Year {{ year }}</option>{% endfor %}</select></div>
+      <div class="col-md-4 d-flex gap-2 flex-wrap"><div class="form-check"><input class="form-check-input" type="checkbox" name="pupil_premium" id="pqa_pp"><label class="form-check-label" for="pqa_pp">PP</label></div><div class="form-check"><input class="form-check-input" type="checkbox" name="laps" id="pqa_laps"><label class="form-check-label" for="pqa_laps">LAPS</label></div><div class="form-check"><input class="form-check-input" type="checkbox" name="service_child" id="pqa_service"><label class="form-check-label" for="pqa_service">Service</label></div><div class="form-check"><input class="form-check-input" type="checkbox" name="send" id="pqa_send"><label class="form-check-label" for="pqa_send">SEND</label></div></div>
+      <div class="col-12 d-flex align-items-center gap-2"><button class="btn btn-primary btn-sm" type="submit">Add pupil</button><span id="profileQuickAddStatus" class="small"></span></div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  const form = document.getElementById('profileQuickAddForm');
+  const status = document.getElementById('profileQuickAddStatus');
+  if (!form) return;
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    status.textContent = 'Saving...'; status.className = 'small text-muted';
+    const response = await fetch("{{ url_for('admin.admin_quick_add_api') }}", { method: 'POST', body: new FormData(form) });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) { status.textContent = payload.error || 'Could not add pupil.'; status.className = 'small text-danger'; return; }
+    status.textContent = `Added ${payload.name}. Reloading...`; status.className = 'small text-success';
+    window.location.reload();
+  });
+})();
+</script>
+{% endif %}
+
 <div id="pupil-profile-pdf">
   <div class="card shadow-sm mb-4">
     <div class="card-body">
