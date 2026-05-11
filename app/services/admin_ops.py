@@ -125,7 +125,7 @@ def ensure_default_logins_and_classes() -> dict:
     class_lookup = {}
     for year_group, teacher in teachers.items():
         name = f'Year {year_group}'
-        school_class = SchoolClass.query.filter_by(name=name).first() or SchoolClass(name=name, year_group=year_group)
+        school_class = SchoolClass.query.filter_by(school_id=default_school.id, name=name).first() or SchoolClass(name=name, year_group=year_group, school_id=default_school.id)
         school_class.name = name
         school_class.year_group = year_group
         school_class.teacher_id = teacher.id
@@ -135,7 +135,7 @@ def ensure_default_logins_and_classes() -> dict:
         db.session.flush()
         class_lookup[year_group] = school_class
 
-    reception_class = SchoolClass.query.filter_by(name='Reception').first() or SchoolClass(name='Reception', year_group=0)
+    reception_class = SchoolClass.query.filter_by(school_id=default_school.id, name='Reception').first() or SchoolClass(name='Reception', year_group=0, school_id=default_school.id)
     reception_class.name = 'Reception'
     reception_class.year_group = 0
     reception_class.is_active = True

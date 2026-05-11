@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.extensions import db
 from app.models import ReceptionTrackerEntry, SchoolClass
+from app.utils import school_scoped_query
 
 RECEPTION_YEAR_GROUP = 0
 RECEPTION_CLASS_NAME = 'Reception'
@@ -41,13 +42,16 @@ class ReceptionTrackerValidationError(ValueError):
 def get_reception_class() -> SchoolClass | None:
     """Return the active reception class record if it exists."""
 
-    return SchoolClass.query.filter_by(is_active=True, year_group=RECEPTION_YEAR_GROUP).order_by(SchoolClass.name).first()
+    return school_scoped_query(
+        SchoolClass.query.filter_by(is_active=True, year_group=RECEPTION_YEAR_GROUP),
+        SchoolClass,
+    ).order_by(SchoolClass.name).first()
 
 
 def ensure_reception_class() -> SchoolClass:
     """Create/refresh the reception class row if needed."""
 
-    school_class = SchoolClass.query.filter_by(name=RECEPTION_CLASS_NAME).first()
+    school_class = school_scoped_query(SchoolClass.query.filter_by(name=RECEPTION_CLASS_NAME), SchoolClass).first()
     if not school_class:
         school_class = SchoolClass(name=RECEPTION_CLASS_NAME, year_group=RECEPTION_YEAR_GROUP, is_active=True)
     school_class.name = RECEPTION_CLASS_NAME

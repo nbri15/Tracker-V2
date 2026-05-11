@@ -67,7 +67,18 @@
                 <div class="col-4"><select class="form-select form-select-sm" name="year_group_{{ row.class_id }}">{% for year in [0, 1, 2, 3, 4, 5, 6] %}<option value="{{ year }}" {% if row.year_group == year %}selected{% endif %}>{{ 'Rec' if year == 0 else 'Y' ~ year }}</option>{% endfor %}</select></div>
                 <div class="col-8"><select class="form-select form-select-sm" name="teacher_id_{{ row.class_id }}"><option value="">Unassigned</option>{% for option in teacher_options %}<option value="{{ option.id }}" {% if row.class.teacher_id == option.id %}selected{% endif %}>{{ option.username }}</option>{% endfor %}</select></div>
                 <div class="col-6 form-check ms-2"><input class="form-check-input" type="checkbox" name="is_active_{{ row.class_id }}" id="active_{{ row.class_id }}" {% if row.class.is_active %}checked{% endif %}><label class="form-check-label small" for="active_{{ row.class_id }}">Active</label></div>
-                <div class="form-actions"><button class="btn btn-outline-primary btn-sm">Save</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_sats', class_id=row.class_id, academic_year=academic_year) if row.year_group == 6 else url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">Open</a></div>
+                <div class="form-actions">
+                  <button class="btn btn-outline-primary btn-sm">Save</button>
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_sats', class_id=row.class_id, academic_year=academic_year) if row.year_group == 6 else url_for('admin.class_detail', class_id=row.class_id, academic_year=academic_year) }}">Open</a>
+                </div>
+                <div class="form-actions">
+                  {% if row.class.is_active %}
+                    <button class="btn btn-outline-warning btn-sm" name="action" value="archive_class">Archive</button>
+                  {% else %}
+                    <button class="btn btn-outline-success btn-sm" name="action" value="restore_class">Restore</button>
+                  {% endif %}
+                  <button class="btn btn-outline-danger btn-sm" name="action" value="delete_class" onclick="return confirm('Delete this class permanently? This only works for empty classes with no linked records.')">Delete empty class</button>
+                </div>
               </form>
             </td>
           </tr>
