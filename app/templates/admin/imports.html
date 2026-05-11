@@ -1,205 +1,49 @@
 {% extends 'base.html' %}
 {% block title %}Imports{% endblock %}
-{% set page_heading = 'Imports and exports' %}
+{% set page_heading = 'Import & Export Centre' %}
 {% block content %}
 <div class="row g-4">
-  <div class="col-xl-8">
-    <div class="card shadow-sm mb-4 border-primary-subtle">
-      <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div>
-          <strong>Combined CSV import</strong>
-          <span class="badge text-bg-primary ms-2">Recommended</span>
-        </div>
-        <a class="btn btn-primary btn-sm" href="{{ url_for('admin.download_import_template', template_type='combined') }}">Download combined template</a>
-      </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-primary">
       <div class="card-body">
-        <p class="text-muted mb-3">Upload one row per pupil. Pupil details are created or updated, blank subject cells are ignored, and manual teacher-entered results are protected by default.</p>
-        <form method="post" enctype="multipart/form-data" class="form-grid">
-          <div class="col-md-4">
-            <label class="form-label">Import type</label>
-            <select name="import_type" class="form-select">
-              <option value="combined" {% if selected_import_type == 'combined' %}selected{% endif %}>Combined pupil + results</option>
-              <option value="reception" {% if selected_import_type == 'reception' %}selected{% endif %}>Reception tracker CSV</option>
-              <option value="sats_tracker" {% if selected_import_type == 'sats_tracker' %}selected{% endif %}>Year 6 SATs tracker CSV</option>
-            </select>
-          </div>
-          <div class="col-md-5">
-            <label class="form-label">CSV file</label>
-            <input type="file" name="csv_file" class="form-control" accept=".csv" required>
-          </div>
-          <div class="col-md-3">
-            <button class="btn btn-primary w-100">Upload CSV</button>
-          </div>
-        </form>
-
-        <div class="row g-3 mt-2">
-          <div class="col-md-6">
-            <div class="border rounded p-3 h-100 bg-light-subtle">
-              <h6 class="mb-2">Combined template columns</h6>
-              <ul class="small mb-0 ps-3">
-                <li><strong>Pupil fields:</strong> first_name, last_name, gender, pupil_premium, laps, service_child, class_name, academic_year.</li>
-                <li><strong>Optional subjects:</strong> maths, reading, and SPaG paper columns for autumn, spring, and summer.</li>
-                <li><strong>Optional writing:</strong> writing_{{ '{term}' }}_band and writing_{{ '{term}' }}_notes.</li>
-                <li><strong>Writing bands accepted:</strong> WT/WTS/Working Towards/Below, OT/On Track/Working At, EXC/EXS/GDS/Exceeding/Greater Depth. Exports use WT, OT, EXC.</li>
-              </ul>
-            </div>
-          </div>
-          <div class="col-md-6">
-            <div class="border rounded p-3 h-100 bg-light-subtle">
-              <h6 class="mb-2">Import rules</h6>
-              <ul class="small mb-0 ps-3">
-                <li>Pupils are matched by <strong>first_name + last_name + class_name</strong>.</li>
-                <li>If both subject paper cells are blank, that subject/term is ignored safely.</li>
-                <li>If one score is provided, the import keeps any existing CSV score in the other paper where possible.</li>
-                <li>Existing manual/protected results are skipped and listed in the summary.</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        <hr>
-        <div class="d-flex flex-wrap gap-2">
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='combined') }}">Combined template</a>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='reception') }}">Reception template</a>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.download_import_template', template_type='sats_tracker') }}">SATs template</a>
-        </div>
+        <h5>Download Full School Workbook</h5>
+        <p class="text-muted small">Recommended for most schools. Includes all tabs in one Excel file.</p>
+        <a class="btn btn-primary" href="{{ url_for('admin.download_full_template_xlsx') }}">Download full school import template</a>
       </div>
     </div>
 
-    <div class="card shadow-sm mb-4 border-primary-subtle">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
-        <strong>Reception CSV workflow</strong>
-        <a class="btn btn-primary btn-sm" href="{{ url_for('admin.download_import_template', template_type='reception') }}">Download Reception template</a>
-      </div>
+    <div class="card shadow-sm mt-4">
+      <div class="card-header bg-white"><strong>Workbook Upload</strong></div>
       <div class="card-body">
-        <p class="text-muted small">Blank cells are ignored. Uploads only update Reception tracker entries for the row's tracking point. A full summary is shown after import.</p>
-        <form method="post" enctype="multipart/form-data" class="form-grid mb-3">
-          <input type="hidden" name="import_type" value="reception">
-          <div class="col-md-8">
-            <label class="form-label">Reception CSV file</label>
-            <input type="file" name="csv_file" class="form-control" accept=".csv" required>
-          </div>
-          <div class="col-md-4">
-            <button class="btn btn-primary w-100">Upload Reception CSV</button>
-          </div>
-        </form>
-        <form method="get" action="{{ url_for('admin.export_reception_tracker') }}" class="form-grid">
-          <div class="col-md-4">
-            <label class="form-label">Tracking point</label>
-            <select name="tracking_point" class="form-select">
-              {% for value, label in reception_tracking_points %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Academic year</label>
-            <input type="text" class="form-control" name="academic_year" value="{{ current_year }}">
-          </div>
-          <div class="col-md-4">
-            <button class="btn btn-outline-primary w-100">Export Reception CSV</button>
-          </div>
+        <form method="post" action="{{ url_for('admin.import_full_workbook') }}" enctype="multipart/form-data" class="form-grid">
+          <div class="col-md-8"><input type="file" name="workbook_file" class="form-control" accept=".xlsx" required></div>
+          <div class="col-md-2"><button class="btn btn-outline-primary w-100" name="confirm_save" value="0">Preview</button></div>
+          <div class="col-md-2"><button class="btn btn-primary w-100" name="confirm_save" value="1">Save</button></div>
         </form>
       </div>
     </div>
 
-    <div class="card shadow-sm mb-4 border-primary-subtle">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2">
-        <strong>Year 6 SATs CSV workflow</strong>
-        <a class="btn btn-primary btn-sm" href="{{ url_for('admin.download_import_template', template_type='sats_tracker') }}">Download SATs template</a>
-      </div>
+    <div class="card shadow-sm mt-4">
+      <div class="card-header bg-white"><strong>Legacy CSV Imports</strong></div>
       <div class="card-body">
-        <p class="text-muted small">Blank cells are ignored. Uploads only update Year 6 SATs tracker values for each row's exam tab. A full summary is shown after import.</p>
-        <form method="post" enctype="multipart/form-data" class="form-grid mb-3">
-          <input type="hidden" name="import_type" value="sats_tracker">
-          <div class="col-md-8">
-            <label class="form-label">SATs CSV file</label>
-            <input type="file" name="csv_file" class="form-control" accept=".csv" required>
-          </div>
-          <div class="col-md-4">
-            <button class="btn btn-primary w-100">Upload SATs CSV</button>
-          </div>
-        </form>
-        <form method="get" action="{{ url_for('admin.export_sats_tracker') }}" class="form-grid">
-          <div class="col-md-4">
-            <label class="form-label">Exam tab</label>
-            <select name="exam_tab" class="form-select" required>
-              {% for tab in sats_tabs %}
-                <option value="{{ tab.name }}">{{ tab.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Academic year</label>
-            <input type="text" class="form-control" name="academic_year" value="{{ current_year }}">
-          </div>
-          <div class="col-md-4">
-            <button class="btn btn-outline-primary w-100">Export SATs CSV</button>
-          </div>
-        </form>
+        <p class="small text-muted">Older import method. Excel workbook recommended.</p>
+        <details>
+          <summary>Show CSV import options</summary>
+          <form method="post" enctype="multipart/form-data" class="form-grid mt-3">
+            <div class="col-md-4"><select name="import_type" class="form-select"><option value="combined">Import pupils CSV</option><option value="combined">Import maths CSV</option><option value="combined">Import reading CSV</option><option value="combined">Import SPaG CSV</option><option value="combined">Import writing CSV</option><option value="combined">Import phonics CSV</option><option value="combined">Import times tables CSV</option><option value="combined">Import foundation CSV</option></select></div>
+            <div class="col-md-5"><input type="file" name="csv_file" class="form-control" accept=".csv" required></div>
+            <div class="col-md-3"><button class="btn btn-outline-secondary w-100">Upload CSV</button></div>
+          </form>
+        </details>
       </div>
     </div>
 
-    <div class="card shadow-sm">
-      <div class="card-header bg-white"><strong>CSV exports</strong></div>
-      <div class="card-body">
-        <form method="get" action="{{ url_for('admin.export_subject_results') }}" class="form-grid mb-4">
-          <div class="col-md-3"><label class="form-label">Class</label><select name="class_id" class="form-select"><option value="">All classes</option>{% for option in class_options %}<option value="{{ option.id }}">{{ option.name }}</option>{% endfor %}</select></div>
-          <div class="col-md-2"><label class="form-label">Subject</label><select name="subject" class="form-select"><option value="">All</option><option value="maths">Maths</option><option value="reading">Reading</option><option value="spag">SPaG</option></select></div>
-          <div class="col-md-2"><label class="form-label">Term</label><select name="term" class="form-select"><option value="">All</option>{% for value, label in [('autumn', 'Autumn'), ('spring', 'Spring'), ('summer', 'Summer')] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-          <div class="col-md-3"><label class="form-label">Academic year</label><input type="text" class="form-control" name="academic_year" value="{{ current_year }}"></div>
-          <div class="col-md-2"><button class="btn btn-outline-primary w-100">Export subject CSV</button></div>
-        </form>
-        <form method="get" action="{{ url_for('admin.export_writing_results') }}" class="form-grid">
-          <div class="col-md-3"><label class="form-label">Class</label><select name="class_id" class="form-select"><option value="">All classes</option>{% for option in class_options %}<option value="{{ option.id }}">{{ option.name }}</option>{% endfor %}</select></div>
-          <div class="col-md-3"><label class="form-label">Term</label><select name="term" class="form-select"><option value="">All</option>{% for value, label in [('autumn', 'Autumn'), ('spring', 'Spring'), ('summer', 'Summer')] %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-          <div class="col-md-4"><label class="form-label">Academic year</label><input type="text" class="form-control" name="academic_year" value="{{ current_year }}"></div>
-          <div class="col-md-2"><button class="btn btn-outline-primary w-100">Export writing CSV</button></div>
-        </form>
-      </div>
-    </div>
-  </div>
-  <div class="col-xl-4">
-    <div class="card shadow-sm mb-4">
-      <div class="card-header bg-white"><strong>Latest import summary</strong></div>
-      <div class="card-body">
-        {% if summary %}
-          <div class="list-group list-group-flush small">
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Pupils created</span><strong>{{ summary.pupils_created }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Rows processed</span><strong>{{ summary.rows_processed }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Pupils matched</span><strong>{{ summary.pupils_matched }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Tracker entries created</span><strong>{{ summary.tracker_entries_created }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Tracker entries updated</span><strong>{{ summary.tracker_entries_updated }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Pupils updated</span><strong>{{ summary.pupils_updated }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Subject results created</span><strong>{{ summary.subject_results_created }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Subject results updated</span><strong>{{ summary.subject_results_updated }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Writing results created</span><strong>{{ summary.writing_results_created }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Writing results updated</span><strong>{{ summary.writing_results_updated }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Manual/protected results skipped</span><strong>{{ summary.manual_results_skipped }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Rows skipped</span><strong>{{ summary.rows_skipped }}</strong></div>
-            <div class="list-group-item d-flex justify-content-between px-0"><span>Validation errors</span><strong>{{ summary.validation_errors }}</strong></div>
-          </div>
-          {% if summary.errors %}
-            <hr>
-            <h6 class="mb-2">Row-level messages</h6>
-            <ul class="small mb-0 ps-3">
-              {% for error in summary.errors[:15] %}
-                <li>{{ error }}</li>
-              {% endfor %}
-            </ul>
-          {% endif %}
-        {% else %}
-          <p class="text-muted mb-0">Upload a CSV to see a row-by-row summary here.</p>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-white"><strong>Current data snapshot</strong></div>
-      <div class="list-group list-group-flush">
-        <div class="list-group-item d-flex justify-content-between"><span>Teachers</span><strong>{{ overview.teachers }}</strong></div>
-        <div class="list-group-item d-flex justify-content-between"><span>Classes</span><strong>{{ overview.classes }}</strong></div>
-        <div class="list-group-item d-flex justify-content-between"><span>Pupils</span><strong>{{ overview.pupils }}</strong></div>
+    <div class="card shadow-sm mt-4">
+      <div class="card-header bg-white"><strong>Exports</strong></div>
+      <div class="card-body d-flex flex-wrap gap-2">
+        <a class="btn btn-primary" href="{{ url_for('admin.export_full_workbook') }}">Export Full Workbook</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_pupil_overview') }}">Export Pupils CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_subject_results') }}">Export Results CSV</a>
       </div>
     </div>
   </div>

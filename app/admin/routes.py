@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from openpyxl import Workbook, load_workbook
 from datetime import date, datetime, timedelta, timezone
 
 from flask import Response, current_app, flash, redirect, render_template, request, url_for
@@ -156,6 +157,39 @@ def _teacher_options():
     teachers = school_scoped_query(User, User.query).filter_by(role='teacher', is_demo=current_user.is_demo).all()
     return sort_teacher_accounts(teachers)
 
+
+
+
+FULL_WORKBOOK_SHEETS = {
+    'Pupils': ['first_name','last_name','full_name','class','gender','pp','laps','service_child','send','join_year_group','join_date'],
+    'Maths': ['class','pupil_name','term','arithmetic','reasoning','notes'],
+    'Reading': ['class','pupil_name','term','paper_1','paper_2','notes'],
+    'SPaG': ['class','pupil_name','term','spelling','grammar','notes'],
+    'Writing': ['class','pupil_name','term','band','notes'],
+    'Phonics': ['class','pupil_name','test_name','score','max_score','date'],
+    'Times Tables': ['class','pupil_name','test_name','score','max_score','date'],
+    'Foundation': ['class','pupil_name','subject','term','assessment','band','notes'],
+    'Reception': ['class','pupil_name','term','area','statement','band','notes'],
+    'SATs': ['class','pupil_name','academic_year','subject','test_name','raw_score','scaled_score','notes'],
+}
+
+def _norm(v):
+    return str(v or '').strip()
+
+def _split_name(full_name):
+    parts = _norm(full_name).split()
+    if not parts:
+        return '', ''
+    return parts[0], ' '.join(parts[1:]) if len(parts)>1 else ''
+
+def _find_pupil_by_class_name(class_name, pupil_name):
+    school_class = demo_filter_classes(SchoolClass.query.filter_by(name=_norm(class_name), school_id=current_user.school_id)).first()
+    if not school_class:
+        return None
+    first,last=_split_name(pupil_name)
+    if not first or not last:
+        return None
+    return demo_filter_pupils(Pupil.query.filter_by(class_id=school_class.id, first_name=first, last_name=last, school_id=current_user.school_id)).first()
 
 CLASS_DETAIL_SUBJECT_SORT_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'assessment_year_group', 'progress_delta'}
 CLASS_DETAIL_WRITING_SORT_COLUMNS = {'name', 'band_label', 'notes'}
@@ -1371,6 +1405,89 @@ def download_import_template(template_type: str):
         return redirect(url_for('admin.imports'))
     csv_text = generate_csv(template_type)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_template.csv'})
+
+
+@admin_bp.route('/imports/full-template.xlsx')
+@login_required
+@admin_required
+def download_full_template_xlsx():
+    wb = Workbook()
+    wb.remove(wb.active)
+    for name, cols in FULL_WORKBOOK_SHEETS.items():
+        ws = wb.create_sheet(title=name)
+        ws.append(cols)
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return Response(out.getvalue(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=full_school_template.xlsx'})
+
+
+@admin_bp.route('/imports/full-workbook', methods=['POST'])
+@login_required
+@admin_required
+def import_full_workbook():
+    file = request.files.get('workbook_file')
+    if not file or not file.filename.lower().endswith('.xlsx'):
+        flash('Please upload a .xlsx workbook.', 'danger')
+        return redirect(url_for('admin.imports'))
+    wb = load_workbook(file, data_only=True)
+    preview_errors=[]
+    created=0
+    updated=0
+    for row in wb['Pupils'].iter_rows(min_row=2, values_only=True) if 'Pupils' in wb.sheetnames else []:
+        if not _norm(row[0]) or not _norm(row[1]) or not _norm(row[3]):
+            continue
+        school_class = demo_filter_classes(SchoolClass.query.filter_by(name=_norm(row[3]), school_id=current_user.school_id)).first()
+        if not school_class:
+            preview_errors.append(f'Pupils: class not found {_norm(row[3])}')
+            continue
+        pupil=demo_filter_pupils(Pupil.query.filter_by(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, school_id=current_user.school_id)).first()
+        if not pupil:
+            pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=_norm(row[4]) or 'Unknown', school_id=current_user.school_id, is_demo=current_user.is_demo)
+            db.session.add(pupil); created+=1
+        pupil.gender=_norm(row[4]) or pupil.gender
+        pupil.pupil_premium=_norm(row[5]).lower() in {'1','true','yes','y'}
+        pupil.laps=_norm(row[6]).lower() in {'1','true','yes','y'}
+        pupil.service_child=_norm(row[7]).lower() in {'1','true','yes','y'}
+        pupil.send=_norm(row[8]).lower() in {'1','true','yes','y'}
+        updated+=1
+    for sheet, subject in [('Maths','maths'),('Reading','reading'),('SPaG','spag')]:
+        if sheet not in wb.sheetnames: continue
+        for row in wb[sheet].iter_rows(min_row=2, values_only=True):
+            pupil=_find_pupil_by_class_name(row[0], row[1])
+            if not pupil: preview_errors.append(f'{sheet}: pupil not matched {_norm(row[1])}'); continue
+            term=_norm(row[2]).lower()
+            if term not in {'autumn','spring','summer'}: preview_errors.append(f'{sheet}: invalid term {term}'); continue
+            r=SubjectResult.query.filter_by(pupil_id=pupil.id, school_id=current_user.school_id, academic_year=get_current_academic_year(), term=term, subject=subject).first()
+            if not r:
+                r=SubjectResult(pupil_id=pupil.id, school_id=current_user.school_id, academic_year=get_current_academic_year(), term=term, subject=subject)
+                db.session.add(r)
+            r.paper_1_score=int(row[3]) if row[3] not in (None,'') else None
+            r.paper_2_score=int(row[4]) if row[4] not in (None,'') else None
+            r.combined_score=(r.paper_1_score or 0)+(r.paper_2_score or 0) if r.paper_1_score is not None and r.paper_2_score is not None else None
+            r.notes=_norm(row[5])
+    if request.form.get('confirm_save')!='1':
+        db.session.rollback()
+        for e in preview_errors[:20]: flash(e,'warning')
+        flash(f'Preview complete. {created} pupils would be created/updated. Re-upload and click Save Workbook Import to apply.', 'info')
+        return redirect(url_for('admin.imports'))
+    db.session.commit()
+    for e in preview_errors[:20]: flash(e,'warning')
+    flash('Workbook import complete.', 'success')
+    return redirect(url_for('admin.imports'))
+
+
+@admin_bp.route('/imports/full-workbook/export.xlsx')
+@login_required
+@admin_required
+def export_full_workbook():
+    wb=Workbook(); wb.remove(wb.active)
+    for n,c in FULL_WORKBOOK_SHEETS.items():
+        ws=wb.create_sheet(n); ws.append(c)
+    for p in demo_filter_pupils(Pupil.query.filter_by(school_id=current_user.school_id)).all():
+        wb['Pupils'].append([p.first_name,p.last_name,p.full_name,p.school_class.name if p.school_class else '',p.gender,p.pupil_premium,p.laps,p.service_child,p.send,p.join_year_group,p.join_date])
+    out=io.BytesIO(); wb.save(out); out.seek(0)
+    return Response(out.getvalue(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=school_data_workbook.xlsx'})
 
 
 @admin_bp.route('/reports/headline')
