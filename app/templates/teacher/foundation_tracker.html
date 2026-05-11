@@ -67,7 +67,7 @@
 
 <div class="d-flex gap-2 flex-wrap foundation-tab-strip mt-3">
   {% for value, label in half_terms %}
-    <a class="btn btn-sm {% if value == selected_half_term %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('teacher.foundation', academic_year=academic_year, half_term=value, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child) }}">{{ label }}</a>
+    <a class="btn btn-sm {% if value == selected_half_term %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('teacher.foundation', academic_year=academic_year, half_term=value, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send) }}">{{ label }}</a>
   {% endfor %}
 </div>
 {% endblock %}

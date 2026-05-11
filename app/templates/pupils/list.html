@@ -124,7 +124,7 @@
             <td class="checkbox-cell">{{ 'Yes' if pupil.laps else 'No' }}</td>
             <td class="checkbox-cell">{{ 'Yes' if pupil.service_child else 'No' }}</td>
             <td>{% if pupil.join_year_group == 0 %}Reception{% elif pupil.join_year_group is not none %}Year {{ pupil.join_year_group }}{% else %}Unknown{% endif %}</td>
-            <td class="checkbox-cell"><span class="text-muted">—</span></td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.send else 'No' }}</td>
             <td>{{ latest.get('reading') or '—' }}</td>
             <td>{{ latest.get('writing') or '—' }}</td>
             <td>{{ latest.get('maths') or '—' }}</td>

@@ -261,7 +261,7 @@ def _build_pupil_filters(args) -> dict:
         'pp': (args.get('pp') or 'all').strip() or 'all',
         'laps': (args.get('laps') or 'all').strip() or 'all',
         'service_child': (args.get('service_child') or 'all').strip() or 'all',
-        'send_flag': (args.get('send_flag') or 'all').strip() or 'all',
+        'send': (args.get('send') or 'all').strip() or 'all',
         'status': (args.get('status') or 'current').strip() or 'current',
     }
 
@@ -280,7 +280,7 @@ def _apply_common_filters(query, filters: dict):
         ('pp', Pupil.pupil_premium),
         ('laps', Pupil.laps),
         ('service_child', Pupil.service_child),
-        ('send_flag', Pupil.send),
+        ('send', Pupil.send),
     ):
         value = filters.get(key)
         if value == 'yes':

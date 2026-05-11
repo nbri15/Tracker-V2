@@ -809,6 +809,7 @@ def render_subject_page(subject_key: str):
                     pupil_premium=context['filters']['pupil_premium'],
                     laps=context['filters']['laps'],
                     service_child=context['filters']['service_child'],
+                    send=context['filters']['send'],
                     sort=context['sort_state']['column'],
                     direction=context['sort_state']['direction'],
                 )
@@ -943,6 +944,7 @@ def render_subject_page(subject_key: str):
                     pupil_premium=context['filters']['pupil_premium'],
                     laps=context['filters']['laps'],
                     service_child=context['filters']['service_child'],
+                    send=context['filters']['send'],
                     sort=context['sort_state']['column'],
                     direction=context['sort_state']['direction'],
                 )
@@ -1035,6 +1037,7 @@ def render_writing_page():
                     pupil_premium=context['filters']['pupil_premium'],
                     laps=context['filters']['laps'],
                     service_child=context['filters']['service_child'],
+                    send=context['filters']['send'],
                     sort=context['sort_state']['column'],
                     direction=context['sort_state']['direction'],
                 )
