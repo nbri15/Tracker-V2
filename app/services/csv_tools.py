@@ -9,7 +9,10 @@ from datetime import date
 
 from app.extensions import db
 from app.models import (
+    FoundationResult,
     Intervention,
+    PhonicsScore,
+    PhonicsTestColumn,
     Pupil,
     PupilClassHistory,
     ReceptionTrackerEntry,
@@ -18,10 +21,13 @@ from app.models import (
     SatsExamTab,
     SchoolClass,
     SubjectResult,
+    TimesTableScore,
+    TimesTableTestColumn,
     WritingResult,
 )
 from app.utils import school_scoped_query
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
+from .foundation import FOUNDATION_SUBJECTS
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
 from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
 
@@ -869,3 +875,82 @@ def export_history_csv(academic_year: str) -> str:
     for row in rows:
         writer.writerow([row.pupil.full_name, row.academic_year, row.class_name, row.year_group, row.teacher_username, row.promoted_to_year_group or ''])
     return output.getvalue()
+
+
+TRACKER_TEMPLATE_COLUMNS = {
+    'times_tables': ['class','pupil_name','test_name','score','max_score','date'],
+    'phonics': ['class','pupil_name','test_name','score','max_score','date'],
+    'foundation': ['class','pupil_name','subject','term','assessment','band','notes'],
+}
+FOUNDATION_BAND_MAP = {
+    'wt': 'WT', 'working towards': 'WT',
+    'ot': 'OT', 'on track': 'OT', 'expected': 'OT',
+    'exc': 'EXC', 'exceeding': 'EXC', 'greater depth': 'EXC',
+}
+
+def generate_tracker_template_csv(template_type:str)->str:
+    if template_type not in TRACKER_TEMPLATE_COLUMNS:
+        raise CsvImportError('Unknown template type.')
+    output=io.StringIO(); w=csv.writer(output); w.writerow(TRACKER_TEMPLATE_COLUMNS[template_type]); return output.getvalue()
+
+def export_tracker_csv(template_type:str, pupils:list[Pupil], academic_year:str, term:str|None=None)->str:
+    output=io.StringIO(); w=csv.writer(output); w.writerow(TRACKER_TEMPLATE_COLUMNS[template_type]);
+    by_name={(p.class_id,p.full_name):p for p in pupils}
+    pupil_ids=[p.id for p in pupils]
+    if template_type=='times_tables':
+        rows=TimesTableScore.query.filter(TimesTableScore.pupil_id.in_(pupil_ids), TimesTableScore.academic_year==academic_year).all()
+        for r in rows:
+            w.writerow([r.pupil.school_class.name, r.pupil.full_name, r.test_column.name, r.score if r.score is not None else '', 25, academic_year])
+    elif template_type=='phonics':
+        rows=PhonicsScore.query.filter(PhonicsScore.pupil_id.in_(pupil_ids), PhonicsScore.academic_year==academic_year).all()
+        for r in rows:
+            w.writerow([r.pupil.school_class.name, r.pupil.full_name, r.test_column.name, r.score if r.score is not None else '', 40, academic_year])
+    else:
+        q=FoundationResult.query.filter(FoundationResult.pupil_id.in_(pupil_ids), FoundationResult.academic_year==academic_year)
+        if term: q=q.filter_by(half_term=term)
+        for r in q.all():
+            w.writerow([r.pupil.school_class.name, r.pupil.full_name, r.subject, r.half_term, '', r.judgement or '', r.note or ''])
+    return output.getvalue()
+
+def import_tracker_rows(template_type:str, rows:list[dict], school_id:int, class_id:int|None=None, academic_year:str|None=None, user_id:int|None=None)->CsvImportSummary:
+    summary=CsvImportSummary()
+    for row in rows:
+        summary.rows_processed += 1
+        try:
+            class_name=_require_value(row,'class')
+            pupil_name=_require_value(row,'pupil_name')
+            sc=school_scoped_query(SchoolClass.query.filter_by(name=class_name), SchoolClass).first()
+            if not sc or (class_id and sc.id!=class_id): raise CsvImportError('Class not found or not permitted.')
+            parts=pupil_name.split(' ',1)
+            if len(parts)<2: raise CsvImportError('pupil_name must be full name.')
+            pupil=school_scoped_query(Pupil.query.filter_by(class_id=sc.id, first_name=parts[0], last_name=parts[1]), Pupil).first()
+            if not pupil: raise CsvImportError(f'Pupil not found: {pupil_name}.')
+            summary.pupils_matched += 1
+            year=academic_year or _clean_value(row.get('date')) or date.today().strftime('%Y/%y')
+            if template_type=='times_tables':
+                test=_require_value(row,'test_name'); score=_parse_optional_int(row.get('score'),'score')
+                col=TimesTableTestColumn.query.filter_by(year_group=4,name=test).first()
+                if not col: col=TimesTableTestColumn(year_group=4,name=test,display_order=999,is_active=True,school_id=school_id); db.session.add(col); db.session.flush()
+                rec=TimesTableScore.query.filter_by(pupil_id=pupil.id,academic_year=year,times_table_test_column_id=col.id).first()
+                if not rec: rec=TimesTableScore(pupil_id=pupil.id,academic_year=year,times_table_test_column_id=col.id,school_id=school_id); db.session.add(rec); summary.created+=1
+                else: summary.updated+=1
+                rec.score=score
+            elif template_type=='phonics':
+                test=_require_value(row,'test_name'); score=_parse_optional_int(row.get('score'),'score')
+                col=PhonicsTestColumn.query.filter_by(year_group=sc.year_group,name=test,school_id=school_id).first()
+                if not col: col=PhonicsTestColumn(year_group=sc.year_group,name=test,display_order=999,is_active=True,school_id=school_id); db.session.add(col); db.session.flush()
+                rec=PhonicsScore.query.filter_by(pupil_id=pupil.id,academic_year=year,phonics_test_column_id=col.id).first()
+                if not rec: rec=PhonicsScore(pupil_id=pupil.id,academic_year=year,phonics_test_column_id=col.id,school_id=school_id); db.session.add(rec); summary.created+=1
+                else: summary.updated+=1
+                rec.score=score
+            else:
+                subject=_clean_value(row.get('subject')).lower(); term=_require_value(row,'term'); band=FOUNDATION_BAND_MAP.get(_clean_value(row.get('band')).lower())
+                if subject not in {s[0] for s in FOUNDATION_SUBJECTS}: raise CsvImportError('Invalid subject.')
+                if band is None: raise CsvImportError('Invalid band.')
+                rec=FoundationResult.query.filter_by(pupil_id=pupil.id,academic_year=year,half_term=term,subject=subject).first()
+                if not rec: rec=FoundationResult(pupil_id=pupil.id,academic_year=year,half_term=term,subject=subject,school_id=school_id); db.session.add(rec); summary.created+=1
+                else: summary.updated+=1
+                rec.judgement=band; rec.note=_clean_value(row.get('notes')); rec.updated_by_user_id=user_id
+        except CsvImportError as exc:
+            summary.rows_skipped += 1; summary.add_error(str(exc))
+    return summary
