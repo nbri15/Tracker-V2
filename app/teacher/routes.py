@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import Response, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
@@ -83,6 +83,9 @@ from app.services import (
     add_phonics_column,
     add_times_tables_column,
     ensure_phonics_columns,
+    generate_tracker_template_csv,
+    export_tracker_csv,
+    import_tracker_rows,
     ensure_times_tables_columns,
     ReceptionTrackerValidationError,
     SatsColumnValidationError,
@@ -99,6 +102,42 @@ from app.utils import get_primary_class_for_user, get_year_group_class_for_user,
 
 from . import teacher_bp
 
+
+
+
+@teacher_bp.route('/tracker/<template_type>/template')
+@login_required
+@teacher_required
+def download_tracker_template(template_type:str):
+    csv_text = generate_tracker_template_csv(template_type)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_template.csv'})
+
+@teacher_bp.route('/tracker/<template_type>/export')
+@login_required
+@teacher_required
+def export_tracker_data(template_type:str):
+    school_class = get_primary_class_for_user(current_user)
+    if not school_class:
+        return redirect(url_for('dashboards.teacher_dashboard'))
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    term = request.args.get('term','').strip() or None
+    csv_text = export_tracker_csv(template_type, pupils, academic_year, term=term)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_export.csv'})
+
+@teacher_bp.route('/tracker/<template_type>/import', methods=['POST'])
+@login_required
+@teacher_required
+def import_tracker_data(template_type:str):
+    school_class = get_primary_class_for_user(current_user)
+    if not school_class:
+        return redirect(url_for('dashboards.teacher_dashboard'))
+    rows = parse_uploaded_csv(request.files.get('csv_file'))
+    summary = import_tracker_rows(template_type, rows, current_user.school_id, class_id=school_class.id, academic_year=request.form.get('academic_year') or None, user_id=current_user.id)
+    db.session.commit()
+    flash(f"{template_type} import: processed {summary.rows_processed}, created {summary.created}, updated {summary.updated}, skipped {summary.rows_skipped}.", 'success')
+    for err in summary.errors[:8]: flash(err, 'warning')
+    return redirect(url_for(f'teacher.{"times_tables" if template_type=="times_tables" else ("phonics" if template_type=="phonics" else "foundation")}'))
 
 SUBJECT_META = {
     'maths': {'title': 'Maths'},

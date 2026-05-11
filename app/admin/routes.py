@@ -82,6 +82,9 @@ from app.services import (
     export_writing_results_csv,
     format_subject_name,
     generate_csv,
+    generate_tracker_template_csv,
+    export_tracker_csv,
+    import_tracker_rows,
     get_class_detail_context,
     get_current_academic_year,
     get_foundation_half_term,
@@ -1372,6 +1375,44 @@ def download_import_template(template_type: str):
     csv_text = generate_csv(template_type)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_template.csv'})
 
+
+
+
+@admin_bp.route('/imports/tracker/<template_type>/template')
+@login_required
+@admin_required
+def download_tracker_template(template_type:str):
+    csv_text = generate_tracker_template_csv(template_type)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_template.csv'})
+
+@admin_bp.route('/imports/tracker/<template_type>/export')
+@login_required
+@admin_required
+def export_tracker_data(template_type:str):
+    class_id_raw = request.args.get('class_id','').strip()
+    class_id = int(class_id_raw) if class_id_raw.isdigit() else None
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    q = demo_filter_pupils(Pupil.query.filter_by(is_active=True))
+    if class_id:
+        q = q.filter_by(class_id=class_id)
+    pupils = q.order_by(Pupil.last_name, Pupil.first_name).all()
+    term = request.args.get('term','').strip() or None
+    csv_text = export_tracker_csv(template_type, pupils, academic_year, term=term)
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_export.csv'})
+
+@admin_bp.route('/imports/tracker/<template_type>/import', methods=['POST'])
+@login_required
+@admin_required
+def import_tracker_data(template_type:str):
+    rows = parse_uploaded_csv(request.files.get('csv_file'))
+    class_id_raw = request.form.get('class_id','').strip()
+    class_id = int(class_id_raw) if class_id_raw.isdigit() else None
+    summary = import_tracker_rows(template_type, rows, current_user.school_id, class_id=class_id, academic_year=request.form.get('academic_year') or None, user_id=current_user.id)
+    db.session.commit()
+    flash(f"{template_type} import finished: processed {summary.rows_processed}, matched {summary.pupils_matched}, created {summary.created}, updated {summary.updated}, skipped {summary.rows_skipped}.", 'success')
+    for err in summary.errors[:10]:
+        flash(err, 'warning')
+    return redirect(url_for('admin.imports'))
 
 @admin_bp.route('/reports/headline')
 @login_required
