@@ -74,7 +74,7 @@
             <div class="border rounded p-2 bg-light">
               <strong>{{ label }}:</strong>
               {% if item and item.band %}
-                <span class="badge text-bg-{{ item.band_theme }}">{{ item.band }}</span>
+                <span class="badge text-bg-{{ item.band_theme }}">{{ display_band_short(item.band) }}</span>
                 <span class="{% if item.progress_theme %}text-{{ item.progress_theme }}{% else %}text-muted{% endif %}">{{ item.progress_label or '—' }}</span>
               {% else %}
                 <span class="text-muted">—</span>

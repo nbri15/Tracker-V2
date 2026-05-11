@@ -250,7 +250,7 @@
                 <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">{{ '%.1f%%'|format(row.combined_percent) if row.combined_percent is not none else '—' }}</td>
                 <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">
                   {% if row.band_label %}
-                    <span class="result-badge{% if row.outcome_theme %} result-badge-{{ row.outcome_theme }}{% endif %}">{{ row.band_label }}</span>
+                    <span class="result-badge{% if row.outcome_theme %} result-badge-{{ row.outcome_theme }}{% endif %}">{{ display_band_short(row.band_label) }}</span>
                   {% else %}
                     —
                   {% endif %}
@@ -261,7 +261,7 @@
               {% else %}
                 <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">
                   {% if row.band_label %}
-                    <span class="result-badge{% if row.outcome_theme %} result-badge-{{ row.outcome_theme }}{% endif %}">{{ row.band_label }}</span>
+                    <span class="result-badge{% if row.outcome_theme %} result-badge-{{ row.outcome_theme }}{% endif %}">{{ display_band_short(row.band_label) }}</span>
                   {% else %}
                     —
                   {% endif %}
@@ -333,7 +333,7 @@
               <td>{{ row.subjects.reading.latest_scaled if row.subjects.reading.latest_scaled is not none else '—' }}</td>
               <td>{{ row.subjects.maths.latest_scaled if row.subjects.maths.latest_scaled is not none else '—' }}</td>
               <td>{{ row.subjects.spag.latest_scaled if row.subjects.spag.latest_scaled is not none else '—' }}</td>
-              <td>{{ row.writing.latest_band }}</td>
+              <td>{{ display_band_short(row.writing.latest_band) }}</td>
               <td class="text-nowrap">
                 <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
                   <input type="hidden" name="pupil_id" value="{{ row.pupil.id }}">

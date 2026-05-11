@@ -28,6 +28,7 @@ from .assessments import (
     build_year6_sats_summary,
     compute_class_subject_summary,
     compute_subject_result_values,
+    display_band_short,
     format_progress_delta,
     format_subject_name,
     get_class_detail_context,
