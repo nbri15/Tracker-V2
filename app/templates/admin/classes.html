@@ -20,6 +20,7 @@
           <div class="col-md-3"><label class="form-label">Teacher</label><select name="teacher_id" class="form-select"><option value="">All</option>{% for option in teacher_options %}<option value="{{ option.id }}" {% if filter_teacher == option.id|string %}selected{% endif %}>{{ option.username }}</option>{% endfor %}</select></div>
           <div class="col-md-2"><label class="form-label">Subgroup</label><select name="subgroup" class="form-select">{% for value, label in subgroup_filters.items() %}<option value="{{ value }}" {% if subgroup == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Sort by</label><select name="sort" class="form-select">{% for value, label in sort_options.items() %}<option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+          <div class="col-md-2"><label class="form-label">Archived</label><select name="show_archived" class="form-select"><option value="0" {% if not show_archived %}selected{% endif %}>Hide</option><option value="1" {% if show_archived %}selected{% endif %}>Show</option></select></div>
           <div class="form-actions justify-content-end"><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_class_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export class CSV</a><a class="btn btn-outline-secondary" href="{{ url_for('admin.export_pupil_overview', academic_year=academic_year, class_id=filter_class or None) }}">Export pupil CSV</a><button class="btn btn-primary">Apply filters</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.classes') }}">Clear</a></div>
         </form>
       </div>
@@ -89,4 +90,21 @@
     </table>
   </div>
 </div>
+
+{% if show_archived %}
+  <div class="card shadow-sm mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Archived classes</strong><span class="badge text-bg-light border">{{ archived_classes|length }}</span></div>
+    <div class="card-body">
+      {% if archived_classes %}
+        <ul class="mb-0">
+          {% for school_class in archived_classes %}
+            <li>Year {{ school_class.year_group }} · {{ school_class.name }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted mb-0">No archived classes.</p>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
 {% endblock %}

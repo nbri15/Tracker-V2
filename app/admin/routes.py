@@ -280,25 +280,38 @@ def classes():
                 db.session.add(school_class)
                 flash(f'Updated class {school_class.name}.', 'success')
             elif action == 'archive_class':
-                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
-                require_same_school(school_class)
+                school_class = demo_filter_classes(SchoolClass.query).filter_by(
+                    id=int(request.form.get('class_id', '0')),
+                    school_id=current_user.school_id,
+                ).first_or_404()
                 school_class.is_active = False
+                if hasattr(school_class, 'is_archived'):
+                    school_class.is_archived = True
                 db.session.add(school_class)
+                current_app.logger.info('Class action: archived class_id=%s school_id=%s', school_class.id, school_class.school_id)
                 flash(f'Archived class {school_class.name}.', 'success')
             elif action == 'restore_class':
-                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
-                require_same_school(school_class)
+                school_class = demo_filter_classes(SchoolClass.query).filter_by(
+                    id=int(request.form.get('class_id', '0')),
+                    school_id=current_user.school_id,
+                ).first_or_404()
                 school_class.is_active = True
+                if hasattr(school_class, 'is_archived'):
+                    school_class.is_archived = False
                 db.session.add(school_class)
                 flash(f'Restored class {school_class.name}.', 'success')
             elif action == 'delete_class':
-                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
-                require_same_school(school_class)
+                school_class = demo_filter_classes(SchoolClass.query).filter_by(
+                    id=int(request.form.get('class_id', '0')),
+                    school_id=current_user.school_id,
+                ).first_or_404()
                 linked_counts = _class_linked_data_counts(school_class)
                 if any(linked_counts.values()):
-                    raise ValueError('This class has pupils or assessment data. Archive it instead or move pupils first.')
+                    current_app.logger.info('Class action: delete_blocked class_id=%s school_id=%s linked=%s', school_class.id, school_class.school_id, linked_counts)
+                    raise ValueError('This class has pupils or linked data. Archive it instead.')
                 class_name = school_class.name
                 db.session.delete(school_class)
+                current_app.logger.info('Class action: hard_deleted class_id=%s school_id=%s', school_class.id, school_class.school_id)
                 flash(f'Deleted empty class {class_name}.', 'success')
             db.session.commit()
             return redirect(url_for('admin.classes'))
@@ -310,10 +323,11 @@ def classes():
     filter_year_group = request.args.get('year_group', '').strip()
     filter_teacher = request.args.get('teacher_id', '').strip()
     filter_class = request.args.get('class_id', '').strip()
+    show_archived = request.args.get('show_archived', '0').strip() == '1'
     subgroup = request.args.get('subgroup', 'all').strip() or 'all'
     sort = request.args.get('sort', 'year_group')
 
-    query = demo_filter_classes(SchoolClass.query)
+    query = demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(True))
     if filter_year_group:
         query = query.filter(SchoolClass.year_group == int(filter_year_group))
     if filter_teacher:
@@ -331,12 +345,14 @@ def classes():
         filter_year_group=filter_year_group,
         filter_teacher=filter_teacher,
         filter_class=filter_class,
+        show_archived=show_archived,
         sort=sort,
         subgroup=subgroup,
         subgroup_filters=SUBGROUP_FILTERS,
         sort_options=CLASS_SORT_OPTIONS,
         teacher_options=_teacher_options(),
-        class_options=demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        archived_classes=demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(False)).order_by(SchoolClass.year_group, SchoolClass.name).all() if show_archived else [],
     )
 
 
