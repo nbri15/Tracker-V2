@@ -192,6 +192,24 @@ def _linked_record_summary(linked_counts: dict[str, int]) -> str:
     return ', '.join(populated)
 
 
+def _class_linked_data_counts(school_class: SchoolClass) -> dict[str, int]:
+    pupil_ids_subquery = Pupil.query.with_entities(Pupil.id).filter_by(class_id=school_class.id).subquery()
+    return {
+        'pupils': Pupil.query.filter_by(class_id=school_class.id).count(),
+        'subject_results': SubjectResult.query.filter(SubjectResult.pupil_id.in_(pupil_ids_subquery)).count(),
+        'writing_results': WritingResult.query.filter(WritingResult.pupil_id.in_(pupil_ids_subquery)).count(),
+        'interventions': Intervention.query.filter(Intervention.pupil_id.in_(pupil_ids_subquery)).count(),
+        'sats_results': SatsResult.query.filter(SatsResult.pupil_id.in_(pupil_ids_subquery)).count(),
+        'sats_writing_results': SatsWritingResult.query.filter(SatsWritingResult.pupil_id.in_(pupil_ids_subquery)).count(),
+        'sats_column_results': SatsColumnResult.query.filter(SatsColumnResult.pupil_id.in_(pupil_ids_subquery)).count(),
+        'phonics_scores': PhonicsScore.query.filter(PhonicsScore.pupil_id.in_(pupil_ids_subquery)).count(),
+        'times_table_scores': TimesTableScore.query.filter(TimesTableScore.pupil_id.in_(pupil_ids_subquery)).count(),
+        'reception_tracker_entries': ReceptionTrackerEntry.query.filter(ReceptionTrackerEntry.pupil_id.in_(pupil_ids_subquery)).count(),
+        'pupil_class_history': PupilClassHistory.query.filter(PupilClassHistory.pupil_id.in_(pupil_ids_subquery)).count(),
+        'foundation_results': FoundationResult.query.filter(FoundationResult.pupil_id.in_(pupil_ids_subquery)).count(),
+    }
+
+
 def _pupil_action_redirect():
     next_url = request.form.get('next', '').strip()
     return redirect(next_url or url_for('admin.pupils'))
@@ -231,6 +249,9 @@ def classes():
                 teacher_id_raw = request.form.get('teacher_id', '').strip()
                 if not name:
                     raise ValueError('Class name is required.')
+                existing = demo_filter_classes(SchoolClass.query).filter_by(school_id=current_user.school_id, name=name).first()
+                if existing:
+                    raise ValueError('A class with that name already exists in your school.')
                 school_class = SchoolClass(name=name, year_group=year_group, school_id=current_user.school_id)
                 school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
                 school_class.is_active = True
@@ -245,9 +266,13 @@ def classes():
                 teacher_id_raw = request.form.get(f'teacher_id_{school_class.id}', '').strip()
                 if not new_name:
                     raise ValueError('Class name is required.')
-                existing = SchoolClass.query.filter(SchoolClass.name == new_name, SchoolClass.id != school_class.id).first()
+                existing = demo_filter_classes(SchoolClass.query).filter(
+                    SchoolClass.school_id == school_class.school_id,
+                    SchoolClass.name == new_name,
+                    SchoolClass.id != school_class.id,
+                ).first()
                 if existing:
-                    raise ValueError('A class with that name already exists.')
+                    raise ValueError('A class with that name already exists in this school.')
                 school_class.name = new_name
                 school_class.year_group = new_year_group
                 school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
@@ -260,6 +285,21 @@ def classes():
                 school_class.is_active = False
                 db.session.add(school_class)
                 flash(f'Archived class {school_class.name}.', 'success')
+            elif action == 'restore_class':
+                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
+                require_same_school(school_class)
+                school_class.is_active = True
+                db.session.add(school_class)
+                flash(f'Restored class {school_class.name}.', 'success')
+            elif action == 'delete_class':
+                school_class = SchoolClass.query.get_or_404(int(request.form.get('class_id', '0')))
+                require_same_school(school_class)
+                linked_counts = _class_linked_data_counts(school_class)
+                if any(linked_counts.values()):
+                    raise ValueError('This class has pupils or assessment data. Archive it instead or move pupils first.')
+                class_name = school_class.name
+                db.session.delete(school_class)
+                flash(f'Deleted empty class {class_name}.', 'success')
             db.session.commit()
             return redirect(url_for('admin.classes'))
         except ValueError as exc:

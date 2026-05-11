@@ -43,10 +43,13 @@ class SchoolClass(db.Model):
     """Represents a school class or year cohort allocation."""
 
     __tablename__ = 'school_classes'
+    __table_args__ = (
+        db.UniqueConstraint('school_id', 'name', name='uq_school_class_name_per_school'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
-    name = db.Column(db.String(100), nullable=False, unique=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
     year_group = db.Column(db.Integer, nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
