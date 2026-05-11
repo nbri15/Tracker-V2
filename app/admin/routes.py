@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
 from datetime import date, datetime, timedelta, timezone
 
 from flask import Response, current_app, flash, redirect, render_template, request, url_for
@@ -161,6 +162,7 @@ def _teacher_options():
 
 
 FULL_WORKBOOK_SHEETS = {
+    'Instructions': ['guidance', 'details'],
     'Pupils': ['first_name','last_name','full_name','class','gender','pp','laps','service_child','send','join_year_group','join_date'],
     'Maths': ['class','pupil_name','term','arithmetic','reasoning','notes'],
     'Reading': ['class','pupil_name','term','paper_1','paper_2','notes'],
@@ -172,6 +174,8 @@ FULL_WORKBOOK_SHEETS = {
     'Reception': ['class','pupil_name','term','area','statement','band','notes'],
     'SATs': ['class','pupil_name','academic_year','subject','test_name','raw_score','scaled_score','notes'],
 }
+TEMPLATE_TERMS = ['Autumn', 'Spring', 'Summer']
+FOUNDATION_SUBJECTS = ['history', 'geography', 'science', 'art', 'dt', 'computing', 're', 'music', 'pe', 'mfl']
 
 def _norm(v):
     return str(v or '').strip()
@@ -190,6 +194,83 @@ def _find_pupil_by_class_name(class_name, pupil_name):
     if not first or not last:
         return None
     return demo_filter_pupils(Pupil.query.filter_by(class_id=school_class.id, first_name=first, last_name=last, school_id=current_user.school_id)).first()
+
+
+def _selected_template_class():
+    class_id = request.args.get('class_id', type=int)
+    if not class_id:
+        return None
+    return demo_filter_classes(
+        SchoolClass.query.filter_by(id=class_id, school_id=current_user.school_id, is_active=True)
+    ).first()
+
+
+def _template_pupils(selected_class: SchoolClass | None):
+    pupil_query = demo_filter_pupils(Pupil.query.filter_by(school_id=current_user.school_id, is_active=True))
+    if selected_class:
+        pupil_query = pupil_query.filter_by(class_id=selected_class.id)
+    return pupil_query.join(Pupil.school_class).order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all()
+
+
+def _style_template_sheet(ws):
+    ws.freeze_panes = 'A2'
+    if ws.max_row >= 1:
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(fill_type='solid', fgColor='E9EFF9')
+    for idx, col in enumerate(ws.iter_cols(min_row=1, max_row=1), start=1):
+        header = _norm(col[0].value)
+        width = max(14, min(40, len(header) + 4))
+        ws.column_dimensions[chr(64 + idx)].width = width
+
+
+def _build_full_template_workbook(selected_class: SchoolClass | None = None):
+    wb = Workbook()
+    wb.remove(wb.active)
+    for name, cols in FULL_WORKBOOK_SHEETS.items():
+        ws = wb.create_sheet(title=name)
+        ws.append(cols)
+
+    instructions = wb['Instructions']
+    instructions_rows = [
+        ('Workbook purpose', 'Use this workbook to import pupil details and assessment data into Class Compass.'),
+        ('Step 1', 'Fill in the Pupils sheet first.'),
+        ('Step 2', 'Pupil names will appear on all assessment sheets automatically.'),
+        ('Step 3', 'Fill in assessment data on the relevant subject tabs.'),
+        ('Step 4', 'Upload the completed workbook in Import & Export Centre.'),
+        ('Important', 'Do not rename sheet tabs.'),
+        ('Important', 'Do not delete required columns.'),
+        ('Important', 'Leave blank if no data.'),
+        ('Accepted band labels', 'WT = Working Towards'),
+        ('Accepted band labels', 'OT = On Track'),
+        ('Accepted band labels', 'EXC = Exceeding'),
+    ]
+    for row in instructions_rows:
+        instructions.append(row)
+    instructions.column_dimensions['A'].width = 26
+    instructions.column_dimensions['B'].width = 92
+
+    pupils = _template_pupils(selected_class)
+    for p in pupils:
+        class_name = p.school_class.name if p.school_class else ''
+        wb['Pupils'].append([p.first_name, p.last_name, p.full_name, class_name, p.gender, p.pupil_premium, p.laps, p.service_child, p.send, p.join_year_group, p.join_date])
+        for term in TEMPLATE_TERMS:
+            wb['Maths'].append([class_name, p.full_name, term, '', '', ''])
+            wb['Reading'].append([class_name, p.full_name, term, '', '', ''])
+            wb['SPaG'].append([class_name, p.full_name, term, '', '', ''])
+            wb['Writing'].append([class_name, p.full_name, term, '', ''])
+        wb['Phonics'].append([class_name, p.full_name, '', '', '', ''])
+        wb['Times Tables'].append([class_name, p.full_name, '', '', '', ''])
+        for subject in FOUNDATION_SUBJECTS:
+            wb['Foundation'].append([class_name, p.full_name, subject, '', '', '', ''])
+        if p.join_year_group == 0:
+            wb['Reception'].append([class_name, p.full_name, '', '', '', '', ''])
+        if p.join_year_group == 6:
+            wb['SATs'].append([class_name, p.full_name, '', '', '', '', '', ''])
+
+    for ws in wb.worksheets:
+        _style_template_sheet(ws)
+    return wb
 
 CLASS_DETAIL_SUBJECT_SORT_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'assessment_year_group', 'progress_delta'}
 CLASS_DETAIL_WRITING_SORT_COLUMNS = {'name', 'band_label', 'notes'}
@@ -1411,11 +1492,8 @@ def download_import_template(template_type: str):
 @login_required
 @admin_required
 def download_full_template_xlsx():
-    wb = Workbook()
-    wb.remove(wb.active)
-    for name, cols in FULL_WORKBOOK_SHEETS.items():
-        ws = wb.create_sheet(title=name)
-        ws.append(cols)
+    selected_class = _selected_template_class()
+    wb = _build_full_template_workbook(selected_class)
     out = io.BytesIO()
     wb.save(out)
     out.seek(0)
@@ -1481,11 +1559,8 @@ def import_full_workbook():
 @login_required
 @admin_required
 def export_full_workbook():
-    wb=Workbook(); wb.remove(wb.active)
-    for n,c in FULL_WORKBOOK_SHEETS.items():
-        ws=wb.create_sheet(n); ws.append(c)
-    for p in demo_filter_pupils(Pupil.query.filter_by(school_id=current_user.school_id)).all():
-        wb['Pupils'].append([p.first_name,p.last_name,p.full_name,p.school_class.name if p.school_class else '',p.gender,p.pupil_premium,p.laps,p.service_child,p.send,p.join_year_group,p.join_date])
+    selected_class = _selected_template_class()
+    wb = _build_full_template_workbook(selected_class)
     out=io.BytesIO(); wb.save(out); out.seek(0)
     return Response(out.getvalue(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=school_data_workbook.xlsx'})
 
