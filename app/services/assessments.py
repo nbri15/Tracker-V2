@@ -140,7 +140,7 @@ def get_term_label(term: str) -> str:
 
 
 
-def display_band_short(value: str | None) -> str:
+def short_band_label(value: str | None) -> str:
     if value is None:
         return '—'
     text = str(value).strip()
@@ -156,6 +156,12 @@ def display_band_short(value: str | None) -> str:
     if any(token in normalized for token in ('exceeding', 'exceed', 'greater depth', 'gds', 'exs')):
         return 'EXC'
     return text
+
+
+def display_band_short(value: str | None) -> str:
+    return short_band_label(value)
+
+
 def get_writing_band_label(band: str | None) -> str:
     if not band:
         return '—'

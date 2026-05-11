@@ -9,7 +9,7 @@ from sqlalchemy import inspect, text
 
 from config import config_by_name
 from .extensions import db, login_manager, migrate
-from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label
+from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label, short_band_label
 from .utils import current_school_id, is_demo_user
 
 
@@ -104,11 +104,14 @@ def register_request_guards(app: Flask) -> None:
 def register_template_helpers(app: Flask) -> None:
     """Expose common formatting helpers to templates."""
 
+    app.jinja_env.filters['short_band'] = short_band_label
+
     app.jinja_env.globals.update(
         format_subject_name=format_subject_name,
         get_term_label=get_term_label,
         get_writing_band_label=get_writing_band_label,
         display_band_short=display_band_short,
+        short_band_label=short_band_label,
         get_tracker_mode_label=get_tracker_mode_label,
         demo_mode=app.config.get('DEMO_MODE', False),
         is_demo_user=is_demo_user,

@@ -365,6 +365,20 @@ def _write_subject_result(existing: SubjectResult | None, *, pupil: Pupil, acade
     return result, None
 
 
+
+
+def _normalize_writing_band(value: str | None) -> str | None:
+    raw = _clean_value(value)
+    if not raw:
+        return None
+    text = raw.strip().lower()
+    if any(token in text for token in ('working towards','working toward','wts','wt','below')):
+        return 'working_towards'
+    if any(token in text for token in ('on track','working at','working at are','ot')):
+        return 'expected'
+    if any(token in text for token in ('exceeding','greater depth','gds','exs','exc')):
+        return 'greater_depth'
+    return text
 def _is_writing_result_incomplete(result: WritingResult) -> bool:
     return not _clean_value(result.band)
 
@@ -466,7 +480,7 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                                 progress.subject_updated += 1
 
                 for term, (band_column, notes_column) in COMBINED_WRITING_COLUMNS.items():
-                    band = _clean_value(row.get(band_column)).lower()
+                    band = _normalize_writing_band(row.get(band_column))
                     notes = _clean_value(row.get(notes_column)) or None
                     if not band:
                         continue
@@ -694,7 +708,7 @@ def export_subject_results_csv(class_id: int | None = None, subject: str | None 
     if term:
         query = query.filter(SubjectResult.term == term)
     for row in query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, row.subject, row.paper_1_score, row.paper_2_score, row.combined_score, row.combined_percent, row.band_label, row.source, row.notes])
+        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, row.subject, row.paper_1_score, row.paper_2_score, row.combined_score, row.combined_percent, short_band_label(row.band_label), row.source, row.notes])
     return output.getvalue()
 
 
@@ -710,7 +724,7 @@ def export_writing_results_csv(class_id: int | None = None, academic_year: str |
     if term:
         query = query.filter(WritingResult.term == term)
     for row in query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, row.band, row.notes, getattr(row, 'source', None)])
+        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, short_band_label(row.band), row.notes, getattr(row, 'source', None)])
     return output.getvalue()
 
 
