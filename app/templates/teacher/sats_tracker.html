@@ -111,7 +111,7 @@
       <div class="col-md-1"><button class="btn btn-outline-primary w-100">Add</button></div>
     </form>
     <div class="table-responsive">
-      <table class="table table-sm align-middle mb-0">
+      <table class="table table-sm align-middle mb-0 data-table">
         <thead class="table-light">
           <tr><th>Name</th><th>Type</th><th>Max score</th><th>Order</th><th>Status</th><th></th></tr>
         </thead>
@@ -171,7 +171,7 @@
       <input type="hidden" name="action" value="save_results">
       {% if selected_tab %}<input type="hidden" name="exam_tab_id" value="{{ selected_tab.id }}">{% endif %}
       <div class="table-responsive spreadsheet-wrap sats-wrap">
-        <table class="table table-sm align-middle mb-0 spreadsheet-table sats-sheet-table">
+        <table class="table table-sm align-middle mb-0 spreadsheet-table sats-sheet-table data-table">
           <thead class="table-light sticky-top">
             <tr>
               <th class="sticky-col sats-name-col" rowspan="2">Pupil</th>

@@ -207,14 +207,59 @@ a:hover {
 }
 
 .table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
   scrollbar-color: #b6c6df #f2f5fb;
 }
 
+.data-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.data-table th,
+.data-table td,
 .subject-table th,
 .subject-table td,
 .gap-table th,
 .gap-table td {
   white-space: nowrap;
+  vertical-align: middle;
+  padding: 0.55rem 0.65rem;
+}
+
+.data-table td.notes-cell,
+.data-table td.comment-cell,
+.data-table td.long-text {
+  white-space: normal;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background-color: rgba(13, 46, 103, 0.02);
+}
+
+.data-table tbody tr:hover {
+  background-color: rgba(13, 110, 253, 0.08);
+}
+
+.pupil-name-col {
+  min-width: 220px;
+}
+
+.col-checkbox { width: 44px; min-width: 44px; text-align: center; }
+.col-narrow { min-width: 80px; }
+.col-medium { min-width: 140px; }
+.col-wide { min-width: 220px; }
+.col-actions { min-width: 120px; }
+
+.spreadsheet-table {
+  font-size: 0.86rem;
 }
 
 .auth-shell {
@@ -905,6 +950,10 @@ a:hover {
 
   .spreadsheet-wrap {
     max-height: none;
+  }
+
+  .data-table {
+    font-size: 0.82rem;
   }
 }
 
