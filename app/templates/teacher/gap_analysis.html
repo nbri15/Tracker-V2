@@ -103,7 +103,7 @@
       {% for paper in papers %}
         <div class="{% if paper.key != active_paper %}d-none{% endif %}">
           <div class="table-responsive spreadsheet-wrap gap-wrap">
-            <table class="table table-sm align-middle mb-0 spreadsheet-table gap-table js-gap-table" data-paper-key="{{ paper.key }}">
+            <table class="table table-sm align-middle mb-0 spreadsheet-table gap-table js-gap-table data-table" data-paper-key="{{ paper.key }}">
               <thead class="table-light sticky-top">
                 <tr>
                   <th class="sticky-col gap-name-col"></th>

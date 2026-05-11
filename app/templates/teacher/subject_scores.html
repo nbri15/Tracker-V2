@@ -227,7 +227,7 @@
         <button type="submit" class="btn btn-success btn-sm">Save {{ page_title }} results</button>
       </div>
       <div class="table-responsive spreadsheet-wrap mt-3">
-        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table js-subject-table" data-below-threshold="{{ setting.below_are_threshold_percent if setting else '' }}" data-exceeding-threshold="{{ setting.exceeding_threshold_percent if setting else '' }}" data-combined-max="{{ setting.combined_max if setting else '' }}">
+        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table data-table js-subject-table" data-below-threshold="{{ setting.below_are_threshold_percent if setting else '' }}" data-exceeding-threshold="{{ setting.exceeding_threshold_percent if setting else '' }}" data-combined-max="{{ setting.combined_max if setting else '' }}">
           <thead class="table-light sticky-top">
             <tr>
               <th>{{ sort_link('name', 'Pupil') }}</th>

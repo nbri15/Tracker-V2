@@ -83,8 +83,8 @@
       <input type="hidden" name="direction" value="{{ sort_state.direction }}">
       <div class="px-3 py-3 text-end"><button class="btn btn-success btn-sm">Save phonics scores</button></div>
       <div class="table-responsive spreadsheet-wrap">
-        <table class="table table-sm table-hover align-middle mb-0 spreadsheet-table">
-          <thead class="table-light sticky-top"><tr><th>{{ sort_link('name', 'Pupil') }}</th>{% for column in columns if column.is_active %}<th>{{ sort_link('column_' ~ column.id, column.name) }}</th>{% endfor %}<th>Latest</th></tr></thead>
+        <table class="table table-sm table-hover align-middle mb-0 spreadsheet-table data-table">
+          <thead class="table-light sticky-top"><tr><th class="sticky-col pupil-name-col col-wide">{{ sort_link('name', 'Pupil') }}</th>{% for column in columns if column.is_active %}<th>{{ sort_link('column_' ~ column.id, column.name) }}</th>{% endfor %}<th>Latest</th></tr></thead>
           <tbody>
             {% for row in rows %}
               <tr>
