@@ -74,7 +74,7 @@
             <div class="border rounded p-2 bg-light">
               <strong>{{ label }}:</strong>
               {% if item and item.band %}
-                <span class="badge text-bg-{{ item.band_theme }}">{{ display_band_short(item.band) }}</span>
+                <span class="badge text-bg-{{ item.band_theme }}">{{ short_band_label(item.band) }}</span>
                 <span class="{% if item.progress_theme %}text-{{ item.progress_theme }}{% else %}text-muted{% endif %}">{{ item.progress_label or '—' }}</span>
               {% else %}
                 <span class="text-muted">—</span>
@@ -157,7 +157,7 @@
                         <span>{{ row.percentage ~ '%' if row.percentage is not none else '—' }}</span>
                         <span class="mx-1">—</span>
                         {% if row.band %}
-                          <span class="badge text-bg-{{ row.band_theme }}">{{ row.band }}</span>
+                          <span class="badge text-bg-{{ row.band_theme }}">{{ row.band|short_band }}</span>
                         {% else %}
                           <span class="text-muted">—</span>
                         {% endif %}
@@ -231,7 +231,7 @@
               <tr><td>{{ row.academic_year }}</td><td>{{ row.subject|upper }} AP{{ row.assessment_point }}</td><td>Raw {{ row.raw_score if row.raw_score is not none else '—' }} / Scaled {{ row.scaled_score if row.scaled_score is not none else '—' }}</td></tr>
             {% endfor %}
             {% for row in sats_writing_rows %}
-              <tr><td>{{ row.academic_year }}</td><td>Writing AP{{ row.assessment_point }}</td><td>{{ row.band or '—' }}</td></tr>
+              <tr><td>{{ row.academic_year }}</td><td>Writing AP{{ row.assessment_point }}</td><td>{{ row.band|short_band }}</td></tr>
             {% endfor %}
             {% for row in sats_column_rows %}
               <tr><td>{{ row.academic_year }}</td><td>{{ row.column.name }}</td><td>{{ row.raw_score if row.raw_score is not none else '—' }}</td></tr>

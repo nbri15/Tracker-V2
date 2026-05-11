@@ -31,9 +31,9 @@
 </div></div>
 
 <div class="row g-3 mb-3">
-  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">Working Towards</div><div class="h5 mb-0 text-danger">{{ summary.overall['Working Towards'] }}</div></div></div></div>
-  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">On Track</div><div class="h5 mb-0 text-success">{{ summary.overall['On Track'] }}</div></div></div></div>
-  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">Exceeding</div><div class="h5 mb-0 text-warning">{{ summary.overall['Exceeding'] }}</div></div></div></div>
+  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">WT</div><div class="h5 mb-0 text-danger">{{ summary.overall['Working Towards'] }}</div></div></div></div>
+  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">OT</div><div class="h5 mb-0 text-success">{{ summary.overall['On Track'] }}</div></div></div></div>
+  <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">EXC</div><div class="h5 mb-0 text-warning">{{ summary.overall['Exceeding'] }}</div></div></div></div>
   <div class="col-md-3"><div class="card admin-mini-stat"><div class="card-body py-2"><div class="small text-muted">Missing</div><div class="h5 mb-0 text-secondary">{{ summary.overall['Missing'] }}</div></div></div></div>
 </div>
 
@@ -63,7 +63,7 @@
   </form>
 </div></div>
 
-<div class="card shadow-sm mt-4"><div class="card-header bg-white"><strong>By subject summary</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Subject</th><th>WT</th><th>OT</th><th>Exceeding</th><th>Missing</th></tr></thead><tbody>{% for subject_key, subject_label in subjects %}{% set item = summary.by_subject[subject_key] %}<tr><td>{{ subject_label }}</td><td>{{ item['Working Towards'] }}</td><td>{{ item['On Track'] }}</td><td>{{ item['Exceeding'] }}</td><td>{{ item['Missing'] }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card shadow-sm mt-4"><div class="card-header bg-white"><strong>By subject summary</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Subject</th><th>WT</th><th>OT</th><th>EXC</th><th>Missing</th></tr></thead><tbody>{% for subject_key, subject_label in subjects %}{% set item = summary.by_subject[subject_key] %}<tr><td>{{ subject_label }}</td><td>{{ item['Working Towards'] }}</td><td>{{ item['On Track'] }}</td><td>{{ item['Exceeding'] }}</td><td>{{ item['Missing'] }}</td></tr>{% endfor %}</tbody></table></div></div>
 
 <div class="d-flex gap-2 flex-wrap foundation-tab-strip mt-3">
   {% for value, label in half_terms %}

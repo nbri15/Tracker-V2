@@ -29,6 +29,7 @@ from .assessments import (
     compute_class_subject_summary,
     compute_subject_result_values,
     display_band_short,
+    short_band_label,
     format_progress_delta,
     format_subject_name,
     get_class_detail_context,
