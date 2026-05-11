@@ -149,11 +149,18 @@ def short_band_label(value: str | None) -> str:
 
     normalized = text.lower().replace('_', ' ')
 
-    if any(token in normalized for token in ('working towards', 'towards', 'wts', 'below', 'not on track')):
+    if normalized in {'working towards', 'wt', 'wts', 'below', 'not on track'}:
         return 'WT'
-    if any(token in normalized for token in ('working at', 'on track', ' ot', 'ot ', 'expected')) or normalized == 'ot':
+    if normalized in {'expected', 'on track', 'working at', 'ot'}:
         return 'OT'
-    if any(token in normalized for token in ('exceeding', 'exceed', 'greater depth', 'gds', 'exs')):
+    if normalized in {'exs', 'exc', 'exceeding', 'exceed', 'greater depth', 'gds'}:
+        return 'EXC'
+
+    if any(token in normalized for token in ('working towards', 'towards')):
+        return 'WT'
+    if any(token in normalized for token in ('on track', 'expected', 'working at')):
+        return 'OT'
+    if any(token in normalized for token in ('exceeding', 'exceed', 'greater depth', 'gds', 'exs', 'exc')):
         return 'EXC'
     return text
 
