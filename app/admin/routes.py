@@ -745,10 +745,11 @@ def reset_user_password(user_id: int):
 
 
 
-@admin_bp.route('/pupils/new', methods=['GET', 'POST'])
+@admin_bp.route('/pupils/new', methods=['GET', 'POST'], endpoint='new_pupil')
+@admin_bp.route('/pupils/new', methods=['GET', 'POST'], endpoint='admin_pupil_new')
 @login_required
 @admin_required
-def new_pupil():
+def admin_pupil_new():
     school_id = _selected_school_id_for_admin_actions()
     if current_user.is_executive_admin and school_id is None:
         flash('Select a school before adding pupils.', 'warning')
@@ -779,7 +780,7 @@ def new_pupil():
         pupil.general_notes = request.form.get('general_notes', '').strip() or None
         db.session.add(pupil)
         db.session.commit()
-        flash('Pupil added', 'success')
+        flash('Pupil added.', 'success')
         return redirect(url_for('admin.pupils'))
 
     return render_template('admin/pupil_form.html', class_options=class_options)
