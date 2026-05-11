@@ -131,6 +131,7 @@ from app.services import (
     FoundationValidationError,
 )
 from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, school_scoped_query
+from app.services.pupil_quick_add import create_quick_add_pupil
 
 from . import admin_bp
 from .forms import AssessmentSettingForm
@@ -741,6 +742,47 @@ def reset_user_password(user_id: int):
 
     return render_template('admin/reset_password.html', user=user)
 
+
+
+
+@admin_bp.route('/pupils/new', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def new_pupil():
+    school_id = _selected_school_id_for_admin_actions()
+    if current_user.is_executive_admin and school_id is None:
+        flash('Select a school before adding pupils.', 'warning')
+        return redirect(url_for('admin.pupils'))
+
+    class_options = demo_filter_classes(
+        SchoolClass.query.filter_by(school_id=school_id, is_active=True)
+    ).order_by(SchoolClass.year_group, SchoolClass.name).all() if school_id is not None else []
+
+    if request.method == 'POST':
+        school_class = _resolve_admin_quick_add_class(request.form.get('class_id', '0'))
+        pupil, error = create_quick_add_pupil(
+            school_class=school_class,
+            first_name=request.form.get('first_name', ''),
+            last_name=request.form.get('last_name', ''),
+            gender=request.form.get('gender', ''),
+            pupil_premium=request.form.get('pupil_premium') == 'on',
+            laps=request.form.get('laps') == 'on',
+            service_child=request.form.get('service_child') == 'on',
+            send=request.form.get('send') == 'on',
+            join_year_group_raw=request.form.get('join_year_group', ''),
+            join_date_raw=request.form.get('join_date', ''),
+        )
+        if error:
+            flash(error, 'danger')
+            return render_template('admin/pupil_form.html', class_options=class_options)
+
+        pupil.general_notes = request.form.get('general_notes', '').strip() or None
+        db.session.add(pupil)
+        db.session.commit()
+        flash('Pupil added', 'success')
+        return redirect(url_for('admin.pupils'))
+
+    return render_template('admin/pupil_form.html', class_options=class_options)
 
 @admin_bp.route('/pupils', methods=['GET', 'POST'])
 @login_required

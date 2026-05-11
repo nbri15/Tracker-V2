@@ -4,6 +4,9 @@
 {% set page_heading = 'Pupils' %}
 
 {% block content %}
+<div class="d-flex justify-content-end mb-3">
+  <a class="btn btn-primary" href="{{ url_for('admin.new_pupil') }}">+ Add pupil</a>
+</div>
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Pupil filters</strong></div>
   <div class="card-body">
