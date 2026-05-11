@@ -138,6 +138,24 @@ def get_term_label(term: str) -> str:
     return dict(TERMS).get(term, term.title())
 
 
+
+
+def display_band_short(value: str | None) -> str:
+    if value is None:
+        return '—'
+    text = str(value).strip()
+    if not text:
+        return '—'
+
+    normalized = text.lower().replace('_', ' ')
+
+    if any(token in normalized for token in ('working towards', 'towards', 'wts', 'below', 'not on track')):
+        return 'WT'
+    if any(token in normalized for token in ('working at', 'on track', ' ot', 'ot ', 'expected')) or normalized == 'ot':
+        return 'OT'
+    if any(token in normalized for token in ('exceeding', 'exceed', 'greater depth', 'gds', 'exs')):
+        return 'EXC'
+    return text
 def get_writing_band_label(band: str | None) -> str:
     if not band:
         return '—'
