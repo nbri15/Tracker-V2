@@ -342,6 +342,23 @@ def recalculate_subject_results_for_scope(year_group: int, subject: str, term: s
     return len(results)
 
 
+
+
+def pupil_send_value(pupil: Pupil) -> bool | None:
+    profile = getattr(pupil, 'profile', None)
+    profile_send = getattr(profile, 'send', None) if profile is not None else None
+    if pupil.send is True or profile_send is True:
+        return True
+    if pupil.send is False and profile_send in (False, None):
+        return False
+    if pupil.send is None and profile_send is False:
+        return False
+    return None
+
+
+def pupil_has_send(pupil: Pupil) -> bool:
+    return pupil_send_value(pupil) is True
+
 def apply_pupil_subgroup(query, subgroup: str):
     if subgroup == 'pp':
         return query.filter(Pupil.pupil_premium.is_(True))
@@ -371,13 +388,18 @@ def apply_admin_pupil_filters(query, filters: dict | None = None):
         ('pupil_premium', Pupil.pupil_premium),
         ('laps', Pupil.laps),
         ('service_child', Pupil.service_child),
-        ('send', Pupil.send),
     ):
         value = (filters.get(filter_name) or '').strip()
         if value == 'yes':
             query = query.filter(field.is_(True))
         elif value == 'no':
             query = query.filter(field.is_(False))
+
+    send_value = (filters.get('send') or '').strip()
+    if send_value == 'yes':
+        query = query.filter(Pupil.send.is_(True))
+    elif send_value == 'no':
+        query = query.filter(Pupil.send.is_(False))
 
     search = (filters.get('search') or '').strip()
     if search:
@@ -1191,7 +1213,7 @@ def _build_pupil_flag_summary(pupil: Pupil) -> str:
         flags.append('LAPS')
     if pupil.service_child:
         flags.append('Service')
-    if pupil.send:
+    if pupil_has_send(pupil):
         flags.append('SEND')
     return ' · '.join(flags) if flags else '—'
 

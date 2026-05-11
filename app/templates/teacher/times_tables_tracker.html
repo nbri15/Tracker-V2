@@ -2,7 +2,7 @@
 {% macro sort_link(column, label) -%}
   {% set state = header_state[column] if column in header_state else {'indicator': '', 'next_direction': 'asc', 'active': false} %}
   <a
-    href="{{ url_for('teacher.times_tables', academic_year=academic_year, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, sort=column, direction=state.next_direction) }}"
+    href="{{ url_for('teacher.times_tables', academic_year=academic_year, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, sort=column, direction=state.next_direction) }}"
     class="table-sort-link{% if state.active %} active{% endif %}"
   >
     <span>{{ label }}</span>
@@ -39,6 +39,7 @@
       <div class="col-sm-4 col-lg-1"><label class="form-label">PP</label><select name="pupil_premium" class="form-select form-select-sm"><option value="all" {% if filters.pupil_premium == 'all' %}selected{% endif %}>All</option><option value="yes" {% if filters.pupil_premium == 'yes' %}selected{% endif %}>Yes</option><option value="no" {% if filters.pupil_premium == 'no' %}selected{% endif %}>No</option></select></div>
       <div class="col-sm-4 col-lg-1"><label class="form-label">LAPS</label><select name="laps" class="form-select form-select-sm"><option value="all" {% if filters.laps == 'all' %}selected{% endif %}>All</option><option value="yes" {% if filters.laps == 'yes' %}selected{% endif %}>Yes</option><option value="no" {% if filters.laps == 'no' %}selected{% endif %}>No</option></select></div>
       <div class="col-sm-4 col-lg-1"><label class="form-label">Service</label><select name="service_child" class="form-select form-select-sm"><option value="all" {% if filters.service_child == 'all' %}selected{% endif %}>All</option><option value="yes" {% if filters.service_child == 'yes' %}selected{% endif %}>Yes</option><option value="no" {% if filters.service_child == 'no' %}selected{% endif %}>No</option></select></div>
+      <div class="col-sm-4 col-lg-1"><label class="form-label">SEND</label><select name="send" class="form-select form-select-sm"><option value="all" {% if filters.send == 'all' %}selected{% endif %}>All</option><option value="yes" {% if filters.send == 'yes' %}selected{% endif %}>Yes</option><option value="no" {% if filters.send == 'no' %}selected{% endif %}>No</option></select></div>
       <div class="col-lg-3 d-flex gap-2"><button class="btn btn-primary btn-sm flex-grow-1">Apply</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.times_tables') }}">Clear</a></div>
     </form>
   </div>

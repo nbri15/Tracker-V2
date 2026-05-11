@@ -414,7 +414,7 @@ def class_phonics(class_id: int):
                 save_phonics_scores(pupils, columns, academic_year, current_user.school_id, request.form)
                 flash('Phonics scores saved.', 'success')
             db.session.commit()
-            return redirect(url_for('admin.class_phonics', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search'], sort=sort_state['column'], direction=sort_state['direction']))
+            return redirect(url_for('admin.class_phonics', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], send=filters['send'], search=filters['search'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Phonics changes could not be saved: {exc}', 'danger')
@@ -481,7 +481,7 @@ def class_times_tables(class_id: int):
                 save_times_tables_scores(pupils, columns, academic_year, request.form)
                 flash('Times tables scores saved.', 'success')
             db.session.commit()
-            return redirect(url_for('admin.class_times_tables', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], search=filters['search'], sort=sort_state['column'], direction=sort_state['direction']))
+            return redirect(url_for('admin.class_times_tables', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], send=filters['send'], search=filters['search'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Times tables changes could not be saved: {exc}', 'danger')

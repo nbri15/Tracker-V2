@@ -8,7 +8,7 @@
     <h3 class="h4 mb-1">School headline report</h3>
     <p class="text-muted mb-0">Leadership summary of {{ report.subject_label }} outcomes by year group and term.</p>
   </div>
-  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.export_headline_report', subject=subject, tracker_key=tracker_key or None, academic_year=academic_year, year_group=year_group or None, subgroup=subgroup, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, search=pupil_filters.search) }}">Download Excel-friendly CSV</a>
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.export_headline_report', subject=subject, tracker_key=tracker_key or None, academic_year=academic_year, year_group=year_group or None, subgroup=subgroup, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, send=pupil_filters.send, search=pupil_filters.search) }}">Download Excel-friendly CSV</a>
 </div>
 
 <div class="card shadow-sm mb-4">
