@@ -1035,3 +1035,9 @@ a:hover {
   font-size: 0.7rem;
   font-weight: 700;
 }
+
+.ghost-assessment {
+  opacity: 0.45;
+  font-style: italic;
+  color: #64748b;
+}
