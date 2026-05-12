@@ -999,6 +999,35 @@ def render_writing_page():
     )
     existing_by_pupil = {row.pupil_id: row for row in existing_rows}
 
+    ghost_by_pupil = {pupil.id: '' for pupil in context['pupils']}
+    if context['term'] == 'spring':
+        lookback_terms = ('autumn',)
+    elif context['term'] == 'summer':
+        lookback_terms = ('spring', 'autumn')
+    else:
+        lookback_terms = ()
+    if lookback_terms and context['pupils']:
+        prior_rows = (
+            WritingResult.query.join(WritingResult.pupil)
+            .filter(
+                WritingResult.academic_year == context['academic_year'],
+                WritingResult.term.in_(lookback_terms),
+                WritingResult.pupil.has(class_id=school_class.id),
+            )
+            .all()
+        )
+        labels_by_key = {}
+        for item in prior_rows:
+            labels_by_key[(item.pupil_id, item.term)] = get_writing_band_label(item.band)
+        for pupil in context['pupils']:
+            if pupil.id in existing_by_pupil:
+                continue
+            for lookback in lookback_terms:
+                label = labels_by_key.get((pupil.id, lookback))
+                if label:
+                    ghost_by_pupil[pupil.id] = label
+                    break
+
     if request.method == 'POST':
         if request.form.get('form_name') == 'add_pupil':
             return _handle_quick_add_pupil(
@@ -1054,6 +1083,7 @@ def render_writing_page():
             'pupil': pupil,
             'band': existing.band if existing else '',
             'band_label': get_writing_band_label(existing.band) if existing else '—',
+            'ghost_band_label': ghost_by_pupil.get(pupil.id, ''),
             'notes': existing.notes if existing else '',
             'outcome_theme': get_writing_outcome_theme(existing.band if existing else None),
         })
