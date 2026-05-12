@@ -51,7 +51,7 @@
             <td class="{{ judgement_themes.get(judgement, '') }}">
               <select name="judgement_{{ row.pupil.id }}_{{ subject_key }}" class="form-select form-select-sm js-ghost-select{% if not judgement and row.ghost_judgements[subject_key] %} has-ghost-value{% endif %}" {% if not judgement and row.ghost_judgements[subject_key] %}title="Previous term value — not counted until saved"{% endif %} data-ghost-label="{{ row.ghost_judgements[subject_key] }}">
                 {% if not judgement and row.ghost_judgements[subject_key] %}<option value="" selected disabled>Previous: {{ row.ghost_judgements[subject_key] }}</option>{% endif %}
-                {% for value, label in judgement_choices %}<option value="{{ value }}" {% if value == judgement %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                {% for value, label in judgement_choices %}<option value="{{ value }}" {% if value == judgement and not (not judgement and row.ghost_judgements[subject_key] and value == '') %}selected{% endif %}>{{ label }}</option>{% endfor %}
               </select>
             </td>
           {% endfor %}
