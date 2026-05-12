@@ -162,4 +162,14 @@ from .csv_tools import (
 from .gap import build_gap_page_context, get_or_create_gap_template, parse_question_columns, save_gap_scores, sync_gap_totals_to_subject_results
 from .interventions import AUTO_REASON, build_intervention_filters, suggest_interventions_for_scope, sync_auto_interventions
 
+from .pupil_overview import (
+    build_pupil_overview_data,
+    get_eyfs_data,
+    get_latest_tracker_data,
+    get_mtc_data,
+    get_phonics_data,
+    get_y6_sats_data,
+    summarize_gld_status,
+)
+
 __all__ = [name for name in globals() if not name.startswith('_')]

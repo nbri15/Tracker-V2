@@ -21,14 +21,12 @@ from app.models import (
     PupilClassHistory,
     ReceptionTrackerEntry,
     SatsColumnResult,
-    SatsResult,
-    SatsWritingResult,
     SchoolClass,
     SubjectResult,
     TimesTableScore,
     WritingResult,
 )
-from app.services import format_progress_delta, progress_theme
+from app.services import build_pupil_overview_data, format_progress_delta, progress_theme, summarize_gld_status
 from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, teacher_or_admin_required
 
 from . import pupils_bp
@@ -98,20 +96,14 @@ def profile(pupil_id: int):
         flash('Pupil notes saved.', 'success')
         return redirect(url_for('pupils.profile', pupil_id=pupil.id))
 
-    subject_rows = SubjectResult.query.filter_by(pupil_id=pupil.id).order_by(SubjectResult.academic_year.desc(), SubjectResult.term.desc(), SubjectResult.updated_at.desc()).all()
-    writing_rows = WritingResult.query.filter_by(pupil_id=pupil.id).order_by(WritingResult.academic_year.desc(), WritingResult.term.desc(), WritingResult.updated_at.desc()).all()
-    phonics_rows = PhonicsScore.query.filter_by(pupil_id=pupil.id).all()
-    times_tables_rows = TimesTableScore.query.filter_by(pupil_id=pupil.id).all()
-    reception_rows = ReceptionTrackerEntry.query.filter_by(pupil_id=pupil.id).order_by(ReceptionTrackerEntry.academic_year.desc(), ReceptionTrackerEntry.tracking_point.desc()).all()
-    foundation_rows = FoundationResult.query.filter_by(pupil_id=pupil.id).order_by(FoundationResult.academic_year.desc(), FoundationResult.half_term.desc(), FoundationResult.subject.asc()).all()
-    sats_rows = SatsResult.query.filter_by(pupil_id=pupil.id).order_by(SatsResult.academic_year.desc(), SatsResult.assessment_point.desc()).all()
-    sats_writing_rows = SatsWritingResult.query.filter_by(pupil_id=pupil.id).order_by(SatsWritingResult.academic_year.desc(), SatsWritingResult.assessment_point.desc()).all()
-    sats_column_rows = (
-        SatsColumnResult.query.filter_by(pupil_id=pupil.id)
-        .join(SatsColumnResult.column)
-        .order_by(SatsColumnResult.academic_year.desc(), SatsColumnResult.updated_at.desc())
-        .all()
-    )
+    overview_data = build_pupil_overview_data(pupil)
+    subject_rows = overview_data['tracker']['subject_rows']
+    writing_rows = overview_data['tracker']['writing_rows']
+    phonics_rows = overview_data['phonics']
+    times_tables_rows = overview_data['mtc']
+    reception_rows = overview_data['eyfs']['reception_rows']
+    foundation_rows = overview_data['eyfs']['foundation_rows']
+    sats_column_rows = overview_data['sats']
     intervention_rows = Intervention.query.filter_by(pupil_id=pupil.id).order_by(Intervention.created_at.desc()).all()
     history_rows = PupilClassHistory.query.filter_by(pupil_id=pupil.id).order_by(PupilClassHistory.academic_year.desc()).all()
 
@@ -172,9 +164,8 @@ def profile(pupil_id: int):
         reception_rows=reception_rows,
         foundation_history=_build_foundation_history(foundation_rows),
         latest_foundation=_latest_foundation_by_subject(foundation_rows),
-        sats_rows=sats_rows,
-        sats_writing_rows=sats_writing_rows,
         sats_column_rows=sats_column_rows,
+        gld_status=summarize_gld_status(reception_rows),
         intervention_rows=intervention_rows,
         intervention_summary=intervention_summary,
         latest_intervention_note=latest_intervention_note,

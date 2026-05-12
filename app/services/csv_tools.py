@@ -25,6 +25,7 @@ from app.models import (
 from app.utils import school_scoped_query
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
+from .pupil_overview import build_pupil_overview_data, summarize_gld_status
 from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
 
 COMBINED_PUPIL_COLUMNS = [
@@ -704,12 +705,18 @@ def export_class_overview_csv(academic_year: str, class_id: int | None = None) -
 def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'send', 'academic_year'])
+    writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'send', 'academic_year', 'gld', 'phonics', 'mtc', 'y6_sats_entries'])
     query = Pupil.query.join(Pupil.school_class)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
+    selected_year = academic_year or get_current_academic_year()
     for pupil in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, pupil.send, academic_year or 'current'])
+        overview = build_pupil_overview_data(pupil, selected_year)
+        gld = summarize_gld_status(overview['eyfs']['reception_rows']) if pupil.school_class.year_group == 0 else ''
+        phonics = max((row.score for row in overview['phonics'] if row.score is not None), default='') if pupil.school_class.year_group in {1, 2} else ''
+        mtc = max((row.score for row in overview['mtc'] if row.score is not None), default='') if pupil.school_class.year_group == 4 else ''
+        sats_entries = len(overview['sats']) if pupil.school_class.year_group == 6 else ''
+        writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, pupil.send, selected_year, gld, phonics, mtc, sats_entries])
     return output.getvalue()
 
 
