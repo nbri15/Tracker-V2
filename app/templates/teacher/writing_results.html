@@ -150,6 +150,9 @@
                       <option value="{{ value }}" {% if row.band == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                   </select>
+                  {% if not row.band and row.ghost_band_label %}
+                    <div class="ghost-assessment mt-1" title="Previous term value — not counted until saved">Previous: {{ 'WT' if row.ghost_band_label == 'Working Towards' else 'OT' if row.ghost_band_label == 'Expected' else 'EXC' if row.ghost_band_label == 'Greater Depth' else row.ghost_band_label }}</div>
+                  {% endif %}
                 </td>
                 <td>
                   <input type="text" name="notes_{{ row.pupil.id }}" value="{{ row.notes }}" class="form-control form-control-sm" placeholder="Optional note">
