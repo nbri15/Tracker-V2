@@ -224,6 +224,29 @@ document.addEventListener('DOMContentLoaded', () => {
     updateGapTotals();
   });
 
+  document.querySelectorAll('.js-ghost-select').forEach((select) => {
+    const ghostLabel = select.dataset.ghostLabel || '';
+
+    const syncGhostState = () => {
+      if (select.value) {
+        select.classList.remove('has-ghost-value');
+        select.removeAttribute('title');
+        return;
+      }
+      if (!ghostLabel) {
+        select.classList.remove('has-ghost-value');
+        select.removeAttribute('title');
+        return;
+      }
+      select.classList.add('has-ghost-value');
+      select.title = 'Previous term value — not counted until saved';
+    };
+
+    select.addEventListener('change', syncGhostState);
+    syncGhostState();
+  });
+
+
   document.querySelectorAll('.js-sats-sheet-form').forEach((form) => {
     const calcSources = {
       maths_raw_total: ['maths_arithmetic', 'maths_reasoning_1', 'maths_reasoning_2'],
