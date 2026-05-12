@@ -21,10 +21,13 @@ from app.models import (
     GapScore,
     Intervention,
     PhonicsScore,
+    PhonicsTestColumn,
     Pupil,
     PupilClassHistory,
     ReceptionTrackerEntry,
     SatsColumnResult,
+    SatsColumnSetting,
+    SatsExamTab,
     SatsResult,
     SatsWritingResult,
     SchoolClass,
@@ -180,6 +183,10 @@ FOUNDATION_SUBJECTS = ['history', 'geography', 'science', 'art', 'dt', 'computin
 def _norm(v):
     return str(v or '').strip()
 
+
+def _norm_key(v):
+    return _norm(v).lower()
+
 def _split_name(full_name):
     parts = _norm(full_name).split()
     if not parts:
@@ -194,6 +201,77 @@ def _find_pupil_by_class_name(class_name, pupil_name):
     if not first or not last:
         return None
     return demo_filter_pupils(Pupil.query.filter_by(class_id=school_class.id, first_name=first, last_name=last, school_id=current_user.school_id)).first()
+
+
+def _find_or_create_phonics_column(year_group: int, test_name: str) -> tuple[PhonicsTestColumn, bool]:
+    normalized_name = _norm(test_name)
+    key = normalized_name.lower()
+    existing = (
+        PhonicsTestColumn.query
+        .filter_by(school_id=current_user.school_id, year_group=year_group)
+        .all()
+    )
+    for column in existing:
+        if _norm_key(column.name) == key:
+            return column, False
+    next_order = max((column.display_order or 0 for column in existing), default=0) + 1
+    created = PhonicsTestColumn(
+        school_id=current_user.school_id,
+        year_group=year_group,
+        name=normalized_name,
+        display_order=next_order,
+        is_active=True,
+    )
+    db.session.add(created)
+    db.session.flush()
+    return created, True
+
+
+def _find_or_create_sats_column(subject: str, test_name: str) -> tuple[SatsColumnSetting, bool]:
+    normalized_name = _norm(test_name)
+    key = normalized_name.lower()
+    subject_key = _norm_key(subject)
+    existing = (
+        SatsColumnSetting.query
+        .filter_by(school_id=current_user.school_id, year_group=6, subject=subject_key)
+        .all()
+    )
+    for column in existing:
+        if _norm_key(column.name) == key:
+            return column, False
+
+    tabs = (
+        SatsExamTab.query
+        .filter_by(school_id=current_user.school_id, year_group=6, is_active=True)
+        .order_by(SatsExamTab.display_order.asc(), SatsExamTab.id.asc())
+        .all()
+    )
+    if not tabs:
+        first_tab = SatsExamTab(
+            school_id=current_user.school_id,
+            year_group=6,
+            name='Default',
+            display_order=1,
+            is_active=True,
+        )
+        db.session.add(first_tab)
+        db.session.flush()
+        tabs = [first_tab]
+    selected_tab = tabs[0]
+    next_order = max((column.display_order or 0 for column in existing), default=0) + 1
+    created = SatsColumnSetting(
+        school_id=current_user.school_id,
+        year_group=6,
+        exam_tab_id=selected_tab.id,
+        name=normalized_name,
+        subject=subject_key,
+        score_type='paper',
+        display_order=next_order,
+        is_active=True,
+    )
+    db.session.add(created)
+    db.session.flush()
+    return created, True
 
 
 def _selected_template_class():
@@ -1544,6 +1622,88 @@ def import_full_workbook():
             r.paper_2_score=int(row[4]) if row[4] not in (None,'') else None
             r.combined_score=(r.paper_1_score or 0)+(r.paper_2_score or 0) if r.paper_1_score is not None and r.paper_2_score is not None else None
             r.notes=_norm(row[5])
+    if 'Phonics' in wb.sheetnames:
+        for row in wb['Phonics'].iter_rows(min_row=2, values_only=True):
+            pupil = _find_pupil_by_class_name(row[0], row[1])
+            if not pupil:
+                preview_errors.append(f'Phonics: pupil not matched {_norm(row[1])}')
+                continue
+            test_name = _norm(row[2])
+            if not test_name:
+                preview_errors.append(f'Phonics: missing test_name for {_norm(row[1])}')
+                continue
+            score_raw = row[3]
+            if score_raw in (None, ''):
+                preview_errors.append(f'Phonics: missing score for {_norm(row[1])} ({test_name})')
+                continue
+            try:
+                score_value = int(score_raw)
+            except (TypeError, ValueError):
+                preview_errors.append(f'Phonics: invalid score "{_norm(score_raw)}" for {_norm(row[1])} ({test_name})')
+                continue
+            column, is_new_column = _find_or_create_phonics_column(pupil.school_class.year_group, test_name)
+            if is_new_column:
+                preview_errors.append(f'Phonics: new test column will be created ({column.name}, Year {column.year_group})')
+            else:
+                preview_errors.append(f'Phonics: existing test column used ({column.name}, Year {column.year_group})')
+            result = PhonicsScore.query.filter_by(
+                school_id=current_user.school_id,
+                pupil_id=pupil.id,
+                academic_year=get_current_academic_year(),
+                phonics_test_column_id=column.id,
+            ).first()
+            if not result:
+                result = PhonicsScore(
+                    school_id=current_user.school_id,
+                    pupil_id=pupil.id,
+                    academic_year=get_current_academic_year(),
+                    phonics_test_column_id=column.id,
+                )
+                db.session.add(result)
+            result.score = score_value
+            preview_errors.append(f'Phonics: score will be saved for {_norm(row[1])} ({column.name})')
+    if 'SATs' in wb.sheetnames:
+        for row in wb['SATs'].iter_rows(min_row=2, values_only=True):
+            pupil = _find_pupil_by_class_name(row[0], row[1])
+            if not pupil:
+                preview_errors.append(f'SATs: pupil not matched {_norm(row[1])}')
+                continue
+            subject = _norm_key(row[3])
+            test_name = _norm(row[4])
+            if not subject or not test_name:
+                preview_errors.append(f'SATs: missing subject/test_name for {_norm(row[1])}')
+                continue
+            raw_score = row[5]
+            scaled_score = row[6]
+            try:
+                raw_value = int(raw_score) if raw_score not in (None, '') else None
+                scaled_value = int(scaled_score) if scaled_score not in (None, '') else None
+            except (TypeError, ValueError):
+                preview_errors.append(f'SATs: invalid raw/scaled score for {_norm(row[1])} ({test_name})')
+                continue
+            column, is_new_column = _find_or_create_sats_column(subject, test_name)
+            if is_new_column:
+                preview_errors.append(f'SATs: new test column will be created ({column.name}, {column.subject})')
+            else:
+                preview_errors.append(f'SATs: existing test column used ({column.name}, {column.subject})')
+            result = SatsColumnResult.query.filter_by(
+                school_id=current_user.school_id,
+                pupil_id=pupil.id,
+                academic_year=_norm(row[2]) or get_current_academic_year(),
+                column_id=column.id,
+            ).first()
+            if not result:
+                result = SatsColumnResult(
+                    school_id=current_user.school_id,
+                    pupil_id=pupil.id,
+                    academic_year=_norm(row[2]) or get_current_academic_year(),
+                    column_id=column.id,
+                )
+                db.session.add(result)
+            result.raw_score = raw_value
+            if scaled_value is not None:
+                preview_errors.append(f'SATs: scaled_score provided ({scaled_value}) for {_norm(row[1])} ({column.name})')
+            preview_errors.append(f'SATs: score will be saved for {_norm(row[1])} ({column.name})')
     if request.form.get('confirm_save')!='1':
         db.session.rollback()
         for e in preview_errors[:20]: flash(e,'warning')
