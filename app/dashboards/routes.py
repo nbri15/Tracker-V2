@@ -176,7 +176,18 @@ def sats_simple():
         selected_class = next((c for c in class_options if str(c.id)==class_id), class_options[0] if class_options else None)
     pupils=[]
     if selected_class:
-        pupils = selected_class.pupils.filter_by(is_active=True, school_id=selected_class.school_id).order_by(Pupil.last_name,Pupil.first_name).all()
+        pupils = (
+            demo_filter_pupils(Pupil.query)
+            .join(SchoolClass, Pupil.class_id == SchoolClass.id)
+            .filter(
+                Pupil.school_id == current_user.school_id,
+                Pupil.class_id == selected_class.id,
+                Pupil.is_active.is_(True),
+                SchoolClass.year_group == 6,
+            )
+            .order_by(Pupil.last_name, Pupil.first_name)
+            .all()
+        )
     pupil_ids=[p.id for p in pupils]
     result_map={}
     if pupil_ids:
@@ -195,7 +206,17 @@ def sats_simple_quick_save():
     value_raw=data.get('value')
     if field not in SATS_SIMPLE_FIELDS:
         return {'ok':False,'error':'Invalid payload'},400
-    pupil=demo_filter_pupils(Pupil.query).filter_by(id=pupil_id,is_active=True,year_group=6).first()
+    pupil=(
+        demo_filter_pupils(Pupil.query)
+        .join(SchoolClass, Pupil.class_id == SchoolClass.id)
+        .filter(
+            Pupil.id == pupil_id,
+            Pupil.is_active.is_(True),
+            Pupil.school_id == current_user.school_id,
+            SchoolClass.year_group == 6,
+        )
+        .first()
+    )
     if not pupil or pupil.school_id!=current_user.school_id:
         return {'ok':False,'error':'Forbidden'},403
     academic_year=str(data.get('academic_year') or get_current_academic_year())
