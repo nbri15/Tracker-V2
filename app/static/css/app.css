@@ -1041,3 +1041,9 @@ a:hover {
   font-style: italic;
   color: #64748b;
 }
+
+
+select.has-ghost-value {
+  color: #94a3b8;
+  font-style: italic;
+}
