@@ -105,6 +105,7 @@ class SatsResult(db.Model):
 
     __tablename__ = 'sats_results'
     __table_args__ = (
+        db.UniqueConstraint('school_id', 'pupil_id', 'academic_year', 'exam_number', name='uq_sats_result_exam_scope'),
         db.UniqueConstraint('pupil_id', 'subject', 'assessment_point', 'academic_year', name='uq_sats_result_scope'),
         db.Index('ix_sats_result_lookup', 'academic_year', 'subject', 'assessment_point'),
     )
@@ -119,6 +120,18 @@ class SatsResult(db.Model):
     is_most_recent = db.Column(db.Boolean, nullable=False, default=False)
     academic_year = db.Column(db.String(20), nullable=False)
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    exam_number = db.Column(db.Integer, nullable=True, index=True)
+    arithmetic_score = db.Column(db.Integer, nullable=True)
+    reasoning_1_score = db.Column(db.Integer, nullable=True)
+    reasoning_2_score = db.Column(db.Integer, nullable=True)
+    maths_combined_score = db.Column(db.Integer, nullable=True)
+    maths_scaled_score = db.Column(db.Integer, nullable=True)
+    reading_score = db.Column(db.Integer, nullable=True)
+    reading_scaled_score = db.Column(db.Integer, nullable=True)
+    spelling_score = db.Column(db.Integer, nullable=True)
+    grammar_score = db.Column(db.Integer, nullable=True)
+    spag_combined_score = db.Column(db.Integer, nullable=True)
+    spag_scaled_score = db.Column(db.Integer, nullable=True)
 
     pupil = db.relationship('Pupil', back_populates='sats_results')
 
@@ -148,3 +161,21 @@ class SatsWritingResult(db.Model):
 
     def __repr__(self) -> str:
         return f'<SatsWritingResult AP{self.assessment_point}>'
+
+
+class SatsExamSetting(db.Model):
+    __tablename__ = 'sats_exam_settings'
+    __table_args__ = (
+        db.UniqueConstraint('school_id', 'academic_year', 'exam_number', name='uq_sats_exam_settings_scope'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=False, index=True)
+    exam_number = db.Column(db.Integer, nullable=False, index=True)
+    arithmetic_max = db.Column(db.Integer, nullable=False, default=40)
+    reasoning_1_max = db.Column(db.Integer, nullable=False, default=35)
+    reasoning_2_max = db.Column(db.Integer, nullable=False, default=35)
+    reading_max = db.Column(db.Integer, nullable=False, default=50)
+    spelling_max = db.Column(db.Integer, nullable=False, default=20)
+    grammar_max = db.Column(db.Integer, nullable=False, default=50)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
