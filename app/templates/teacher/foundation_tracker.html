@@ -52,6 +52,9 @@
               <select name="judgement_{{ row.pupil.id }}_{{ subject_key }}" class="form-select form-select-sm">
                 {% for value, label in judgement_choices %}<option value="{{ value }}" {% if value == judgement %}selected{% endif %}>{{ label }}</option>{% endfor %}
               </select>
+              {% if not judgement and row.ghost_judgements[subject_key] %}
+                <div class="ghost-assessment mt-1" title="Previous term value — not counted until saved">Previous: {{ row.ghost_judgements[subject_key] }}</div>
+              {% endif %}
             </td>
           {% endfor %}
         </tr>
