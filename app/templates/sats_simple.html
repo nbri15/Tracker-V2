@@ -18,11 +18,12 @@
 .scaled-low { color:#b42318; }
 .scaled-at { color:#027a48; }
 .scaled-high { color:#b54708; }
-.progress-badge { margin-left:6px; font-size:.78rem; font-weight:600; }
+.scaled-score-wrap { display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; max-width:100%; }
+.progress-badge { margin-left:0; font-size:.8rem; font-weight:600; line-height:1; }
 .progress-up { color:#027a48; }
 .progress-flat,.progress-none { color:#6c757d; }
 .progress-down { color:#b42318; }
-.input-score { max-width:70px; margin:auto; text-align:center; }
+.input-score { max-width:70px; margin:0; text-align:center; }
 .scaled-cell { text-align:center; }
 </style>
 
@@ -50,13 +51,13 @@
 {% for p in pupils %}{% set r=result_map.get(p.id) %}{% set prev=scores_by_pupil_exam.get(p.id, {}).get(exam_number-1) %}<tr data-pupil="{{ p.id }}"><td class="sticky-col">{{ p.full_name }}</td>
 {% for f in ['arithmetic_score','reasoning_1_score','reasoning_2_score'] %}<td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="{{ f }}" value="{{ r[f] if r else '' }}"></td>{% endfor %}
 <td class="js-maths col-combined">{{ r.maths_combined_score if r and r.maths_combined_score is not none else '' }}</td>
-<td class="scaled-cell col-scaled"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.maths_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="maths_scaled_score" value="{{ r.maths_scaled_score if r else '' }}"><span class="progress-badge js-progress-maths_scaled_score {{ scaled_progress(r.maths_scaled_score if r else none, prev.maths_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.maths_scaled_score if r else none, prev.maths_scaled_score if prev else none)['label'] }}</span></td>
+<td class="scaled-cell col-scaled"><div class="scaled-score-wrap"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.maths_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="maths_scaled_score" value="{{ r.maths_scaled_score if r else '' }}"><span class="progress-badge js-progress-maths_scaled_score {{ scaled_progress(r.maths_scaled_score if r else none, prev.maths_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.maths_scaled_score if r else none, prev.maths_scaled_score if prev else none)['label'] }}</span></div></td>
 <td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="reading_score" value="{{ r.reading_score if r else '' }}"></td>
-<td class="scaled-cell col-scaled"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.reading_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="reading_scaled_score" value="{{ r.reading_scaled_score if r else '' }}"><span class="progress-badge js-progress-reading_scaled_score {{ scaled_progress(r.reading_scaled_score if r else none, prev.reading_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.reading_scaled_score if r else none, prev.reading_scaled_score if prev else none)['label'] }}</span></td>
+<td class="scaled-cell col-scaled"><div class="scaled-score-wrap"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.reading_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="reading_scaled_score" value="{{ r.reading_scaled_score if r else '' }}"><span class="progress-badge js-progress-reading_scaled_score {{ scaled_progress(r.reading_scaled_score if r else none, prev.reading_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.reading_scaled_score if r else none, prev.reading_scaled_score if prev else none)['label'] }}</span></div></td>
 <td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="spelling_score" value="{{ r.spelling_score if r else '' }}"></td>
 <td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="grammar_score" value="{{ r.grammar_score if r else '' }}"></td>
 <td class="js-spag col-combined">{{ r.spag_combined_score if r and r.spag_combined_score is not none else '' }}</td>
-<td class="scaled-cell col-scaled"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.spag_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="spag_scaled_score" value="{{ r.spag_scaled_score if r else '' }}"><span class="progress-badge js-progress-spag_scaled_score {{ scaled_progress(r.spag_scaled_score if r else none, prev.spag_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.spag_scaled_score if r else none, prev.spag_scaled_score if prev else none)['label'] }}</span></td></tr>{% endfor %}
+<td class="scaled-cell col-scaled"><div class="scaled-score-wrap"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.spag_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="spag_scaled_score" value="{{ r.spag_scaled_score if r else '' }}"><span class="progress-badge js-progress-spag_scaled_score {{ scaled_progress(r.spag_scaled_score if r else none, prev.spag_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.spag_scaled_score if r else none, prev.spag_scaled_score if prev else none)['label'] }}</span></div></td></tr>{% endfor %}
 </tbody></table></div></div></div>
 <script>
 const scaledFields=['maths_scaled_score','reading_scaled_score','spag_scaled_score'];
