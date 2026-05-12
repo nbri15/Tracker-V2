@@ -49,6 +49,7 @@ from app.services import (
     get_current_term,
     get_foundation_half_term,
     get_gender_filter_options,
+    get_latest_previous_assessment,
     get_next_sort_direction,
     get_or_create_gap_template,
     get_reception_class,
@@ -1000,33 +1001,17 @@ def render_writing_page():
     existing_by_pupil = {row.pupil_id: row for row in existing_rows}
 
     ghost_by_pupil = {pupil.id: '' for pupil in context['pupils']}
-    if context['term'] == 'spring':
-        lookback_terms = ('autumn',)
-    elif context['term'] == 'summer':
-        lookback_terms = ('spring', 'autumn')
-    else:
-        lookback_terms = ()
-    if lookback_terms and context['pupils']:
-        prior_rows = (
-            WritingResult.query.join(WritingResult.pupil)
-            .filter(
-                WritingResult.academic_year == context['academic_year'],
-                WritingResult.term.in_(lookback_terms),
-                WritingResult.pupil.has(class_id=school_class.id),
-            )
-            .all()
+    for pupil in context['pupils']:
+        if pupil.id in existing_by_pupil:
+            continue
+        prior_band = get_latest_previous_assessment(
+            pupil_id=pupil.id,
+            subject='writing',
+            current_term=context['term'],
+            academic_year=context['academic_year'],
         )
-        labels_by_key = {}
-        for item in prior_rows:
-            labels_by_key[(item.pupil_id, item.term)] = get_writing_band_label(item.band)
-        for pupil in context['pupils']:
-            if pupil.id in existing_by_pupil:
-                continue
-            for lookback in lookback_terms:
-                label = labels_by_key.get((pupil.id, lookback))
-                if label:
-                    ghost_by_pupil[pupil.id] = label
-                    break
+        if prior_band:
+            ghost_by_pupil[pupil.id] = get_writing_band_label(prior_band)
 
     if request.method == 'POST':
         if request.form.get('form_name') == 'add_pupil':

@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload
 from app.extensions import db
 from app.models import (
     AssessmentSetting,
+    FoundationResult,
     Intervention,
     PhonicsScore,
     PhonicsTestColumn,
@@ -347,6 +348,54 @@ def previous_term(term: str) -> str | None:
         'summer': 'spring',
     }
     return mapping.get((term or '').strip().lower())
+
+
+def get_latest_previous_assessment(
+    pupil_id: int,
+    subject: str,
+    current_term: str,
+    academic_year: str,
+) -> str | None:
+    normalized_subject = (subject or '').strip().lower()
+    normalized_term = (current_term or '').strip().lower()
+    invalid_values = {'', 'not_assessed', 'not assessed'}
+    orders = (
+        ['autumn', 'spring', 'summer'],
+        ['autumn_1', 'autumn_2', 'spring_1', 'spring_2', 'summer_1', 'summer_2'],
+    )
+    sequence = next((order for order in orders if normalized_term in order), None)
+    if not sequence:
+        return None
+    current_index = sequence.index(normalized_term)
+    if current_index <= 0:
+        return None
+    lookback_terms = list(reversed(sequence[:current_index]))
+
+    if normalized_subject == 'writing':
+        prior_rows = WritingResult.query.filter(
+            WritingResult.pupil_id == pupil_id,
+            WritingResult.academic_year == academic_year,
+            WritingResult.term.in_(lookback_terms),
+        ).all()
+        by_term = {(row.term or '').strip().lower(): row.band for row in prior_rows}
+    else:
+        prior_rows = FoundationResult.query.filter(
+            FoundationResult.pupil_id == pupil_id,
+            FoundationResult.academic_year == academic_year,
+            FoundationResult.subject == normalized_subject,
+            FoundationResult.half_term.in_(lookback_terms),
+        ).all()
+        by_term = {(row.half_term or '').strip().lower(): row.judgement for row in prior_rows}
+
+    for term in lookback_terms:
+        value = by_term.get(term)
+        if value is None:
+            continue
+        cleaned = str(value).strip()
+        if cleaned.lower() in invalid_values:
+            continue
+        return cleaned
+    return None
 
 
 def recalculate_subject_results_for_scope(year_group: int, subject: str, term: str, *, academic_year: str | None = None, class_id: int | None = None) -> int:

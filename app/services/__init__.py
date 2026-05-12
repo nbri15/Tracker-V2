@@ -36,6 +36,7 @@ from .assessments import (
     get_current_academic_year,
     get_current_term,
     get_next_sort_direction,
+    get_latest_previous_assessment,
     get_gender_filter_options,
     get_latest_scaled_score,
     get_most_recent_term_with_data,
