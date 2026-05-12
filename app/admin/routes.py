@@ -617,6 +617,10 @@ def class_detail(class_id: int):
 @login_required
 @admin_required
 def class_sats(class_id: int):
+    return redirect(url_for('dashboards.sats_simple', class_id=class_id))
+
+# legacy disabled
+def _legacy_class_sats_disabled(class_id: int):
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     require_same_school(school_class)
     if school_class.year_group != 6 or not school_class.is_active:
@@ -1395,6 +1399,10 @@ def interventions():
 @login_required
 @admin_required
 def sats():
+    return redirect(url_for('dashboards.sats_simple'))
+
+# legacy disabled
+def _legacy_admin_sats_disabled():
     academic_year = request.values.get('academic_year', get_current_academic_year())
     selected_class_id = request.values.get('class_id', '').strip()
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()

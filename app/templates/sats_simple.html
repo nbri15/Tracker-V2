@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Simple SATs{% endblock %}
+{% set page_heading = 'Year 6 SATs tracker' %}
+{% block content %}
+<div class="card mb-3"><div class="card-body"><form method="get" class="row g-2 align-items-end">
+<div class="col-md-3"><label class="form-label">Academic year</label><input name="academic_year" class="form-control" value="{{ academic_year }}"></div>
+<div class="col-md-3"><label class="form-label">Class</label><select name="class_id" class="form-select">{% for c in class_options %}<option value="{{ c.id }}" {% if selected_class and c.id==selected_class.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
+<div class="col-md-4">{% for n in [1,2,3,4] %}<a class="btn btn-sm {% if exam_number==n %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('dashboards.sats_simple', academic_year=academic_year, class_id=selected_class.id if selected_class else None, exam_number=n) }}">Exam {{ n }}</a>{% endfor %}</div>
+<div class="col-md-2"><button class="btn btn-primary w-100">Load</button></div></form></div></div>
+<div class="card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th class="sticky-top">Pupil</th><th>Arithmetic</th><th>Reasoning 1</th><th>Reasoning 2</th><th>Maths Combined Score</th><th>Maths Scaled Score</th><th>Reading Paper</th><th>Reading Scaled Score</th><th>Spelling Paper</th><th>Grammar Paper</th><th>SPaG Combined Score</th><th>SPaG Scaled Score</th></tr></thead><tbody>
+{% for p in pupils %}{% set r=result_map.get(p.id) %}<tr data-pupil="{{ p.id }}"><td>{{ p.full_name }}</td>
+{% for f in ['arithmetic_score','reasoning_1_score','reasoning_2_score'] %}<td><input class="form-control form-control-sm js-save" data-field="{{ f }}" value="{{ r[f] if r else '' }}"></td>{% endfor %}
+<td class="js-maths">{{ r.maths_combined_score if r and r.maths_combined_score is not none else '' }}</td>
+<td><input class="form-control form-control-sm js-save" data-field="maths_scaled_score" value="{{ r.maths_scaled_score if r else '' }}"></td>
+<td><input class="form-control form-control-sm js-save" data-field="reading_score" value="{{ r.reading_score if r else '' }}"></td>
+<td><input class="form-control form-control-sm js-save" data-field="reading_scaled_score" value="{{ r.reading_scaled_score if r else '' }}"></td>
+<td><input class="form-control form-control-sm js-save" data-field="spelling_score" value="{{ r.spelling_score if r else '' }}"></td>
+<td><input class="form-control form-control-sm js-save" data-field="grammar_score" value="{{ r.grammar_score if r else '' }}"></td>
+<td class="js-spag">{{ r.spag_combined_score if r and r.spag_combined_score is not none else '' }}</td>
+<td><input class="form-control form-control-sm js-save" data-field="spag_scaled_score" value="{{ r.spag_scaled_score if r else '' }}"></td></tr>{% endfor %}
+</tbody></table></div></div></div>
+<script>
+document.querySelectorAll('.js-save').forEach(i=>i.addEventListener('change', async ()=>{const tr=i.closest('tr');const res=await fetch('/api/sats/simple/quick-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pupil_id:tr.dataset.pupil,exam_number:{{ exam_number }},academic_year:'{{ academic_year }}',field:i.dataset.field,value:i.value})});if(res.ok){const j=await res.json();tr.querySelector('.js-maths').textContent=j.maths_combined_score??'';tr.querySelector('.js-spag').textContent=j.spag_combined_score??'';}}));
+</script>
+{% endblock %}

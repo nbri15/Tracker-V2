@@ -43,7 +43,7 @@
           {% endif %}
           <a class="nav-link text-white {% if request.endpoint == 'teacher.interventions' %}active{% endif %}" href="{{ url_for('teacher.interventions') }}">Interventions</a>
           {% if current_user.classes.filter_by(is_active=True, year_group=6, is_demo=current_user.is_demo).first() %}
-            <a class="nav-link text-white {% if request.endpoint == 'teacher.sats_tracker' %}active{% endif %}" href="{{ url_for('teacher.sats_tracker') }}">Year 6 SATs / mode</a>
+            <a class="nav-link text-white {% if request.endpoint in ['teacher.sats_tracker','dashboards.sats_simple'] %}active{% endif %}" href="{{ url_for('dashboards.sats_simple') }}">Year 6 SATs / mode</a>
           {% endif %}
         {% endif %}
       {% endif %}
@@ -53,7 +53,7 @@
         <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail', 'admin.class_sats', 'admin.class_phonics', 'admin.class_times_tables'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Users</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>
-        <a class="nav-link text-white {% if request.endpoint in ['admin.sats', 'admin.class_sats'] %}active{% endif %}" href="{{ url_for('admin.sats') }}">Year 6 SATs</a>
+        <a class="nav-link text-white {% if request.endpoint in ['admin.sats', 'admin.class_sats','dashboards.sats_simple'] %}active{% endif %}" href="{{ url_for('dashboards.sats_simple') }}">Year 6 SATs</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.reception_tracker' %}active{% endif %}" href="{{ url_for('admin.reception_tracker') }}">Reception tracker</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.foundation_tracker' %}active{% endif %}" href="{{ url_for('admin.foundation_tracker') }}">Foundation tracker</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.promotion' %}active{% endif %}" href="{{ url_for('admin.promotion') }}">Promotion & history</a>
