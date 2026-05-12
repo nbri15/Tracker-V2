@@ -11,7 +11,6 @@ from app.services import (
     build_class_overview_row,
     build_dashboard_summary,
     build_subject_overview_cards,
-    build_year6_sats_overview,
     get_current_academic_year,
     get_gender_filter_options,
     get_tracker_mode,
@@ -111,7 +110,7 @@ def admin_dashboard():
     subject_cards = build_subject_overview_cards(class_rows)
     teacher_options = school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).order_by(User.username).all()
     class_options = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
-    year6_overview = build_year6_sats_overview(academic_year)
+    year6_overview = {}
 
     context = {
         'academic_year': academic_year,
@@ -136,3 +135,69 @@ def admin_dashboard():
         'year6_tracker_mode_label': get_tracker_mode_label(6),
     }
     return render_template('dashboards/admin_dashboard.html', **context)
+
+
+from app.extensions import db
+from app.models import SatsResult, SatsExamSetting
+
+SATS_SIMPLE_FIELDS = [
+    'arithmetic_score','reasoning_1_score','reasoning_2_score','maths_combined_score','maths_scaled_score',
+    'reading_score','reading_scaled_score','spelling_score','grammar_score','spag_combined_score','spag_scaled_score'
+]
+
+@dashboards_bp.route('/sats/simple')
+@login_required
+def sats_simple():
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    exam_number = int((request.args.get('exam_number') or '1'))
+    if exam_number < 1 or exam_number > 4: exam_number = 1
+    class_id = request.args.get('class_id', '').strip()
+    base = demo_filter_classes(SchoolClass.query.filter_by(year_group=6, is_active=True))
+    class_options = base.order_by(SchoolClass.name).all()
+    if current_user.is_teacher and not current_user.can_manage_school:
+        school_class = get_year_group_class_for_user(current_user, 6)
+        if not school_class:
+            return redirect(url_for('dashboards.teacher_dashboard'))
+        class_options = [school_class]
+        selected_class = school_class
+    else:
+        selected_class = next((c for c in class_options if str(c.id)==class_id), class_options[0] if class_options else None)
+    pupils=[]
+    if selected_class:
+        pupils = selected_class.pupils.filter_by(is_active=True, school_id=selected_class.school_id).order_by(Pupil.last_name,Pupil.first_name).all()
+    pupil_ids=[p.id for p in pupils]
+    result_map={}
+    if pupil_ids:
+        rows=SatsResult.query.filter(SatsResult.school_id==current_user.school_id,SatsResult.academic_year==academic_year,SatsResult.exam_number==exam_number,SatsResult.pupil_id.in_(pupil_ids)).all()
+        result_map={r.pupil_id:r for r in rows}
+    settings={}
+    for n in range(1,5):
+        st=SatsExamSetting.query.filter_by(school_id=current_user.school_id,academic_year=academic_year,exam_number=n).first()
+        settings[n]=st
+    return render_template('sats_simple.html', academic_year=academic_year, exam_number=exam_number, pupils=pupils, result_map=result_map, class_options=class_options, selected_class=selected_class, settings=settings)
+
+@dashboards_bp.route('/api/sats/simple/quick-save', methods=['POST'])
+@login_required
+def sats_simple_quick_save():
+    data=request.get_json(silent=True) or request.form
+    pupil_id=int(data.get('pupil_id'))
+    exam_number=int(data.get('exam_number'))
+    field=str(data.get('field'))
+    value_raw=data.get('value')
+    if exam_number not in {1,2,3,4} or field not in SATS_SIMPLE_FIELDS:
+        return {'ok':False,'error':'Invalid payload'},400
+    pupil=demo_filter_pupils(Pupil.query).filter_by(id=pupil_id,is_active=True,year_group=6).first()
+    if not pupil or pupil.school_id!=current_user.school_id:
+        return {'ok':False,'error':'Forbidden'},403
+    academic_year=str(data.get('academic_year') or get_current_academic_year())
+    rec=SatsResult.query.filter_by(school_id=current_user.school_id,pupil_id=pupil_id,academic_year=academic_year,exam_number=exam_number).first()
+    if not rec:
+        rec=SatsResult(school_id=current_user.school_id,pupil_id=pupil_id,academic_year=academic_year,exam_number=exam_number,subject='maths',assessment_point=exam_number,is_most_recent=False)
+        db.session.add(rec)
+    setattr(rec, field, int(value_raw) if str(value_raw).strip()!='' else None)
+    a,b,c=rec.arithmetic_score or 0, rec.reasoning_1_score or 0, rec.reasoning_2_score or 0
+    s,g=rec.spelling_score or 0, rec.grammar_score or 0
+    rec.maths_combined_score=a+b+c
+    rec.spag_combined_score=s+g
+    db.session.commit()
+    return {'ok':True,'maths_combined_score':rec.maths_combined_score,'spag_combined_score':rec.spag_combined_score}

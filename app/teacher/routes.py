@@ -481,6 +481,10 @@ def interventions():
 @login_required
 @teacher_required
 def sats_tracker():
+    return redirect(url_for('dashboards.sats_simple'))
+
+# legacy disabled
+def _legacy_sats_tracker_disabled():
     school_class = get_year_group_class_for_user(current_user, 6)
     academic_year = request.values.get('academic_year', get_current_academic_year())
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
