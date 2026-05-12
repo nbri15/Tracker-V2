@@ -132,6 +132,7 @@ class SatsResult(db.Model):
     grammar_score = db.Column(db.Integer, nullable=True)
     spag_combined_score = db.Column(db.Integer, nullable=True)
     spag_scaled_score = db.Column(db.Integer, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
 
     pupil = db.relationship('Pupil', back_populates='sats_results')
 
@@ -167,6 +168,39 @@ class SatsExamSetting(db.Model):
     __tablename__ = 'sats_exam_settings'
     __table_args__ = (
         db.UniqueConstraint('school_id', 'academic_year', 'exam_number', name='uq_sats_exam_settings_scope'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=False, index=True)
+    exam_number = db.Column(db.Integer, nullable=False, index=True)
+    arithmetic_max = db.Column(db.Integer, nullable=False, default=40)
+    reasoning_1_max = db.Column(db.Integer, nullable=False, default=35)
+    reasoning_2_max = db.Column(db.Integer, nullable=False, default=35)
+    reading_max = db.Column(db.Integer, nullable=False, default=50)
+    spelling_max = db.Column(db.Integer, nullable=False, default=20)
+    grammar_max = db.Column(db.Integer, nullable=False, default=50)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class SimpleSatsExamTab(db.Model):
+    __tablename__ = 'simple_sats_exam_tabs'
+    __table_args__ = (
+        db.UniqueConstraint('school_id', 'academic_year', 'exam_number', name='uq_simple_sats_exam_tabs_scope'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=False, index=True)
+    academic_year = db.Column(db.String(20), nullable=False, index=True)
+    exam_number = db.Column(db.Integer, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False, default='Exam')
+    display_order = db.Column(db.Integer, nullable=False, default=1)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class SimpleSatsSetting(db.Model):
+    __tablename__ = 'simple_sats_settings'
+    __table_args__ = (
+        db.UniqueConstraint('school_id', 'academic_year', 'exam_number', name='uq_simple_sats_settings_scope'),
     )
     id = db.Column(db.Integer, primary_key=True)
     school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=False, index=True)

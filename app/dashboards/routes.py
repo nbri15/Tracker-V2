@@ -1,9 +1,11 @@
 """Dashboard routing for role-aware landing pages."""
 
+from datetime import datetime, timezone
+
 from flask import redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from app.models import Intervention, Pupil, SchoolClass, User
+from app.models import Intervention, Pupil, SatsResult, SchoolClass, SimpleSatsExamTab, SimpleSatsSetting, User
 from app.services import (
     BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
@@ -138,19 +140,29 @@ def admin_dashboard():
 
 
 from app.extensions import db
-from app.models import SatsResult, SatsExamSetting
 
-SATS_SIMPLE_FIELDS = [
-    'arithmetic_score','reasoning_1_score','reasoning_2_score','maths_combined_score','maths_scaled_score',
-    'reading_score','reading_scaled_score','spelling_score','grammar_score','spag_combined_score','spag_scaled_score'
-]
+SATS_SIMPLE_FIELDS = ['arithmetic_score', 'reasoning_1_score', 'reasoning_2_score', 'maths_scaled_score', 'reading_score', 'reading_scaled_score', 'spelling_score', 'grammar_score', 'spag_scaled_score', 'notes']
+
+
+def _ensure_simple_tabs_and_settings(academic_year: str):
+    tabs = SimpleSatsExamTab.query.filter_by(school_id=current_user.school_id, academic_year=academic_year).order_by(SimpleSatsExamTab.display_order).all()
+    if not tabs:
+        for n in range(1, 5):
+            db.session.add(SimpleSatsExamTab(school_id=current_user.school_id, academic_year=academic_year, exam_number=n, name=f'Exam {n}', display_order=n, is_active=True))
+            db.session.add(SimpleSatsSetting(school_id=current_user.school_id, academic_year=academic_year, exam_number=n))
+        db.session.commit()
+        tabs = SimpleSatsExamTab.query.filter_by(school_id=current_user.school_id, academic_year=academic_year).order_by(SimpleSatsExamTab.display_order).all()
+    return tabs
 
 @dashboards_bp.route('/sats/simple')
 @login_required
 def sats_simple():
     academic_year = request.args.get('academic_year', get_current_academic_year())
     exam_number = int((request.args.get('exam_number') or '1'))
-    if exam_number < 1 or exam_number > 4: exam_number = 1
+    tabs = _ensure_simple_tabs_and_settings(academic_year)
+    allowed_exam_numbers = {tab.exam_number for tab in tabs if tab.is_active}
+    if exam_number not in allowed_exam_numbers:
+        exam_number = tabs[0].exam_number if tabs else 1
     class_id = request.args.get('class_id', '').strip()
     base = demo_filter_classes(SchoolClass.query.filter_by(year_group=6, is_active=True))
     class_options = base.order_by(SchoolClass.name).all()
@@ -170,11 +182,8 @@ def sats_simple():
     if pupil_ids:
         rows=SatsResult.query.filter(SatsResult.school_id==current_user.school_id,SatsResult.academic_year==academic_year,SatsResult.exam_number==exam_number,SatsResult.pupil_id.in_(pupil_ids)).all()
         result_map={r.pupil_id:r for r in rows}
-    settings={}
-    for n in range(1,5):
-        st=SatsExamSetting.query.filter_by(school_id=current_user.school_id,academic_year=academic_year,exam_number=n).first()
-        settings[n]=st
-    return render_template('sats_simple.html', academic_year=academic_year, exam_number=exam_number, pupils=pupils, result_map=result_map, class_options=class_options, selected_class=selected_class, settings=settings)
+    settings = {row.exam_number: row for row in SimpleSatsSetting.query.filter_by(school_id=current_user.school_id, academic_year=academic_year).all()}
+    return render_template('sats_simple.html', academic_year=academic_year, exam_number=exam_number, pupils=pupils, result_map=result_map, class_options=class_options, selected_class=selected_class, settings=settings, tabs=tabs)
 
 @dashboards_bp.route('/api/sats/simple/quick-save', methods=['POST'])
 @login_required
@@ -184,7 +193,7 @@ def sats_simple_quick_save():
     exam_number=int(data.get('exam_number'))
     field=str(data.get('field'))
     value_raw=data.get('value')
-    if exam_number not in {1,2,3,4} or field not in SATS_SIMPLE_FIELDS:
+    if field not in SATS_SIMPLE_FIELDS:
         return {'ok':False,'error':'Invalid payload'},400
     pupil=demo_filter_pupils(Pupil.query).filter_by(id=pupil_id,is_active=True,year_group=6).first()
     if not pupil or pupil.school_id!=current_user.school_id:
@@ -194,10 +203,39 @@ def sats_simple_quick_save():
     if not rec:
         rec=SatsResult(school_id=current_user.school_id,pupil_id=pupil_id,academic_year=academic_year,exam_number=exam_number,subject='maths',assessment_point=exam_number,is_most_recent=False)
         db.session.add(rec)
-    setattr(rec, field, int(value_raw) if str(value_raw).strip()!='' else None)
+    setattr(rec, field, value_raw.strip() if field == 'notes' and str(value_raw).strip() != '' else (int(value_raw) if str(value_raw).strip()!='' else None))
     a,b,c=rec.arithmetic_score or 0, rec.reasoning_1_score or 0, rec.reasoning_2_score or 0
     s,g=rec.spelling_score or 0, rec.grammar_score or 0
     rec.maths_combined_score=a+b+c
     rec.spag_combined_score=s+g
     db.session.commit()
     return {'ok':True,'maths_combined_score':rec.maths_combined_score,'spag_combined_score':rec.spag_combined_score}
+
+
+@dashboards_bp.route('/api/sats/simple/add-exam', methods=['POST'])
+@login_required
+def sats_simple_add_exam():
+    academic_year = str((request.get_json(silent=True) or {}).get('academic_year') or get_current_academic_year())
+    tabs = _ensure_simple_tabs_and_settings(academic_year)
+    next_exam = max([tab.exam_number for tab in tabs], default=0) + 1
+    db.session.add(SimpleSatsExamTab(school_id=current_user.school_id, academic_year=academic_year, exam_number=next_exam, name=f'Exam {next_exam}', display_order=next_exam, is_active=True))
+    db.session.add(SimpleSatsSetting(school_id=current_user.school_id, academic_year=academic_year, exam_number=next_exam))
+    db.session.commit()
+    return {'ok': True, 'exam_number': next_exam}
+
+
+@dashboards_bp.route('/api/sats/simple/settings', methods=['POST'])
+@login_required
+def sats_simple_save_settings():
+    data = request.get_json(silent=True) or request.form
+    academic_year = str(data.get('academic_year') or get_current_academic_year())
+    exam_number = int(data.get('exam_number'))
+    settings = SimpleSatsSetting.query.filter_by(school_id=current_user.school_id, academic_year=academic_year, exam_number=exam_number).first()
+    if not settings:
+        settings = SimpleSatsSetting(school_id=current_user.school_id, academic_year=academic_year, exam_number=exam_number)
+    for field in ['arithmetic_max', 'reasoning_1_max', 'reasoning_2_max', 'reading_max', 'spelling_max', 'grammar_max']:
+        setattr(settings, field, int(data.get(field) or getattr(settings, field)))
+    settings.updated_at = datetime.now(timezone.utc)
+    db.session.add(settings)
+    db.session.commit()
+    return {'ok': True}
