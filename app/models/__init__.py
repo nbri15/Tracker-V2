@@ -17,7 +17,7 @@ from .history import AcademicYear, PupilClassHistory
 from .intervention import Intervention
 from .pupil import Pupil
 from .reception import ReceptionTrackerEntry
-from .sats import SatsColumnResult, SatsColumnSetting, SatsExamSetting, SatsExamTab, SatsResult, SatsWritingResult, TrackerModeSetting
+from .sats import SimpleSatsExamTab, SimpleSatsSetting, SatsColumnResult, SatsColumnSetting, SatsExamSetting, SatsExamTab, SatsResult, SatsWritingResult, TrackerModeSetting
 from .school import School, SchoolClass
 from .user import User
 from .writing import WritingResult
@@ -35,6 +35,8 @@ __all__ = [
     'PhonicsTestColumn',
     'Pupil',
     'ReceptionTrackerEntry',
+    'SimpleSatsExamTab',
+    'SimpleSatsSetting',
     'PupilClassHistory',
     'SatsColumnResult',
     'SatsColumnSetting',

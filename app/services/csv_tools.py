@@ -16,7 +16,9 @@ from app.models import (
     SatsColumnResult,
     SatsColumnSetting,
     SatsExamTab,
+    SatsResult,
     SchoolClass,
+    SimpleSatsExamTab,
     SubjectResult,
     WritingResult,
 )
@@ -607,79 +609,27 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
             processed_pupil_ids.add(pupil.id)
             academic_year = _require_value(row, 'academic_year', label='academic_year')
             exam_number = int(_require_value(row, 'exam_number', label='exam_number'))
-            tab = _find_exam_tab_by_name(f'Exam {exam_number}')
-            columns = get_sats_columns(6, exam_tab_id=tab.id, active_only=False)
-            column_by_key = {column.column_key: column for column in columns if column.column_key}
-
             per_row_changes = 0
-            provided_column_ids: set[int] = set()
-            for csv_column, key in SATS_STANDARD_COLUMN_MAP.items():
-                column = column_by_key.get(key)
-                if not column:
-                    continue
+            rec = SatsResult.query.filter_by(
+                school_id=pupil.school_id, pupil_id=pupil.id, academic_year=academic_year, exam_number=exam_number
+            ).first()
+            if rec is None:
+                rec = SatsResult(school_id=pupil.school_id, pupil_id=pupil.id, academic_year=academic_year, exam_number=exam_number, subject='maths', assessment_point=exam_number)
+                summary.created += 1
+            else:
+                summary.updated += 1
+            for csv_column, field in [('arithmetic', 'arithmetic_score'), ('reasoning_1', 'reasoning_1_score'), ('reasoning_2', 'reasoning_2_score'), ('maths_scaled_score', 'maths_scaled_score'), ('reading', 'reading_score'), ('reading_scaled_score', 'reading_scaled_score'), ('spelling', 'spelling_score'), ('grammar', 'grammar_score'), ('spag_scaled_score', 'spag_scaled_score')]:
                 raw_value = _clean_value(row.get(csv_column))
                 if raw_value == '':
                     continue
                 score = _parse_optional_int(raw_value, csv_column)
                 if score is None:
                     continue
-                if score < 0 or score > column.max_marks:
-                    raise CsvImportError(f'{column.name} must be between 0 and {column.max_marks}.')
-                existing = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year).first()
-                if existing is None:
-                    existing = SatsColumnResult(
-                        pupil_id=pupil.id,
-                        column_id=column.id,
-                        academic_year=academic_year,
-                        school_id=pupil.school_id,
-                    )
-                    summary.tracker_entries_created += 1
-                    summary.created += 1
-                else:
-                    summary.tracker_entries_updated += 1
-                    summary.updated += 1
-                existing.raw_score = score
-                db.session.add(existing)
-                provided_column_ids.add(column.id)
+                setattr(rec, field, score)
                 per_row_changes += 1
-
-            for raw_key, source_keys in CALCULATION_KEY_MAP.items():
-                raw_column = column_by_key.get(raw_key)
-                source_columns = [column_by_key.get(source_key) for source_key in source_keys if column_by_key.get(source_key)]
-                if not raw_column or not source_columns:
-                    continue
-                if not any(column.id in provided_column_ids for column in source_columns):
-                    continue
-                source_values: list[int] = []
-                for source_column in source_columns:
-                    row_value = SatsColumnResult.query.filter_by(
-                        pupil_id=pupil.id,
-                        column_id=source_column.id,
-                        academic_year=academic_year,
-                    ).first()
-                    if row_value and row_value.raw_score is not None:
-                        source_values.append(row_value.raw_score)
-                if not source_values:
-                    continue
-                raw_total = sum(source_values)
-                if raw_total > raw_column.max_marks:
-                    raise CsvImportError(f'{raw_column.name} total exceeds max mark {raw_column.max_marks}.')
-                existing_raw = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year).first()
-                if existing_raw is None:
-                    existing_raw = SatsColumnResult(
-                        pupil_id=pupil.id,
-                        column_id=raw_column.id,
-                        academic_year=academic_year,
-                        school_id=pupil.school_id,
-                    )
-                    summary.tracker_entries_created += 1
-                    summary.created += 1
-                elif raw_column.id not in provided_column_ids:
-                    summary.tracker_entries_updated += 1
-                    summary.updated += 1
-                existing_raw.raw_score = raw_total
-                db.session.add(existing_raw)
-                per_row_changes += 1
+            rec.maths_combined_score = (rec.arithmetic_score or 0) + (rec.reasoning_1_score or 0) + (rec.reasoning_2_score or 0)
+            rec.spag_combined_score = (rec.spelling_score or 0) + (rec.grammar_score or 0)
+            db.session.add(rec)
 
             if per_row_changes == 0:
                 summary.rows_skipped += 1
@@ -788,9 +738,7 @@ def export_reception_tracker_csv(academic_year: str, tracking_point: str) -> str
 
 
 def export_sats_tracker_csv(academic_year: str, exam_tab: str) -> str:
-    tab = _find_exam_tab_by_name(exam_tab)
-    columns = get_sats_columns(6, exam_tab_id=tab.id, active_only=False)
-    column_by_key = {column.column_key: column for column in columns if column.column_key}
+    exam_number = int(exam_tab.split(' ')[1]) if exam_tab.lower().startswith('exam ') else 1
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(SATS_TEMPLATE_COLUMNS)
@@ -800,28 +748,13 @@ def export_sats_tracker_csv(academic_year: str, exam_tab: str) -> str:
         .order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name)
         .all()
     )
-    results = []
-    if columns:
-        results = school_scoped_query(
-            SatsColumnResult.query.filter(
-                SatsColumnResult.academic_year == academic_year,
-                SatsColumnResult.pupil_id.in_([pupil.id for pupil in pupils] or [0]),
-                SatsColumnResult.column_id.in_([column.id for column in columns] or [0]),
-            ),
-            SatsColumnResult,
-        ).all()
-    lookup = {(result.pupil_id, result.column_id): result.raw_score for result in results}
+    results = SatsResult.query.filter_by(academic_year=academic_year, exam_number=exam_number).filter(SatsResult.pupil_id.in_([pupil.id for pupil in pupils] or [0])).all()
+    lookup = {result.pupil_id: result for result in results}
     for pupil in pupils:
-        exam_number = 1
-        if tab.name.lower().startswith('exam '):
-            try:
-                exam_number = int(tab.name.split(' ', 1)[1])
-            except Exception:
-                exam_number = 1
         row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, exam_number]
-        for csv_column, key in SATS_STANDARD_COLUMN_MAP.items():
-            column = column_by_key.get(key)
-            value = lookup.get((pupil.id, column.id)) if column else None
+        rec = lookup.get(pupil.id)
+        for field in ['arithmetic_score', 'reasoning_1_score', 'reasoning_2_score', 'maths_combined_score', 'maths_scaled_score', 'reading_score', 'reading_scaled_score', 'spelling_score', 'grammar_score', 'spag_combined_score', 'spag_scaled_score']:
+            value = getattr(rec, field) if rec else None
             row.append('' if value is None else value)
         writer.writerow(row)
     return output.getvalue()
