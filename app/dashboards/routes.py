@@ -144,6 +144,27 @@ from app.extensions import db
 SATS_SIMPLE_FIELDS = ['arithmetic_score', 'reasoning_1_score', 'reasoning_2_score', 'maths_scaled_score', 'reading_score', 'reading_scaled_score', 'spelling_score', 'grammar_score', 'spag_scaled_score', 'notes']
 
 
+def _scaled_band(score: int | None) -> str:
+    if score is None:
+        return ''
+    if score <= 99:
+        return 'scaled-low'
+    if score <= 110:
+        return 'scaled-at'
+    return 'scaled-high'
+
+
+def _scaled_progress(current: int | None, previous: int | None) -> dict[str, str | int | None]:
+    if current is None or previous is None:
+        return {'delta': None, 'label': '—', 'class': 'progress-none'}
+    delta = current - previous
+    if delta > 0:
+        return {'delta': delta, 'label': f'↑ +{delta}', 'class': 'progress-up'}
+    if delta < 0:
+        return {'delta': delta, 'label': f'↓ {delta}', 'class': 'progress-down'}
+    return {'delta': 0, 'label': '→ 0', 'class': 'progress-flat'}
+
+
 def _ensure_simple_tabs_and_settings(academic_year: str):
     tabs = SimpleSatsExamTab.query.filter_by(school_id=current_user.school_id, academic_year=academic_year).order_by(SimpleSatsExamTab.display_order).all()
     if not tabs:
@@ -190,11 +211,19 @@ def sats_simple():
         )
     pupil_ids=[p.id for p in pupils]
     result_map={}
+    scores_by_pupil_exam = {}
     if pupil_ids:
-        rows=SatsResult.query.filter(SatsResult.school_id==current_user.school_id,SatsResult.academic_year==academic_year,SatsResult.exam_number==exam_number,SatsResult.pupil_id.in_(pupil_ids)).all()
+        all_rows = SatsResult.query.filter(
+            SatsResult.school_id == current_user.school_id,
+            SatsResult.academic_year == academic_year,
+            SatsResult.pupil_id.in_(pupil_ids),
+        ).all()
+        for row in all_rows:
+            scores_by_pupil_exam.setdefault(row.pupil_id, {})[row.exam_number] = row
+        rows = [r for r in all_rows if r.exam_number == exam_number]
         result_map={r.pupil_id:r for r in rows}
     settings = {row.exam_number: row for row in SimpleSatsSetting.query.filter_by(school_id=current_user.school_id, academic_year=academic_year).all()}
-    return render_template('sats_simple.html', academic_year=academic_year, exam_number=exam_number, pupils=pupils, result_map=result_map, class_options=class_options, selected_class=selected_class, settings=settings, tabs=tabs)
+    return render_template('sats_simple.html', academic_year=academic_year, exam_number=exam_number, pupils=pupils, result_map=result_map, class_options=class_options, selected_class=selected_class, settings=settings, tabs=tabs, scores_by_pupil_exam=scores_by_pupil_exam, scaled_band= _scaled_band, scaled_progress=_scaled_progress)
 
 @dashboards_bp.route('/api/sats/simple/quick-save', methods=['POST'])
 @login_required
@@ -230,7 +259,28 @@ def sats_simple_quick_save():
     rec.maths_combined_score=a+b+c
     rec.spag_combined_score=s+g
     db.session.commit()
-    return {'ok':True,'maths_combined_score':rec.maths_combined_score,'spag_combined_score':rec.spag_combined_score}
+    prev = None
+    if exam_number > 1:
+        prev = SatsResult.query.filter_by(
+            school_id=current_user.school_id,
+            pupil_id=pupil_id,
+            academic_year=academic_year,
+            exam_number=exam_number - 1,
+        ).first()
+    payload = {
+        'ok': True,
+        'maths_combined_score': rec.maths_combined_score,
+        'spag_combined_score': rec.spag_combined_score,
+    }
+    for key in ['maths_scaled_score', 'reading_scaled_score', 'spag_scaled_score']:
+        current_score = getattr(rec, key)
+        prev_score = getattr(prev, key) if prev else None
+        payload[key] = {
+            'score': current_score,
+            'color_class': _scaled_band(current_score),
+            'progress': _scaled_progress(current_score, prev_score),
+        }
+    return payload
 
 
 @dashboards_bp.route('/api/sats/simple/add-exam', methods=['POST'])

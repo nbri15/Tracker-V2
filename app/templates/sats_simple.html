@@ -2,11 +2,42 @@
 {% block title %}Simple SATs{% endblock %}
 {% set page_heading = 'Year 6 SATs tracker' %}
 {% block content %}
-<div class="card mb-3"><div class="card-body"><form method="get" class="row g-2 align-items-end">
-<div class="col-md-3"><label class="form-label">Academic year</label><input name="academic_year" class="form-control" value="{{ academic_year }}"></div>
-<div class="col-md-3"><label class="form-label">Class</label><select name="class_id" class="form-select">{% for c in class_options %}<option value="{{ c.id }}" {% if selected_class and c.id==selected_class.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
-<div class="col-md-4">{% for tab in tabs %}{% if tab.is_active %}<a class="btn btn-sm {% if exam_number==tab.exam_number %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('dashboards.sats_simple', academic_year=academic_year, class_id=selected_class.id if selected_class else None, exam_number=tab.exam_number) }}">{{ tab.name }}</a>{% endif %}{% endfor %}</div>
-<div class="col-md-2 d-flex gap-2"><button class="btn btn-primary w-100">Load</button><button type="button" id="btn-settings" class="btn btn-outline-secondary">Settings</button><button type="button" id="btn-add-exam" class="btn btn-outline-primary">+ Add exam</button></div></form></div></div>
+<style>
+.sats-toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+.sats-toolbar .field { min-width:180px; flex:1 1 200px; }
+.sats-toolbar .actions { display:flex; gap:8px; flex:0 1 auto; }
+.sats-tabs { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.sats-tab, .sats-add-tab { height:42px; padding:0 14px; border-radius:14px; white-space:nowrap; display:inline-flex; align-items:center; }
+.sats-table-wrap { overflow:auto; }
+.table-sats th, .table-sats td { vertical-align:middle; }
+.sticky-col { position: sticky; left: 0; background: var(--bs-body-bg); z-index: 2; min-width: 190px; }
+.table-sats thead .sticky-col { z-index: 3; }
+.col-score { width: 78px; text-align:center; }
+.col-combined { width: 80px; text-align:center; }
+.col-scaled { width: 130px; }
+.scaled-low { color:#b42318; }
+.scaled-at { color:#027a48; }
+.scaled-high { color:#b54708; }
+.progress-badge { margin-left:6px; font-size:.78rem; font-weight:600; }
+.progress-up { color:#027a48; }
+.progress-flat,.progress-none { color:#6c757d; }
+.progress-down { color:#b42318; }
+.input-score { max-width:70px; margin:auto; text-align:center; }
+.scaled-cell { text-align:center; }
+</style>
+
+<div class="card mb-3"><div class="card-body">
+  <form method="get" class="sats-toolbar mb-2">
+    <div class="field"><label class="form-label">Academic year</label><input name="academic_year" class="form-control form-control-sm" value="{{ academic_year }}"></div>
+    <div class="field"><label class="form-label">Class</label><select name="class_id" class="form-select form-select-sm">{% for c in class_options %}<option value="{{ c.id }}" {% if selected_class and c.id==selected_class.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
+    <div class="actions"><button class="btn btn-sm btn-primary">Load</button><button type="button" id="btn-settings" class="btn btn-sm btn-outline-secondary">Settings</button></div>
+  </form>
+  <div class="sats-tabs">
+    {% for tab in tabs %}{% if tab.is_active %}<a class="btn btn-sm {% if exam_number==tab.exam_number %}btn-primary{% else %}btn-outline-secondary{% endif %} sats-tab" href="{{ url_for('dashboards.sats_simple', academic_year=academic_year, class_id=selected_class.id if selected_class else None, exam_number=tab.exam_number) }}">{{ tab.name }}</a>{% endif %}{% endfor %}
+    <button type="button" id="btn-add-exam" class="btn btn-sm btn-outline-primary sats-add-tab">+ Add exam</button>
+  </div>
+</div></div>
+
 <div id="settings-panel" class="card mb-3 d-none"><div class="card-body"><h6>Exam {{ exam_number }} max scores</h6>
 <div class="row g-2">
 {% set st = settings.get(exam_number) %}
@@ -14,22 +45,24 @@
 <div class="col-md-2"><label class="form-label">{{ label }}</label><input class="form-control form-control-sm js-setting" data-field="{{ key }}" value="{{ st[key] if st else default }}"></div>
 {% endfor %}
 <div class="col-12"><button type="button" id="save-settings" class="btn btn-sm btn-success">Save settings</button><span id="settings-status" class="ms-2"></span></div></div></div></div>
-<div class="card"><div class="card-body p-0"><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th class="sticky-top">Pupil</th><th>Arithmetic</th><th>Reasoning 1</th><th>Reasoning 2</th><th>Maths Combined Score</th><th>Maths Scaled Score</th><th>Reading Paper</th><th>Reading Scaled Score</th><th>Spelling Paper</th><th>Grammar Paper</th><th>SPaG Combined Score</th><th>SPaG Scaled Score</th></tr></thead><tbody>
-{% for p in pupils %}{% set r=result_map.get(p.id) %}<tr data-pupil="{{ p.id }}"><td>{{ p.full_name }}</td>
-{% for f in ['arithmetic_score','reasoning_1_score','reasoning_2_score'] %}<td><input class="form-control form-control-sm js-save" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="{{ f }}" value="{{ r[f] if r else '' }}"></td>{% endfor %}
-<td class="js-maths">{{ r.maths_combined_score if r and r.maths_combined_score is not none else '' }}</td>
-<td><input class="form-control form-control-sm js-save" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="maths_scaled_score" value="{{ r.maths_scaled_score if r else '' }}"></td>
-<td><input class="form-control form-control-sm js-save" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="reading_score" value="{{ r.reading_score if r else '' }}"></td>
-<td><input class="form-control form-control-sm js-save" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="reading_scaled_score" value="{{ r.reading_scaled_score if r else '' }}"></td>
-<td><input class="form-control form-control-sm js-save" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="spelling_score" value="{{ r.spelling_score if r else '' }}"></td>
-<td><input class="form-control form-control-sm js-save" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="grammar_score" value="{{ r.grammar_score if r else '' }}"></td>
-<td class="js-spag">{{ r.spag_combined_score if r and r.spag_combined_score is not none else '' }}</td>
-<td><input class="form-control form-control-sm js-save" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="spag_scaled_score" value="{{ r.spag_scaled_score if r else '' }}"></td></tr>{% endfor %}
+
+<div class="card"><div class="card-body p-0"><div class="sats-table-wrap"><table class="table table-sm mb-0 table-sats"><thead><tr><th class="sticky-col">Pupil</th><th class="col-score">Arithmetic</th><th class="col-score">Reasoning 1</th><th class="col-score">Reasoning 2</th><th class="col-combined">Maths Combined</th><th class="col-scaled">Maths Scaled</th><th class="col-score">Reading</th><th class="col-scaled">Reading Scaled</th><th class="col-score">Spelling</th><th class="col-score">Grammar</th><th class="col-combined">SPaG Combined</th><th class="col-scaled">SPaG Scaled</th></tr></thead><tbody>
+{% for p in pupils %}{% set r=result_map.get(p.id) %}{% set prev=scores_by_pupil_exam.get(p.id, {}).get(exam_number-1) %}<tr data-pupil="{{ p.id }}"><td class="sticky-col">{{ p.full_name }}</td>
+{% for f in ['arithmetic_score','reasoning_1_score','reasoning_2_score'] %}<td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="{{ f }}" value="{{ r[f] if r else '' }}"></td>{% endfor %}
+<td class="js-maths col-combined">{{ r.maths_combined_score if r and r.maths_combined_score is not none else '' }}</td>
+<td class="scaled-cell col-scaled"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.maths_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="maths_scaled_score" value="{{ r.maths_scaled_score if r else '' }}"><span class="progress-badge js-progress-maths_scaled_score {{ scaled_progress(r.maths_scaled_score if r else none, prev.maths_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.maths_scaled_score if r else none, prev.maths_scaled_score if prev else none)['label'] }}</span></td>
+<td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="reading_score" value="{{ r.reading_score if r else '' }}"></td>
+<td class="scaled-cell col-scaled"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.reading_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="reading_scaled_score" value="{{ r.reading_scaled_score if r else '' }}"><span class="progress-badge js-progress-reading_scaled_score {{ scaled_progress(r.reading_scaled_score if r else none, prev.reading_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.reading_scaled_score if r else none, prev.reading_scaled_score if prev else none)['label'] }}</span></td>
+<td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="spelling_score" value="{{ r.spelling_score if r else '' }}"></td>
+<td class="col-score"><input class="form-control form-control-sm js-save input-score" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="grammar_score" value="{{ r.grammar_score if r else '' }}"></td>
+<td class="js-spag col-combined">{{ r.spag_combined_score if r and r.spag_combined_score is not none else '' }}</td>
+<td class="scaled-cell col-scaled"><input class="form-control form-control-sm js-save input-score {{ scaled_band(r.spag_scaled_score if r else none) }}" data-pupil-id="{{ p.id }}" data-exam-number="{{ exam_number }}" data-field="spag_scaled_score" value="{{ r.spag_scaled_score if r else '' }}"><span class="progress-badge js-progress-spag_scaled_score {{ scaled_progress(r.spag_scaled_score if r else none, prev.spag_scaled_score if prev else none)['class'] }}">{{ scaled_progress(r.spag_scaled_score if r else none, prev.spag_scaled_score if prev else none)['label'] }}</span></td></tr>{% endfor %}
 </tbody></table></div></div></div>
 <script>
+const scaledFields=['maths_scaled_score','reading_scaled_score','spag_scaled_score'];
 document.getElementById('btn-settings').addEventListener('click', ()=>document.getElementById('settings-panel').classList.toggle('d-none'));
 document.getElementById('btn-add-exam').addEventListener('click', async ()=>{const res=await fetch('/api/sats/simple/add-exam',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({academic_year:'{{ academic_year }}'})});if(res.ok){window.location.reload();}});
 document.getElementById('save-settings').addEventListener('click', async ()=>{const payload={academic_year:'{{ academic_year }}',exam_number:{{ exam_number }}};document.querySelectorAll('.js-setting').forEach(x=>payload[x.dataset.field]=x.value);const res=await fetch('/api/sats/simple/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});document.getElementById('settings-status').textContent=res.ok?'Saved':'Save failed';});
-document.querySelectorAll('.js-save').forEach(i=>i.addEventListener('change', async ()=>{const tr=i.closest('tr');const res=await fetch('/api/sats/simple/quick-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pupil_id:i.dataset.pupilId,exam_number:i.dataset.examNumber,academic_year:'{{ academic_year }}',field:i.dataset.field,value:i.value})});if(res.ok){const j=await res.json();tr.querySelector('.js-maths').textContent=j.maths_combined_score??'';tr.querySelector('.js-spag').textContent=j.spag_combined_score??'';i.classList.add('is-valid');setTimeout(()=>i.classList.remove('is-valid'),600);}else{i.classList.add('is-invalid');setTimeout(()=>i.classList.remove('is-invalid'),900);}}));
+document.querySelectorAll('.js-save').forEach(i=>i.addEventListener('change', async ()=>{const tr=i.closest('tr');const res=await fetch('/api/sats/simple/quick-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pupil_id:i.dataset.pupilId,exam_number:i.dataset.examNumber,academic_year:'{{ academic_year }}',field:i.dataset.field,value:i.value})});if(res.ok){const j=await res.json();tr.querySelector('.js-maths').textContent=j.maths_combined_score??'';tr.querySelector('.js-spag').textContent=j.spag_combined_score??'';scaledFields.forEach(f=>{if(j[f]){const input=tr.querySelector(`.js-save[data-field="${f}"]`);const badge=tr.querySelector(`.js-progress-${f}`);input.classList.remove('scaled-low','scaled-at','scaled-high');if(j[f].color_class){input.classList.add(j[f].color_class);}badge.textContent=j[f].progress.label;badge.classList.remove('progress-up','progress-flat','progress-down','progress-none');badge.classList.add(j[f].progress.class);}});i.classList.add('is-valid');setTimeout(()=>i.classList.remove('is-valid'),600);}else{i.classList.add('is-invalid');setTimeout(()=>i.classList.remove('is-invalid'),900);}}));
 </script>
 {% endblock %}
