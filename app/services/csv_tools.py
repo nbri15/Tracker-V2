@@ -103,14 +103,13 @@ SATS_STANDARD_COLUMN_MAP = {
     'arithmetic': 'maths_arithmetic',
     'reasoning_1': 'maths_reasoning_1',
     'reasoning_2': 'maths_reasoning_2',
-    'maths_raw_score': 'maths_raw_total',
+    'maths_combined_score': 'maths_raw_total',
     'maths_scaled_score': 'maths_scaled',
-    'reading_paper': 'reading_paper',
-    'reading_raw_score': 'reading_raw_total',
-    'reading_scaled_score': 'reading_scaled',
-    'spag_paper_1': 'spag_paper_1',
-    'spag_paper_2': 'spag_paper_2',
-    'spag_raw_score': 'spag_raw_total',
+    'reading': 'reading_paper',
+        'reading_scaled_score': 'reading_scaled',
+    'spelling': 'spag_spelling',
+    'grammar': 'spag_grammar',
+    'spag_combined_score': 'spag_raw_total',
     'spag_scaled_score': 'spag_scaled',
 }
 SATS_TEMPLATE_COLUMNS = [
@@ -118,7 +117,7 @@ SATS_TEMPLATE_COLUMNS = [
     'pupil_last_name',
     'class_name',
     'academic_year',
-    'exam_tab',
+    'exam_number',
     *SATS_STANDARD_COLUMN_MAP.keys(),
 ]
 RECEPTION_AREA_IMPORT_MAP = {
@@ -607,7 +606,8 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
                 raise CsvImportError(f'{pupil.full_name} is not in Year 6.')
             processed_pupil_ids.add(pupil.id)
             academic_year = _require_value(row, 'academic_year', label='academic_year')
-            tab = _find_exam_tab_by_name(_require_value(row, 'exam_tab', label='exam_tab'))
+            exam_number = int(_require_value(row, 'exam_number', label='exam_number'))
+            tab = _find_exam_tab_by_name(f'Exam {exam_number}')
             columns = get_sats_columns(6, exam_tab_id=tab.id, active_only=False)
             column_by_key = {column.column_key: column for column in columns if column.column_key}
 
@@ -812,7 +812,13 @@ def export_sats_tracker_csv(academic_year: str, exam_tab: str) -> str:
         ).all()
     lookup = {(result.pupil_id, result.column_id): result.raw_score for result in results}
     for pupil in pupils:
-        row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, tab.name]
+        exam_number = 1
+        if tab.name.lower().startswith('exam '):
+            try:
+                exam_number = int(tab.name.split(' ', 1)[1])
+            except Exception:
+                exam_number = 1
+        row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, exam_number]
         for csv_column, key in SATS_STANDARD_COLUMN_MAP.items():
             column = column_by_key.get(key)
             value = lookup.get((pupil.id, column.id)) if column else None

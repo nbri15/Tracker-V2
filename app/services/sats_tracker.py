@@ -25,20 +25,23 @@ SATS_SCORE_TYPES = {
     'raw': 'Raw score (auto)',
     'scaled': 'Scaled score',
 }
-DEFAULT_YEAR6_TAB_NAMES = ['Autumn 1', 'Autumn 2', 'Spring 1', 'Spring 2']
+DEFAULT_YEAR6_TAB_NAMES = ['Exam 1', 'Exam 2', 'Exam 3', 'Exam 4']
 DEFAULT_EXAM_TAB_COLUMNS = [
     {'name': 'Arithmetic', 'subject': 'maths', 'score_type': 'paper', 'column_key': 'maths_arithmetic', 'max_marks': 40},
-    {'name': 'Reasoning', 'subject': 'maths', 'score_type': 'paper', 'column_key': 'maths_reasoning_raw', 'max_marks': 70},
-    {'name': 'Maths Raw Score', 'subject': 'maths', 'score_type': 'raw', 'column_key': 'maths_raw_total', 'max_marks': 110},
+    {'name': 'Reasoning 1', 'subject': 'maths', 'score_type': 'paper', 'column_key': 'maths_reasoning_1', 'max_marks': 35},
+    {'name': 'Reasoning 2', 'subject': 'maths', 'score_type': 'paper', 'column_key': 'maths_reasoning_2', 'max_marks': 35},
+    {'name': 'Maths Combined Score', 'subject': 'maths', 'score_type': 'raw', 'column_key': 'maths_raw_total', 'max_marks': 110},
     {'name': 'Maths Scaled Score', 'subject': 'maths', 'score_type': 'scaled', 'column_key': 'maths_scaled', 'max_marks': 120},
-    {'name': 'Reading Raw', 'subject': 'reading', 'score_type': 'paper', 'column_key': 'reading_raw', 'max_marks': 50},
+    {'name': 'Reading Paper', 'subject': 'reading', 'score_type': 'paper', 'column_key': 'reading_paper', 'max_marks': 50},
     {'name': 'Reading Scaled Score', 'subject': 'reading', 'score_type': 'scaled', 'column_key': 'reading_scaled', 'max_marks': 120},
-    {'name': 'SPaG Grammar', 'subject': 'spag', 'score_type': 'paper', 'column_key': 'spag_grammar_raw', 'max_marks': 35},
-    {'name': 'SPaG Spelling', 'subject': 'spag', 'score_type': 'paper', 'column_key': 'spag_spelling_raw', 'max_marks': 35},
+    {'name': 'Spelling Paper', 'subject': 'spag', 'score_type': 'paper', 'column_key': 'spag_spelling', 'max_marks': 20},
+    {'name': 'Grammar Paper', 'subject': 'spag', 'score_type': 'paper', 'column_key': 'spag_grammar', 'max_marks': 50},
+    {'name': 'SPaG Combined Score', 'subject': 'spag', 'score_type': 'raw', 'column_key': 'spag_raw_total', 'max_marks': 70},
     {'name': 'SPaG Scaled Score', 'subject': 'spag', 'score_type': 'scaled', 'column_key': 'spag_scaled', 'max_marks': 120},
 ]
 CALCULATION_KEY_MAP = {
-    'maths_raw_total': ['maths_arithmetic', 'maths_reasoning_raw'],
+    'maths_raw_total': ['maths_arithmetic', 'maths_reasoning_1', 'maths_reasoning_2'],
+    'spag_raw_total': ['spag_spelling', 'spag_grammar'],
 }
 
 
