@@ -6,6 +6,7 @@ from collections import Counter
 
 from app.extensions import db
 from app.models import FoundationResult, Pupil
+from app.services.assessments import get_latest_previous_assessment
 
 FOUNDATION_SUBJECTS = (
     ('re', 'RE'),
@@ -35,13 +36,6 @@ FOUNDATION_JUDGEMENT_THEMES = {
     'On Track': 'band-ot',
     'Exceeding': 'band-gds',
 }
-FOUNDATION_GHOST_LOOKBACK = {
-    'spring_1': ('autumn_2', 'autumn_1'),
-    'spring_2': ('spring_1', 'autumn_2', 'autumn_1'),
-    'summer_1': ('spring_2', 'spring_1', 'autumn_2', 'autumn_1'),
-    'summer_2': ('summer_1', 'spring_2', 'spring_1', 'autumn_2', 'autumn_1'),
-}
-
 
 class FoundationValidationError(ValueError):
     """Raised when foundation tracker input is invalid."""
@@ -69,29 +63,6 @@ def build_foundation_tracker_rows(pupils: list[Pupil], academic_year: str, half_
         )
 
     lookup = {(record.pupil_id, record.subject): record for record in results}
-    lookback_terms = FOUNDATION_GHOST_LOOKBACK.get(half_term, ())
-    ghost_lookup: dict[tuple[int, str], str] = {}
-    if pupil_ids and lookback_terms:
-        ghost_rows = (
-            FoundationResult.query.filter(
-                FoundationResult.pupil_id.in_(pupil_ids),
-                FoundationResult.academic_year == academic_year,
-                FoundationResult.half_term.in_(lookback_terms),
-            )
-            .all()
-        )
-        by_key: dict[tuple[int, str], dict[str, str]] = {}
-        for record in ghost_rows:
-            if not record.judgement:
-                continue
-            by_key.setdefault((record.pupil_id, record.subject), {})[record.half_term] = record.judgement
-        for key, terms in by_key.items():
-            for term_key in lookback_terms:
-                judgement = terms.get(term_key)
-                if judgement:
-                    ghost_lookup[key] = judgement
-                    break
-
     for pupil in pupils:
         judgements = {}
         notes = {}
@@ -100,7 +71,14 @@ def build_foundation_tracker_rows(pupils: list[Pupil], academic_year: str, half_
             record = lookup.get((pupil.id, subject_key))
             judgements[subject_key] = record.judgement if record else ''
             notes[subject_key] = record.note if record else ''
-            ghost_judgements[subject_key] = '' if record else ghost_lookup.get((pupil.id, subject_key), '')
+            ghost_judgements[subject_key] = '' if record else (
+                get_latest_previous_assessment(
+                    pupil_id=pupil.id,
+                    subject=subject_key,
+                    current_term=half_term,
+                    academic_year=academic_year,
+                ) or ''
+            )
         rows.append({'pupil': pupil, 'judgements': judgements, 'ghost_judgements': ghost_judgements, 'notes': notes})
     return rows
 
