@@ -78,6 +78,8 @@ def teacher_dashboard():
         'has_year6_sats_access': get_year_group_class_for_user(current_user, 6) is not None,
         'pupil_count': len(pupils),
         'academic_year': academic_year,
+        'term': term,
+        'term_label': 'All terms' if term == 'all' else term.title(),
         'summary_rows': summary_rows,
         'chart_cards': summary_rows,
         'active_interventions': active_interventions,
@@ -92,6 +94,9 @@ def teacher_dashboard():
 @admin_required
 def admin_dashboard():
     academic_year = request.args.get('academic_year', get_current_academic_year())
+    term = (request.args.get('term', 'all') or 'all').strip().lower()
+    if term not in {'all', 'autumn', 'spring', 'summer'}:
+        term = 'all'
     filter_year_group = request.args.get('year_group', '').strip()
     filter_teacher = request.args.get('teacher_id', '').strip()
     filter_class = request.args.get('class_id', '').strip()
@@ -107,7 +112,7 @@ def admin_dashboard():
         query = query.filter(SchoolClass.id == int(filter_class))
 
     classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
-    class_rows = [build_class_overview_row(school_class, academic_year, filters=pupil_filters) for school_class in classes]
+    class_rows = [build_class_overview_row(school_class, academic_year, filters=pupil_filters, term=term) for school_class in classes]
     class_rows = sort_class_rows(class_rows, sort)
     subject_cards = build_subject_overview_cards(class_rows)
     teacher_options = school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).order_by(User.username).all()
@@ -116,6 +121,8 @@ def admin_dashboard():
 
     context = {
         'academic_year': academic_year,
+        'term': term,
+        'term_label': 'All terms' if term == 'all' else term.title(),
         'total_pupils': demo_filter_pupils(Pupil.query.filter_by(is_active=True)).count(),
         'total_classes': demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).count(),
         'teacher_count': school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).count(),
@@ -179,6 +186,9 @@ def _ensure_simple_tabs_and_settings(academic_year: str):
 @login_required
 def sats_simple():
     academic_year = request.args.get('academic_year', get_current_academic_year())
+    term = (request.args.get('term', 'all') or 'all').strip().lower()
+    if term not in {'all', 'autumn', 'spring', 'summer'}:
+        term = 'all'
     exam_number = int((request.args.get('exam_number') or '1'))
     tabs = _ensure_simple_tabs_and_settings(academic_year)
     allowed_exam_numbers = {tab.exam_number for tab in tabs if tab.is_active}
