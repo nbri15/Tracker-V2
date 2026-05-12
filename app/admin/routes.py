@@ -178,7 +178,7 @@ FULL_WORKBOOK_SHEETS = {
     'SATs': ['class','pupil_name','academic_year','subject','test_name','raw_score','scaled_score','notes'],
 }
 TEMPLATE_TERMS = ['Autumn', 'Spring', 'Summer']
-FOUNDATION_SUBJECTS = ['history', 'geography', 'science', 'art', 'dt', 'computing', 're', 'music', 'pe', 'mfl']
+FOUNDATION_SUBJECT_KEYS = [subject_key for subject_key, _subject_label in FOUNDATION_SUBJECTS]
 
 def _norm(v):
     return str(v or '').strip()
@@ -339,8 +339,8 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
             wb['Writing'].append([class_name, p.full_name, term, '', ''])
         wb['Phonics'].append([class_name, p.full_name, '', '', '', ''])
         wb['Times Tables'].append([class_name, p.full_name, '', '', '', ''])
-        for subject in FOUNDATION_SUBJECTS:
-            wb['Foundation'].append([class_name, p.full_name, subject, '', '', '', ''])
+        for subject_key in FOUNDATION_SUBJECT_KEYS:
+            wb['Foundation'].append([class_name, p.full_name, subject_key, '', '', '', ''])
         if p.join_year_group == 0:
             wb['Reception'].append([class_name, p.full_name, '', '', '', '', ''])
         if p.join_year_group == 6:
