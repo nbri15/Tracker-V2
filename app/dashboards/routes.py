@@ -53,6 +53,10 @@ def index():
 @login_required
 @teacher_required
 def teacher_dashboard():
+    term = (request.args.get("term") or "Summer").strip()
+    if term not in ("Autumn", "Spring", "Summer", "All"):
+        term = "Summer"
+
     school_class = get_primary_class_for_user(current_user)
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all() if school_class else []
     academic_year = get_current_academic_year()
@@ -79,12 +83,14 @@ def teacher_dashboard():
         'pupil_count': len(pupils),
         'academic_year': academic_year,
         'term': term,
-        'term_label': 'All terms' if term == 'all' else term.title(),
+        'term_label': 'All terms' if term == 'All' else term,
         'summary_rows': summary_rows,
         'chart_cards': summary_rows,
         'active_interventions': active_interventions,
         'tracker_mode': get_tracker_mode(school_class.year_group) if school_class else 'normal',
         'tracker_mode_label': get_tracker_mode_label(school_class.year_group) if school_class else 'Usual tracker',
+        'selected_term': term,
+        'term_choices': ['Autumn', 'Spring', 'Summer', 'All'],
     }
     return render_template('dashboards/teacher_dashboard.html', **context)
 
@@ -94,9 +100,11 @@ def teacher_dashboard():
 @admin_required
 def admin_dashboard():
     academic_year = request.args.get('academic_year', get_current_academic_year())
-    term = (request.args.get('term', 'all') or 'all').strip().lower()
-    if term not in {'all', 'autumn', 'spring', 'summer'}:
-        term = 'all'
+    term = (request.args.get("term") or "Summer").strip()
+    if term not in ("Autumn", "Spring", "Summer", "All"):
+        term = "Summer"
+    selected_term = term
+    term_filter = term.lower()
     filter_year_group = request.args.get('year_group', '').strip()
     filter_teacher = request.args.get('teacher_id', '').strip()
     filter_class = request.args.get('class_id', '').strip()
@@ -112,7 +120,7 @@ def admin_dashboard():
         query = query.filter(SchoolClass.id == int(filter_class))
 
     classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
-    class_rows = [build_class_overview_row(school_class, academic_year, filters=pupil_filters, term=term) for school_class in classes]
+    class_rows = [build_class_overview_row(school_class, academic_year, filters=pupil_filters, term=term_filter) for school_class in classes]
     class_rows = sort_class_rows(class_rows, sort)
     subject_cards = build_subject_overview_cards(class_rows)
     teacher_options = school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).order_by(User.username).all()
@@ -122,7 +130,9 @@ def admin_dashboard():
     context = {
         'academic_year': academic_year,
         'term': term,
-        'term_label': 'All terms' if term == 'all' else term.title(),
+        'selected_term': selected_term,
+        'term_choices': ['Autumn', 'Spring', 'Summer', 'All'],
+        'term_label': 'All terms' if term == 'All' else term,
         'total_pupils': demo_filter_pupils(Pupil.query.filter_by(is_active=True)).count(),
         'total_classes': demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).count(),
         'teacher_count': school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).count(),
