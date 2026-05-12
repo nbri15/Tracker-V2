@@ -687,6 +687,29 @@ def get_most_recent_term_with_data(
     return max(rows, key=lambda item: TERM_SEQUENCE.get(item.term, 0)).term
 
 
+def filter_results_by_term(rows: list, term: str | None = None) -> list:
+    """Return rows constrained to the chosen term when provided."""
+    if not term or term == 'all':
+        return rows
+    return [row for row in rows if getattr(row, 'term', None) == term]
+
+
+def get_latest_term_results(rows: list, term: str | None = None) -> tuple[str | None, list]:
+    """Return latest term and rows for that term, constrained by selected term."""
+    scoped_rows = filter_results_by_term(rows, term)
+    if not scoped_rows:
+        return None, []
+    latest_term = max((getattr(row, 'term', None) for row in scoped_rows if getattr(row, 'term', None)), key=lambda item: TERM_SEQUENCE.get(item, 0), default=None)
+    if not latest_term:
+        return None, []
+    return latest_term, [row for row in scoped_rows if getattr(row, 'term', None) == latest_term]
+
+
+def get_dashboard_results(query, term: str | None = None):
+    """Materialize query and constrain records to selected term."""
+    return filter_results_by_term(query.all(), term)
+
+
 def compute_class_subject_summary(
     class_id: int,
     subject: str,
@@ -700,7 +723,10 @@ def compute_class_subject_summary(
         Pupil.query.filter(Pupil.class_id == class_id, Pupil.is_active.is_(True)),
         filters,
     ).count()
-    latest_term = term or get_most_recent_term_with_data(class_id, subject, academic_year, subgroup, filters)
+    if term and term != 'all':
+        latest_term = term
+    else:
+        latest_term = get_most_recent_term_with_data(class_id, subject, academic_year, subgroup, filters)
     if not latest_term:
         summary = _empty_subject_summary(subject)
         summary['filtered_pupil_count'] = filtered_pupil_count
@@ -713,7 +739,7 @@ def compute_class_subject_summary(
             SubjectResult.term == latest_term,
             Pupil.class_id == class_id,
         )
-        latest_rows = apply_pupil_filters(query, subgroup=subgroup, filters=filters).all()
+        latest_rows = get_dashboard_results(apply_pupil_filters(query, subgroup=subgroup, filters=filters), term=latest_term)
         counts = _counts_from_band_labels(latest_rows)
         percents = [row.combined_percent for row in latest_rows if row.combined_percent is not None]
     else:
@@ -722,7 +748,7 @@ def compute_class_subject_summary(
             WritingResult.term == latest_term,
             Pupil.class_id == class_id,
         )
-        latest_rows = apply_pupil_filters(query, subgroup=subgroup, filters=filters).all()
+        latest_rows = get_dashboard_results(apply_pupil_filters(query, subgroup=subgroup, filters=filters), term=latest_term)
         counts = _counts_from_writing_bands(latest_rows)
         percents = []
 
@@ -742,12 +768,12 @@ def build_dashboard_summary(class_id: int | None, academic_year: str, subgroup: 
     return [compute_class_subject_summary(class_id, subject, academic_year, subgroup, filters=filters) for subject in ALL_SUBJECTS]
 
 
-def build_class_overview_row(school_class: SchoolClass, academic_year: str, subgroup: str = 'all', filters: dict | None = None) -> dict:
+def build_class_overview_row(school_class: SchoolClass, academic_year: str, subgroup: str = 'all', filters: dict | None = None, term: str | None = None) -> dict:
     pupil_query = school_class.pupils.filter_by(is_active=True)
     pupil_query = apply_pupil_filters(pupil_query, subgroup=subgroup, filters=filters)
     pupil_count = pupil_query.count()
     subject_summaries = {
-        subject: compute_class_subject_summary(school_class.id, subject, academic_year, subgroup, filters=filters)
+        subject: compute_class_subject_summary(school_class.id, subject, academic_year, subgroup, filters=filters, term=term)
         for subject in ALL_SUBJECTS
     }
     active_interventions = (
@@ -755,6 +781,8 @@ def build_class_overview_row(school_class: SchoolClass, academic_year: str, subg
         .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.class_id == school_class.id)
         .filter(Pupil.is_active.is_(True))
     )
+    if term and term != 'all':
+        active_interventions = active_interventions.filter(Intervention.term == term)
     active_interventions = apply_admin_pupil_filters(active_interventions, filters).count()
     return {
         'class': school_class,
