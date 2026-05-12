@@ -175,7 +175,7 @@ FULL_WORKBOOK_SHEETS = {
     'Times Tables': ['class','pupil_name','test_name','score','max_score','date'],
     'Foundation': ['class','pupil_name','subject','term','assessment','band','notes'],
     'Reception': ['class','pupil_name','term','area','statement','band','notes'],
-    'SATs': ['class','pupil_name','assessment_point','reading_raw','reading_scaled','maths_arithmetic_raw','maths_reasoning_raw','maths_scaled','spag_grammar_raw','spag_spelling_raw','spag_scaled','writing_band','notes'],
+    'SATs': ['class','pupil_name','exam_number','arithmetic','reasoning_1','reasoning_2','maths_scaled_score','reading','reading_scaled_score','spelling','grammar','spag_scaled_score','notes'],
 }
 TEMPLATE_TERMS = ['Autumn', 'Spring', 'Summer']
 FOUNDATION_SUBJECT_KEYS = [subject_key for subject_key, _subject_label in FOUNDATION_SUBJECTS]
