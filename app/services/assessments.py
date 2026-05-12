@@ -358,7 +358,7 @@ def get_latest_previous_assessment(
 ) -> str | None:
     normalized_subject = (subject or '').strip().lower()
     normalized_term = (current_term or '').strip().lower()
-    invalid_values = {'', 'not_assessed', 'not assessed'}
+    invalid_values = {'', 'not_assessed', 'not assessed', 'notassessed'}
     orders = (
         ['autumn', 'spring', 'summer'],
         ['autumn_1', 'autumn_2', 'spring_1', 'spring_2', 'summer_1', 'summer_2'],
@@ -392,7 +392,8 @@ def get_latest_previous_assessment(
         if value is None:
             continue
         cleaned = str(value).strip()
-        if cleaned.lower() in invalid_values:
+        normalized_cleaned = cleaned.lower().replace(' ', '_')
+        if normalized_cleaned in invalid_values:
             continue
         return cleaned
     return None
