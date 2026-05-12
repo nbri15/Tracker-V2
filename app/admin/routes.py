@@ -175,10 +175,21 @@ FULL_WORKBOOK_SHEETS = {
     'Times Tables': ['class','pupil_name','test_name','score','max_score','date'],
     'Foundation': ['class','pupil_name','subject','term','assessment','band','notes'],
     'Reception': ['class','pupil_name','term','area','statement','band','notes'],
-    'SATs': ['class','pupil_name','academic_year','subject','test_name','raw_score','scaled_score','notes'],
+    'SATs': ['class','pupil_name','assessment_point','reading_raw','reading_scaled','maths_arithmetic_raw','maths_reasoning_raw','maths_scaled','spag_grammar_raw','spag_spelling_raw','spag_scaled','writing_band','notes'],
 }
 TEMPLATE_TERMS = ['Autumn', 'Spring', 'Summer']
 FOUNDATION_SUBJECT_KEYS = [subject_key for subject_key, _subject_label in FOUNDATION_SUBJECTS]
+SATS_ASSESSMENT_POINTS = ['Autumn 1', 'Autumn 2', 'Spring 1', 'Spring 2']
+SATS_FIXED_COLUMNS = {
+    'reading_raw': ('reading', 'Reading Raw Score'),
+    'reading_scaled': ('reading', 'Reading Scaled Score'),
+    'maths_arithmetic_raw': ('maths', 'Arithmetic'),
+    'maths_reasoning_raw': ('maths', 'Reasoning'),
+    'maths_scaled': ('maths', 'Maths Scaled Score'),
+    'spag_grammar_raw': ('spag', 'Grammar'),
+    'spag_spelling_raw': ('spag', 'Spelling'),
+    'spag_scaled': ('spag', 'SPaG Scaled Score'),
+}
 
 def _norm(v):
     return str(v or '').strip()
@@ -274,6 +285,17 @@ def _find_or_create_sats_column(subject: str, test_name: str) -> tuple[SatsColum
     return created, True
 
 
+def _normalize_writing_band(value) -> str | None:
+    token = _norm(value).lower()
+    if token in {'wt', 'wts', 'working towards'}:
+        return 'working_towards'
+    if token in {'ot', 'on track', 'expected', 'working at'}:
+        return 'expected'
+    if token in {'exc', 'exs', 'exceeding', 'gds', 'greater depth'}:
+        return 'greater_depth'
+    return None
+
+
 def _selected_template_class():
     class_id = request.args.get('class_id', type=int)
     if not class_id:
@@ -344,7 +366,8 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
         if p.join_year_group == 0:
             wb['Reception'].append([class_name, p.full_name, '', '', '', '', ''])
         if p.join_year_group == 6:
-            wb['SATs'].append([class_name, p.full_name, '', '', '', '', '', ''])
+            for assessment_point in SATS_ASSESSMENT_POINTS:
+                wb['SATs'].append([class_name, p.full_name, assessment_point, '', '', '', '', '', '', '', '', '', ''])
 
     for ws in wb.worksheets:
         _style_template_sheet(ws)
@@ -1668,48 +1691,73 @@ def import_full_workbook():
             if not pupil:
                 preview_errors.append(f'SATs: pupil not matched {_norm(row[1])}')
                 continue
-            subject = _norm_key(row[3])
-            test_name = _norm(row[4])
-            if not subject or not test_name:
-                preview_errors.append(f'SATs: missing subject/test_name for {_norm(row[1])}')
+            if pupil.join_year_group != 6:
+                preview_errors.append(f'SATs: skipped non-Year 6 pupil {_norm(row[1])}')
                 continue
-            raw_score = row[5]
-            scaled_score = row[6]
-            try:
-                raw_value = int(raw_score) if raw_score not in (None, '') else None
-                scaled_value = int(scaled_score) if scaled_score not in (None, '') else None
-            except (TypeError, ValueError):
-                preview_errors.append(f'SATs: invalid raw/scaled score for {_norm(row[1])} ({test_name})')
+            assessment_point = _norm(row[2])
+            if assessment_point not in SATS_ASSESSMENT_POINTS:
+                preview_errors.append(f'SATs: invalid assessment_point "{assessment_point}" for {_norm(row[1])}')
                 continue
-            column, is_new_column = _find_or_create_sats_column(subject, test_name)
-            if is_new_column:
-                preview_errors.append(f'SATs: new test column will be created ({column.name}, {column.subject})')
-            else:
-                preview_errors.append(f'SATs: existing test column used ({column.name}, {column.subject})')
-            result = SatsColumnResult.query.filter_by(
-                school_id=current_user.school_id,
-                pupil_id=pupil.id,
-                academic_year=_norm(row[2]) or get_current_academic_year(),
-                column_id=column.id,
-            ).first()
-            if not result:
-                result = SatsColumnResult(
+            tabs = get_sats_exam_tabs(6, include_inactive=True)
+            tab = next((tab for tab in tabs if _norm(tab.name).lower() == assessment_point.lower()), None)
+            if not tab:
+                preview_errors.append(f'SATs: assessment tab missing for {assessment_point}')
+                continue
+            column_map = {_norm(c.column_key): c for c in get_sats_columns(6, exam_tab_id=tab.id, active_only=False) if c.column_key}
+            imported_values = []
+            for idx, csv_key in enumerate(SATS_FIXED_COLUMNS.keys(), start=3):
+                raw_value = row[idx]
+                if raw_value in (None, ''):
+                    continue
+                column = column_map.get(csv_key)
+                if not column:
+                    preview_errors.append(f'SATs: fixed column missing "{csv_key}" ({assessment_point})')
+                    continue
+                try:
+                    score_value = int(raw_value)
+                except (TypeError, ValueError):
+                    preview_errors.append(f'SATs: invalid value for {csv_key} on {_norm(row[1])}')
+                    continue
+                result = SatsColumnResult.query.filter_by(
                     school_id=current_user.school_id,
                     pupil_id=pupil.id,
-                    academic_year=_norm(row[2]) or get_current_academic_year(),
+                    academic_year=get_current_academic_year(),
                     column_id=column.id,
-                )
+                ).first()
+                action = 'will update existing row' if result else 'will create new row'
+                if not result:
+                    result = SatsColumnResult(school_id=current_user.school_id, pupil_id=pupil.id, academic_year=get_current_academic_year(), column_id=column.id)
+                result.raw_score = score_value
                 db.session.add(result)
-            result.raw_score = raw_value
-            if scaled_value is not None:
-                preview_errors.append(f'SATs: scaled_score provided ({scaled_value}) for {_norm(row[1])} ({column.name})')
-            preview_errors.append(f'SATs: score will be saved for {_norm(row[1])} ({column.name})')
+                imported_values.append(f'{csv_key}={score_value}')
+                preview_errors.append(f'SATs: {_norm(row[1])} {assessment_point} {csv_key} -> {action}')
+
+            band_value = _normalize_writing_band(row[11])
+            if _norm(row[11]) and not band_value:
+                preview_errors.append(f'SATs: invalid writing_band "{_norm(row[11])}" for {_norm(row[1])}')
+            elif band_value:
+                ap_index = SATS_ASSESSMENT_POINTS.index(assessment_point) + 1
+                writing_row = SatsWritingResult.query.filter_by(
+                    school_id=current_user.school_id, pupil_id=pupil.id, academic_year=get_current_academic_year(), assessment_point=ap_index
+                ).first()
+                action = 'will update existing row' if writing_row else 'will create new row'
+                if not writing_row:
+                    writing_row = SatsWritingResult(school_id=current_user.school_id, pupil_id=pupil.id, academic_year=get_current_academic_year(), assessment_point=ap_index)
+                writing_row.band = band_value
+                writing_row.notes = _norm(row[12])
+                db.session.add(writing_row)
+                preview_errors.append(f'SATs: {_norm(row[1])} {assessment_point} writing_band={_norm(row[11])} -> {action}')
+            if imported_values:
+                preview_errors.append(f'SATs: values to import {_norm(row[1])} {assessment_point}: {", ".join(imported_values)}')
     if request.form.get('confirm_save')!='1':
         db.session.rollback()
         for e in preview_errors[:20]: flash(e,'warning')
         flash(f'Preview complete. {created} pupils would be created/updated. Re-upload and click Save Workbook Import to apply.', 'info')
         return redirect(url_for('admin.imports'))
     db.session.commit()
+    for subject in ('maths', 'reading', 'spag'):
+        for term in ('autumn', 'spring', 'summer'):
+            recalculate_subject_results_for_scope(6, subject, term, academic_year=get_current_academic_year())
     for e in preview_errors[:20]: flash(e,'warning')
     flash('Workbook import complete.', 'success')
     return redirect(url_for('admin.imports'))
