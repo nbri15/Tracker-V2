@@ -35,6 +35,11 @@
     <p class="text-muted mb-0">Year {{ school_class.year_group }} · Teacher: {{ school_class.teacher.username if school_class.teacher else 'Unassigned' }} · {{ total_pupil_count }} pupils on roll · Academic year {{ academic_year }}</p>
   </div>
   <div class="d-flex gap-2">
+    {% set common_params = dict(class_id=school_class.id, academic_year=academic_year, subject=selected_subject, term=selected_term if selected_subject != 'sats' else None, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, search=filters.search) %}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', **common_params, export='csv', anon=0) }}">Download with names</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', **common_params, export='csv', anon=1) }}">Download anonymised</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', **common_params, print=1, anon=0) }}">Print with names</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', **common_params, print=1, anon=1) }}">Print anonymised</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboards.admin_dashboard', academic_year=academic_year) }}">Back to dashboard</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.classes', class_id=school_class.id, academic_year=academic_year) }}">Back to classes</a>
   </div>
