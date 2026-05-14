@@ -10,6 +10,7 @@ from sqlalchemy import inspect, text
 from config import config_by_name
 from .extensions import db, login_manager, migrate
 from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label, short_band_label
+from .services.gender import normalize_gender
 from .utils import current_school_id, is_demo_user
 
 
@@ -31,6 +32,7 @@ def create_app(config_name: str | None = None) -> Flask:
     register_shell_context(app)
     register_cli_commands(app)
     bootstrap_runtime_schema(app)
+    bootstrap_gender_values(app)
     bootstrap_admin_from_env(app)
     bootstrap_demo_data(app)
 
@@ -290,3 +292,19 @@ def bootstrap_demo_data(app: Flask) -> None:
             seed_demo_data()
         except Exception:
             app.logger.warning('Demo data bootstrap failed.', exc_info=True)
+
+
+def bootstrap_gender_values(app: Flask) -> None:
+    """Normalize historical pupil gender values to canonical labels."""
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if not inspector.has_table('pupils'):
+            return
+        try:
+            db.session.execute(text("UPDATE pupils SET gender = 'Male' WHERE LOWER(TRIM(gender)) IN ('m','male')"))
+            db.session.execute(text("UPDATE pupils SET gender = 'Female' WHERE LOWER(TRIM(gender)) IN ('f','female')"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('Gender normalization bootstrap failed.', exc_info=True)

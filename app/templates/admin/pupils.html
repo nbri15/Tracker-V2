@@ -47,7 +47,7 @@
     </form>
   </div>
 </div>
-<div class="d-flex gap-2 justify-content-end mb-3"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=0) }}">Print with names</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=1) }}">Print anonymised</a></div>
+<div class="d-flex gap-2 justify-content-end mb-3"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.export_pupil_overview', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, anon=0) }}">Download with names</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.export_pupil_overview', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, anon=1) }}">Download anonymised</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=0) }}">Print with names</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=1) }}">Print anonymised</a></div>
 
 
 <div class="card shadow-sm mb-4">

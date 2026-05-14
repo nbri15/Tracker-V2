@@ -156,8 +156,10 @@ def _apply_common_report_filters(query):
         query = query.filter(Pupil.class_id == class_id)
     if year_group is not None:
         query = query.filter(SchoolClass.year_group == year_group)
-    if gender in {'male', 'female'}:
-        query = query.filter(Pupil.gender == gender)
+    if gender in {'male', 'female', 'm', 'f'}:
+        clause = gender_filter_clause(gender)
+        if clause is not None:
+            query = query.filter(clause)
     for key, value in [('send', send), ('pupil_premium', pp), ('laps', laps), ('service_child', service_child)]:
         if value in {'yes', 'no'}:
             query = query.filter(getattr(Pupil, key).is_(value == 'yes'))
@@ -190,7 +192,7 @@ def _build_xlsx(headers, rows, title):
     wb.save(out)
     out.seek(0)
     return out.getvalue()
-from app.services.gender import normalize_gender
+from app.services.gender import gender_filter_clause, normalize_gender
 
 from . import admin_bp
 from .forms import AssessmentSettingForm
@@ -652,6 +654,29 @@ def class_detail(class_id: int):
         header_state = _table_header_state(sort_state, CLASS_DETAIL_SUBJECT_SORT_COLUMNS)
     else:
         header_state = {}
+
+    export_mode = request.args.get('export', '').strip().lower() == 'csv'
+    print_mode = request.args.get('print', '0') == '1'
+    anon_mode = request.args.get('anon', '0') == '1'
+    if export_mode or print_mode:
+        headers = ['Pupil', 'Class', 'Gender', 'PP', 'SEND', 'LAPS', 'Service']
+        rows = []
+        for idx, row in enumerate(context['pupil_rows'], start=1):
+            pupil_name = f'Pupil {idx}' if anon_mode else row['name']
+            rows.append([pupil_name, school_class.name, normalize_gender(row.get('gender')) or '', 'Yes' if row.get('pupil_premium') else 'No', 'Yes' if row.get('send') else 'No', 'Yes' if row.get('laps') else 'No', 'Yes' if row.get('service_child') else 'No'])
+        if context['selected_subject'] in {'maths', 'reading', 'spag'}:
+            headers += ['Paper 1', 'Paper 2', 'Combined', 'Band']
+            for i, row in enumerate(context['pupil_rows']):
+                rows[i] += [row.get('paper_1_score'), row.get('paper_2_score'), row.get('combined_score'), row.get('band_label') or '']
+        elif context['selected_subject'] == 'writing':
+            headers += ['Writing judgement', 'Notes']
+            for i, row in enumerate(context['pupil_rows']):
+                rows[i] += [row.get('band_label') or '', row.get('notes') or '']
+        if export_mode:
+            out = io.StringIO(); w = csv.writer(out); w.writerow(headers); w.writerows(rows)
+            return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename=class_{context["selected_subject"]}_export.csv'})
+        return render_template('admin/report_table.html', title=f'{context["subject_label"]} class report', subtitle='Anonymised' if anon_mode else 'Named', headers=headers, rows=rows, filters=pupil_filters, anonymised=anon_mode)
+
     return render_template(
         'admin/class_detail.html',
         academic_year=academic_year,
@@ -1988,7 +2013,7 @@ def report_class_overview():
     latest = _latest_subject_map([p.id for p in pupils])
     rows = []
     for p in pupils:
-        rows.append([p.full_name, p.school_class.name, p.gender.title(), 'Yes' if p.send else 'No', 'Yes' if p.pupil_premium else 'No', latest.get((p.id,'reading'),'—'), latest.get((p.id,'maths'),'—'), latest.get((p.id,'writing'),'—')])
+        rows.append([p.full_name, p.school_class.name, normalize_gender(p.gender) or '', 'Yes' if p.send else 'No', 'Yes' if p.pupil_premium else 'No', latest.get((p.id,'reading'),'—'), latest.get((p.id,'maths'),'—'), latest.get((p.id,'writing'),'—')])
     headers = ['Pupil','Class','Gender','SEND','PP','Reading','Maths','Writing']
     fmt = request.args.get('format','html')
     if fmt == 'csv':
@@ -2011,7 +2036,7 @@ def report_governor_summary():
     rows = [
         ['PP vs non-PP', sum(1 for p in pupils if p.pupil_premium), sum(1 for p in pupils if not p.pupil_premium), pct(sum(1 for p in pupils if p.pupil_premium))],
         ['SEND vs non-SEND', sum(1 for p in pupils if p.send), sum(1 for p in pupils if not p.send), pct(sum(1 for p in pupils if p.send))],
-        ['Gender (Female vs Male)', sum(1 for p in pupils if p.gender=='female'), sum(1 for p in pupils if p.gender=='male'), pct(sum(1 for p in pupils if p.gender=='female'))],
+        ['Gender (Female vs Male)', sum(1 for p in pupils if normalize_gender(p.gender)=='Female'), sum(1 for p in pupils if normalize_gender(p.gender)=='Male'), pct(sum(1 for p in pupils if normalize_gender(p.gender)=='Female'))],
     ]
     headers=['Cohort summary','Group A','Group B','Group A %']
     fmt=request.args.get('format','html')
