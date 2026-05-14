@@ -6,6 +6,7 @@ import csv
 import io
 from dataclasses import dataclass, field
 from datetime import date
+from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import (
@@ -702,21 +703,26 @@ def export_class_overview_csv(academic_year: str, class_id: int | None = None) -
     return output.getvalue()
 
 
-def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None) -> str:
+def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None, send: str = 'all', anonymised: bool = False) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'send', 'academic_year', 'gld', 'phonics', 'mtc', 'y6_sats_entries'])
     query = Pupil.query.join(Pupil.school_class)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
+    if send == 'yes':
+        query = query.filter(Pupil.send.is_(True))
+    elif send == 'no':
+        query = query.filter(or_(Pupil.send.is_(False), Pupil.send.is_(None)))
     selected_year = academic_year or get_current_academic_year()
-    for pupil in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
+    for idx, pupil in enumerate(query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
         overview = build_pupil_overview_data(pupil, selected_year)
         gld = summarize_gld_status(overview['eyfs']['reception_rows']) if pupil.school_class.year_group == 0 else ''
         phonics = max((row.score for row in overview['phonics'] if row.score is not None), default='') if pupil.school_class.year_group in {1, 2} else ''
         mtc = max((row.score for row in overview['mtc'] if row.score is not None), default='') if pupil.school_class.year_group == 4 else ''
         sats_entries = len(overview['sats']) if pupil.school_class.year_group == 6 else ''
-        writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, pupil.send, selected_year, gld, phonics, mtc, sats_entries])
+        name = f'Pupil {idx}' if anonymised else pupil.full_name
+        writer.writerow([name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, pupil.send, selected_year, gld, phonics, mtc, sats_entries])
     return output.getvalue()
 
 
@@ -790,15 +796,16 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
     return output.getvalue()
 
 
-def export_interventions_csv(academic_year: str, class_id: int | None = None) -> str:
+def export_interventions_csv(academic_year: str, class_id: int | None = None, anonymised: bool = False, current_scores: dict[int, str] | None = None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'is_active', 'auto_flagged', 'reason', 'note'])
+    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note'])
     query = Intervention.query.join(Intervention.pupil).join(Pupil.school_class).filter(Intervention.academic_year == academic_year)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
-    for row in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.subject, row.term, row.is_active, row.auto_flagged, row.reason, row.note])
+    for idx, row in enumerate(query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
+        name = f'Pupil {idx}' if anonymised else row.pupil.full_name
+        writer.writerow([name, row.pupil.school_class.name, row.subject, row.term, (current_scores or {}).get(row.id, '—'), row.is_active, row.auto_flagged, row.reason, row.note])
     return output.getvalue()
 
 

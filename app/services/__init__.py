@@ -161,7 +161,7 @@ from .csv_tools import (
     parse_uploaded_csv,
 )
 from .gap import build_gap_page_context, get_or_create_gap_template, parse_question_columns, save_gap_scores, sync_gap_totals_to_subject_results
-from .interventions import AUTO_REASON, build_intervention_filters, suggest_interventions_for_scope, sync_auto_interventions
+from .interventions import AUTO_REASON, build_intervention_filters, get_current_score_for_intervention, suggest_interventions_for_scope, sync_auto_interventions
 
 from .pupil_overview import (
     build_pupil_overview_data,

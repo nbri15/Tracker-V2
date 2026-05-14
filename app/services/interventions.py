@@ -3,10 +3,98 @@
 from __future__ import annotations
 
 from app.extensions import db
-from app.models import Intervention, Pupil, SubjectResult
+from app.models import FoundationResult, Intervention, Pupil, SatsColumnResult, SubjectResult, WritingResult
 
 
 AUTO_REASON = 'Closest pupils below pass threshold'
+CORE_SUBJECTS = {'maths', 'reading', 'spag'}
+
+
+def _band_short_label(label: str | None) -> str | None:
+    if not label:
+        return None
+    mapping = {'Working Towards': 'WT', 'On Track': 'OT', 'Exceeding': 'EXS'}
+    return mapping.get(label, label)
+
+
+def get_current_score_for_intervention(intervention: Intervention) -> str:
+    """Return a display-friendly current score string for an intervention row."""
+    subject = (intervention.subject or '').strip().lower()
+    term = (intervention.term or '').strip().lower()
+    academic_year = intervention.academic_year
+
+    if subject in CORE_SUBJECTS:
+        row = (
+            SubjectResult.query.filter_by(
+                pupil_id=intervention.pupil_id,
+                academic_year=academic_year,
+                subject=subject,
+                term=term,
+            )
+            .order_by(SubjectResult.updated_at.desc(), SubjectResult.id.desc())
+            .first()
+        )
+        if not row:
+            row = (
+                SubjectResult.query.filter_by(
+                    pupil_id=intervention.pupil_id,
+                    academic_year=academic_year,
+                    subject=subject,
+                )
+                .order_by(SubjectResult.updated_at.desc(), SubjectResult.id.desc())
+                .first()
+            )
+        if not row:
+            return '—'
+        if row.combined_percent is not None:
+            pct = int(round(row.combined_percent))
+            band = _band_short_label(row.band_label)
+            return f'{pct}% · {band}' if band else f'{pct}%'
+        if row.combined_score is not None:
+            return str(row.combined_score)
+        return '—'
+
+    if subject == 'writing':
+        row = (
+            WritingResult.query.filter_by(
+                pupil_id=intervention.pupil_id,
+                academic_year=academic_year,
+                term=term,
+            )
+            .order_by(WritingResult.updated_at.desc(), WritingResult.id.desc())
+            .first()
+        )
+        if not row:
+            row = (
+                WritingResult.query.filter_by(pupil_id=intervention.pupil_id, academic_year=academic_year)
+                .order_by(WritingResult.updated_at.desc(), WritingResult.id.desc())
+                .first()
+            )
+        return _band_short_label(row.band) if row else '—'
+
+    if subject in {'sats maths', 'sats reading', 'sats spag', 'year 6 sats'}:
+        lookup = {'sats maths': 'maths_scaled', 'sats reading': 'reading_scaled', 'sats spag': 'spag_scaled'}
+        key = lookup.get(subject)
+        query = SatsColumnResult.query.join(SatsColumnResult.column).filter(
+            SatsColumnResult.pupil_id == intervention.pupil_id,
+            SatsColumnResult.academic_year == academic_year,
+            SatsColumnResult.raw_score.isnot(None),
+        )
+        if key:
+            query = query.filter_by(column_key=key)
+        row = query.order_by(SatsColumnResult.updated_at.desc(), SatsColumnResult.id.desc()).first()
+        return f'{row.raw_score} scaled' if row else '—'
+
+    row = (
+        FoundationResult.query.filter_by(
+            pupil_id=intervention.pupil_id,
+            academic_year=academic_year,
+            subject=subject,
+        )
+        .order_by(FoundationResult.updated_at.desc(), FoundationResult.id.desc())
+        .first()
+    )
+    return _band_short_label(row.judgement) if row and row.judgement else '—'
 
 
 def suggest_interventions_for_scope(school_class, subject: str, term: str, academic_year: str, pass_threshold: float) -> list[dict]:
