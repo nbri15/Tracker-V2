@@ -44,6 +44,11 @@ def get_y6_sats_data(pupil: Pupil, academic_year: str | None = None) -> list[Sat
     )
 
 
+def get_sats_data(pupil: Pupil, academic_year: str | None = None) -> list[SatsColumnResult]:
+    """Compatibility alias for central SATs data access."""
+    return get_y6_sats_data(pupil, academic_year)
+
+
 def get_phonics_data(pupil: Pupil, academic_year: str | None = None) -> list[PhonicsScore]:
     year = academic_year or get_current_academic_year()
     return PhonicsScore.query.filter_by(pupil_id=pupil.id, academic_year=year).all()
