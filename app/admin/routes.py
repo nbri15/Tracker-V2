@@ -138,6 +138,7 @@ from app.services import (
 )
 from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, school_scoped_query
 from app.services.pupil_quick_add import create_quick_add_pupil
+from app.services.gender import normalize_gender
 
 from . import admin_bp
 from .forms import AssessmentSettingForm
@@ -1643,9 +1644,9 @@ def import_full_workbook():
             continue
         pupil=demo_filter_pupils(Pupil.query.filter_by(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, school_id=current_user.school_id)).first()
         if not pupil:
-            pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=_norm(row[4]) or 'Unknown', school_id=current_user.school_id, is_demo=current_user.is_demo)
+            pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=normalize_gender(_norm(row[4])) or '', school_id=current_user.school_id, is_demo=current_user.is_demo)
             db.session.add(pupil); created+=1
-        pupil.gender=_norm(row[4]) or pupil.gender
+        pupil.gender=normalize_gender(_norm(row[4])) or pupil.gender or ''
         pupil.pupil_premium=_norm(row[5]).lower() in {'1','true','yes','y'}
         pupil.laps=_norm(row[6]).lower() in {'1','true','yes','y'}
         pupil.service_child=_norm(row[7]).lower() in {'1','true','yes','y'}

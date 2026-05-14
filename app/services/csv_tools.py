@@ -28,6 +28,7 @@ from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overvi
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
 from .pupil_overview import build_pupil_overview_data, summarize_gld_status
 from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
+from .gender import normalize_gender
 
 COMBINED_PUPIL_COLUMNS = [
     'first_name',
@@ -312,7 +313,7 @@ def _parse_join_date(row: dict) -> date | None:
 def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> bool:
     changed = False
     updates = {
-        'gender': _clean_value(row.get('gender')) or pupil.gender or 'Unknown',
+        'gender': normalize_gender(_clean_value(row.get('gender'))) or pupil.gender or '',
         'pupil_premium': _parse_bool(row.get('pupil_premium')),
         'laps': _parse_bool(row.get('laps')),
         'service_child': _parse_bool(row.get('service_child')),
@@ -429,7 +430,7 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                     pupil = Pupil(
                         first_name=first_name,
                         last_name=last_name,
-                        gender=_clean_value(row.get('gender')) or 'Unknown',
+                        gender=normalize_gender(_clean_value(row.get('gender'))) or '',
                         pupil_premium=_parse_bool(row.get('pupil_premium')),
                         laps=_parse_bool(row.get('laps')),
                         service_child=_parse_bool(row.get('service_child')),

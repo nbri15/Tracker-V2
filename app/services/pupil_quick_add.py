@@ -8,12 +8,13 @@ from sqlalchemy import func
 
 from app.extensions import db
 from app.models import Pupil, SchoolClass
+from app.services.gender import normalize_gender
 
 
 def create_quick_add_pupil(*, school_class: SchoolClass, first_name: str, last_name: str, gender: str, pupil_premium: bool, laps: bool, service_child: bool, send: bool, join_year_group_raw: str = '', join_date_raw: str = '') -> tuple[Pupil | None, str | None]:
     first_name = (first_name or '').strip()
     last_name = (last_name or '').strip()
-    gender = (gender or '').strip() or 'Unknown'
+    gender = normalize_gender(gender) or ''
     if not school_class:
         return None, 'Select a valid class before adding a pupil.'
     if not first_name or not last_name:
