@@ -97,6 +97,7 @@ from app.services import (
     FoundationValidationError,
 )
 from app.utils import get_primary_class_for_user, get_year_group_class_for_user, teacher_required
+from app.services.pupil_quick_add import create_quick_add_pupil
 
 from . import teacher_bp
 

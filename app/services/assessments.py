@@ -28,6 +28,7 @@ from app.models import (
     TimesTableTestColumn,
     WritingResult,
 )
+from app.services.gender import CANONICAL_GENDERS, gender_filter_clause, normalize_gender
 from app.utils import school_scoped_query
 
 TERMS = [
@@ -462,7 +463,9 @@ def apply_admin_pupil_filters(query, filters: dict | None = None):
 
     gender = (filters.get('gender') or '').strip()
     if gender and gender != 'all':
-        query = query.filter(Pupil.gender == gender)
+        clause = gender_filter_clause(gender)
+        if clause is not None:
+            query = query.filter(clause)
 
     for filter_name, field in (
         ('pupil_premium', Pupil.pupil_premium),
@@ -623,8 +626,8 @@ def get_gender_filter_options(*, class_id: int | None = None, include_inactive: 
         query = query.filter(Pupil.is_active.is_(True))
     if class_id is not None:
         query = query.filter(Pupil.class_id == class_id)
-    genders = [value for (value,) in query.distinct().order_by(Pupil.gender).all() if value]
-    return genders
+    normalized = {normalize_gender(value) for (value,) in query.distinct().all()}
+    return [gender for gender in CANONICAL_GENDERS if gender in normalized]
 
 
 def _empty_subject_summary(subject: str) -> dict:
