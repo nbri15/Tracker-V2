@@ -1047,3 +1047,13 @@ select.has-ghost-value {
   color: #94a3b8;
   font-style: italic;
 }
+
+/* Reporting print styles */
+@media print {
+  .sidebar, .topbar, .btn, .form-actions, .no-print { display:none !important; }
+  .main-content, .card { margin:0 !important; box-shadow:none !important; border:0 !important; }
+  .report-print-table thead { display: table-header-group; }
+  .report-print-table tr { page-break-inside: avoid; }
+  .report-print-wrap { page-break-after: auto; }
+}
+.report-print-table td, .report-print-table th { white-space: nowrap; font-size: 0.85rem; }

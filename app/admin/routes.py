@@ -138,6 +138,58 @@ from app.services import (
 )
 from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, school_scoped_query
 from app.services.pupil_quick_add import create_quick_add_pupil
+
+
+def _apply_common_report_filters(query):
+    academic_year = request.args.get('academic_year', get_current_academic_year())
+    term = request.args.get('term', '').strip()
+    class_id = request.args.get('class_id', type=int)
+    year_group = request.args.get('year_group', type=int)
+    gender = request.args.get('gender', '').strip().lower()
+    send = request.args.get('send', 'all').strip().lower()
+    pp = request.args.get('pp', 'all').strip().lower()
+    laps = request.args.get('laps', 'all').strip().lower()
+    service_child = request.args.get('service_child', 'all').strip().lower()
+
+    query = query.join(SchoolClass, Pupil.class_id == SchoolClass.id).filter(Pupil.is_archived.is_(False), SchoolClass.academic_year == academic_year)
+    if class_id:
+        query = query.filter(Pupil.class_id == class_id)
+    if year_group is not None:
+        query = query.filter(SchoolClass.year_group == year_group)
+    if gender in {'male', 'female'}:
+        query = query.filter(Pupil.gender == gender)
+    for key, value in [('send', send), ('pupil_premium', pp), ('laps', laps), ('service_child', service_child)]:
+        if value in {'yes', 'no'}:
+            query = query.filter(getattr(Pupil, key).is_(value == 'yes'))
+    return query, {'academic_year':academic_year,'term':term,'class_id':class_id,'year_group':year_group,'gender':gender,'send':send,'pp':pp,'laps':laps,'service_child':service_child}
+
+
+def _latest_subject_map(pupil_ids):
+    if not pupil_ids:
+        return {}
+    rows = (school_scoped_query(SubjectResult, SubjectResult.query.filter(SubjectResult.pupil_id.in_(pupil_ids)))
+        .order_by(SubjectResult.pupil_id, SubjectResult.subject, SubjectResult.term.desc(), SubjectResult.id.desc()).all())
+    latest = {}
+    for r in rows:
+        key=(r.pupil_id,r.subject)
+        if key not in latest:
+            latest[key]=r.score
+    return latest
+
+
+def _build_xlsx(headers, rows, title):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = title[:31]
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for row in rows:
+        ws.append(row)
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.getvalue()
 from app.services.gender import normalize_gender
 
 from . import admin_bp
@@ -1916,6 +1968,59 @@ def export_headline_report():
     )
 
 
+
+
+@admin_bp.route('/reports/export-centre')
+@login_required
+@admin_required
+def reports_export_centre():
+    class_options = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.name).all()
+    year_groups = sorted({c.year_group for c in class_options})
+    return render_template('admin/reports_export_centre.html', class_options=class_options, year_groups=year_groups)
+
+
+@admin_bp.route('/reports/class-overview')
+@login_required
+@admin_required
+def report_class_overview():
+    query, filters = _apply_common_report_filters(demo_filter_pupils(Pupil.query))
+    pupils = query.order_by(Pupil.last_name, Pupil.first_name).all()
+    latest = _latest_subject_map([p.id for p in pupils])
+    rows = []
+    for p in pupils:
+        rows.append([p.full_name, p.school_class.name, p.gender.title(), 'Yes' if p.send else 'No', 'Yes' if p.pupil_premium else 'No', latest.get((p.id,'reading'),'—'), latest.get((p.id,'maths'),'—'), latest.get((p.id,'writing'),'—')])
+    headers = ['Pupil','Class','Gender','SEND','PP','Reading','Maths','Writing']
+    fmt = request.args.get('format','html')
+    if fmt == 'csv':
+        out=io.StringIO(); w=csv.writer(out); w.writerow(headers); w.writerows(rows)
+        return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition':'attachment; filename=class_overview_report.csv'})
+    if fmt == 'xlsx':
+        data = _build_xlsx(headers, rows, 'Class overview')
+        return Response(data, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=class_overview_report.xlsx'})
+    return render_template('admin/report_table.html', title='Class overview report', subtitle='Printable class summary', headers=headers, rows=rows, filters=filters, anonymised=False)
+
+
+@admin_bp.route('/reports/governor-summary')
+@login_required
+@admin_required
+def report_governor_summary():
+    query, filters = _apply_common_report_filters(demo_filter_pupils(Pupil.query))
+    pupils = query.all()
+    total = len(pupils) or 1
+    def pct(n): return f"{round((n/total)*100,1)}%"
+    rows = [
+        ['PP vs non-PP', sum(1 for p in pupils if p.pupil_premium), sum(1 for p in pupils if not p.pupil_premium), pct(sum(1 for p in pupils if p.pupil_premium))],
+        ['SEND vs non-SEND', sum(1 for p in pupils if p.send), sum(1 for p in pupils if not p.send), pct(sum(1 for p in pupils if p.send))],
+        ['Gender (Female vs Male)', sum(1 for p in pupils if p.gender=='female'), sum(1 for p in pupils if p.gender=='male'), pct(sum(1 for p in pupils if p.gender=='female'))],
+    ]
+    headers=['Cohort summary','Group A','Group B','Group A %']
+    fmt=request.args.get('format','html')
+    if fmt=='csv':
+        out=io.StringIO();w=csv.writer(out);w.writerow(headers);w.writerows(rows)
+        return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition':'attachment; filename=governor_summary_report.csv'})
+    if fmt=='xlsx':
+        return Response(_build_xlsx(headers,rows,'Governor summary'), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=governor_summary_report.xlsx'})
+    return render_template('admin/report_table.html', title='Governor / SLT anonymised summary', subtitle='No pupil names included', headers=headers, rows=rows, filters=filters, anonymised=True)
 @admin_bp.route('/exports/subject-results')
 @login_required
 @admin_required
