@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% set page_heading = title %}
+{% block content %}
+<div class="card shadow-sm report-print-wrap" id="report-export-target">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <div><img src="{{ url_for('static', filename='img/class-compass-logo.png') }}" style="height:28px"> <strong>Class Compass</strong><div class="text-muted small">{{ subtitle }}</div></div>
+    <div class="d-flex gap-2"><button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">Print</button><button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#report-export-target" data-pdf-filename="{{ title|replace(' ','-')|lower }}.pdf">Download PDF</button></div>
+  </div>
+  <div class="card-body p-0">
+    <div class="small text-muted p-3 border-bottom">Filters: {% for k,v in filters.items() if v %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    <div class="table-responsive"><table class="table table-sm mb-0 report-print-table"><thead class="table-light"><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead><tbody>{% for row in rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% else %}<tr><td colspan="{{ headers|length }}" class="text-center py-3 text-muted">No data available for selected filters.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+{% endblock %}
