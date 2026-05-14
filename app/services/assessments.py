@@ -1587,3 +1587,57 @@ def get_sats_writing_summary(rows: list[SatsWritingResult]) -> dict:
 def get_latest_scaled_score(rows: list[SatsResult]) -> int | None:
     latest_row = max((row for row in rows if row.scaled_score is not None), key=lambda row: row.assessment_point, default=None)
     return latest_row.scaled_score if latest_row else None
+
+
+def get_latest_result(results: list, *, key: str = 'assessment_point'):
+    """Return the newest result-like object in a list using a safe key."""
+    if not results:
+        return None
+    return max(results, key=lambda row: getattr(row, key, 0) or 0, default=None)
+
+
+def calculate_band(combined_percent: float | None, below_threshold: float = 45.0, exceeding_threshold: float = 80.0) -> str:
+    return SubjectResult.calculate_band_label(combined_percent, below_threshold, exceeding_threshold)
+
+
+def calculate_progress(current: float | int | None, previous: float | int | None) -> dict[str, float | int | str | None]:
+    if current is None or previous is None:
+        return {'delta': None, 'label': '—', 'theme': None}
+    delta = current - previous
+    return {'delta': delta, 'label': format_progress_delta(delta), 'theme': progress_theme(delta)}
+
+
+def get_term_filtered_results(query, term: str | None = None):
+    normalized = (term or '').strip().lower()
+    if normalized and normalized != 'all':
+        return query.filter_by(term=normalized)
+    return query
+
+
+def get_tracker_results(pupil_id: int, academic_year: str, *, term: str | None = None) -> list[SubjectResult]:
+    query = SubjectResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year)
+    query = get_term_filtered_results(query, term)
+    return query.order_by(SubjectResult.subject, SubjectResult.term).all()
+
+
+def get_subject_summary(pupil_id: int, academic_year: str, subject: str, *, term: str | None = None) -> dict:
+    rows = get_tracker_results(pupil_id, academic_year, term=term)
+    subject_rows = [row for row in rows if row.subject == subject]
+    latest = get_latest_result(subject_rows)
+    previous_rows = [row for row in subject_rows if latest is None or row.assessment_point != latest.assessment_point]
+    previous = get_latest_result(previous_rows)
+    progress = calculate_progress(
+        latest.combined_percent if latest else None,
+        previous.combined_percent if previous else None,
+    )
+    return {
+        'subject': subject,
+        'count': len(subject_rows),
+        'latest': latest,
+        'previous': previous,
+        'progress': progress,
+    }
+
+
+def get_dashboard_stats(class_id: int | None, academic_year: str) -> list[dict]:
+    return build_dashboard_summary(class_id, academic_year)

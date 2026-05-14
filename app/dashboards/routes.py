@@ -13,7 +13,9 @@ from app.services import (
     build_class_overview_row,
     build_dashboard_summary,
     build_subject_overview_cards,
+    calculate_progress,
     get_current_academic_year,
+    get_dashboard_stats,
     get_gender_filter_options,
     get_tracker_mode,
     get_tracker_mode_label,
@@ -60,7 +62,7 @@ def teacher_dashboard():
     school_class = get_primary_class_for_user(current_user)
     pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all() if school_class else []
     academic_year = get_current_academic_year()
-    summary_rows = build_dashboard_summary(school_class.id if school_class else None, academic_year)
+    summary_rows = get_dashboard_stats(school_class.id if school_class else None, academic_year)
     active_interventions = (
         Intervention.query.join(Intervention.pupil)
         .filter(
@@ -172,14 +174,10 @@ def _scaled_band(score: int | None) -> str:
 
 
 def _scaled_progress(current: int | None, previous: int | None) -> dict[str, str | int | None]:
-    if current is None or previous is None:
-        return {'delta': None, 'label': '—', 'class': 'progress-none'}
-    delta = current - previous
-    if delta > 0:
-        return {'delta': delta, 'label': f'↑ +{delta}', 'class': 'progress-up'}
-    if delta < 0:
-        return {'delta': delta, 'label': f'↓ {delta}', 'class': 'progress-down'}
-    return {'delta': 0, 'label': '→ 0', 'class': 'progress-flat'}
+    progress = calculate_progress(current, previous)
+    theme = progress.get('theme')
+    class_name = 'progress-none' if theme is None else f'progress-{theme}'
+    return {'delta': progress.get('delta'), 'label': progress.get('label') or '—', 'class': class_name}
 
 
 def _ensure_simple_tabs_and_settings(academic_year: str):
@@ -249,8 +247,11 @@ def sats_simple():
 @login_required
 def sats_simple_quick_save():
     data=request.get_json(silent=True) or request.form
-    pupil_id=int(data.get('pupil_id'))
-    exam_number=int(data.get('exam_number'))
+    try:
+        pupil_id = int(data.get('pupil_id'))
+        exam_number = int(data.get('exam_number'))
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': 'Invalid pupil or exam reference'}, 400
     field=str(data.get('field'))
     value_raw=data.get('value')
     if field not in SATS_SIMPLE_FIELDS:
