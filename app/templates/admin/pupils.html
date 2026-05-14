@@ -4,6 +4,9 @@
 {% set page_heading = 'Pupils' %}
 
 {% block content %}
+{% set print_mode = request.args.get('print') == '1' %}
+{% set anon_mode = request.args.get('anon') == '1' %}
+{% if print_mode %}<style>@media print {.sidebar,.topbar,.btn,form,.card-header,.card-body{display:none!important;} tr{page-break-inside:avoid;}}</style><h3>{{ 'Pupil overview — anonymised' if anon_mode else 'Pupil overview' }}</h3>{% endif %}
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Pupil filters</strong></div>
   <div class="card-body">
@@ -26,6 +29,14 @@
         </select>
       </div>
       <div class="col-md-3">
+        <label class="form-label">SEND</label>
+        <select name="send" class="form-select form-select-sm">
+          <option value="all" {% if send_filter == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if send_filter == 'yes' %}selected{% endif %}>SEND: Yes</option>
+          <option value="no" {% if send_filter == 'no' %}selected{% endif %}>SEND: No</option>
+        </select>
+      </div>
+      <div class="col-md-3">
         <label class="form-label">Pupil search</label>
         <input type="text" name="search" class="form-control form-control-sm" value="{{ pupil_filters.search }}" placeholder="First or last name">
       </div>
@@ -36,6 +47,7 @@
     </form>
   </div>
 </div>
+<div class="d-flex gap-2 justify-content-end mb-3"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=0) }}">Print with names</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=1) }}">Print anonymised</a></div>
 
 
 <div class="card shadow-sm mb-4">
@@ -84,7 +96,7 @@
       <tbody>
         {% for pupil in pupils %}
           <tr>
-            <td>{{ pupil.full_name }}</td>
+            <td>{{ ('Pupil ' ~ loop.index) if anon_mode else pupil.full_name }}</td>
             <td>{{ pupil.school_class.name }}</td>
             <td>{{ 'Active' if pupil.is_active else 'Archived' }}</td>
             <td>{{ pupil.gender }}</td>

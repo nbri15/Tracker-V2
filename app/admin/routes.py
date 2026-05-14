@@ -102,6 +102,7 @@ from app.services import (
     get_tracking_point_key,
     get_tracker_mode,
     get_tracker_mode_label,
+    get_current_score_for_intervention,
     import_combined_results,
     is_ks1_year_group,
     is_times_tables_year_group,
@@ -1070,10 +1071,15 @@ def pupils():
 
     pupil_filters = build_admin_pupil_filter_state(request.args)
     class_id_raw = request.args.get('class_id', '').strip()
+    send_filter = (request.args.get('send', 'all') or 'all').strip().lower()
 
     query = demo_filter_pupils(apply_admin_pupil_filters(Pupil.query, pupil_filters))
     if class_id_raw:
         query = query.filter(Pupil.class_id == int(class_id_raw))
+    if send_filter == 'yes':
+        query = query.filter(Pupil.send.is_(True))
+    elif send_filter == 'no':
+        query = query.filter(or_(Pupil.send.is_(False), Pupil.send.is_(None)))
     pupils = query.order_by(Pupil.last_name, Pupil.first_name).all()
     return render_template(
         'admin/pupils.html',
@@ -1081,6 +1087,7 @@ def pupils():
         pupil_filters=pupil_filters,
         pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
         class_id_filter=class_id_raw,
+        send_filter=send_filter,
         class_options=demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all(),
     )
 
@@ -1376,11 +1383,14 @@ def interventions():
     class_id = request.args.get('class_id', '').strip()
     subject = request.args.get('subject', '').strip()
     status = request.args.get('status', 'active').strip() or 'active'
+    print_mode = request.args.get('print', '0') == '1'
+    anon_mode = request.args.get('anon', '0') == '1'
 
     query = Intervention.query.join(Intervention.pupil).filter(Pupil.is_demo.is_(current_user.is_demo), Intervention.is_demo.is_(current_user.is_demo))
     query = query.filter(Intervention.academic_year == academic_year)
     query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
+    current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
 
     return render_template(
         'admin/interventions.html',
@@ -1390,6 +1400,9 @@ def interventions():
         class_id=class_id,
         subject=subject,
         status=status,
+        print_mode=print_mode,
+        anon_mode=anon_mode,
+        current_scores=current_scores,
         class_options=demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
         subjects=CORE_SUBJECTS,
     )
@@ -1941,7 +1954,12 @@ def export_class_overview():
 @admin_required
 def export_pupil_overview():
     academic_year = request.args.get('academic_year', get_current_academic_year())
-    csv_text = export_pupil_overview_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
+    csv_text = export_pupil_overview_csv(
+        academic_year,
+        class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
+        send=request.args.get('send', 'all'),
+        anonymised=request.args.get('anon', '0') == '1',
+    )
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=pupil_overview_export.csv'})
 
 
@@ -1993,7 +2011,18 @@ def export_sats_tracker():
 @admin_required
 def export_interventions():
     academic_year = request.args.get('academic_year', get_current_academic_year())
-    csv_text = export_interventions_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
+    anon_mode = request.args.get('anon', '0') == '1'
+    query = Intervention.query.join(Intervention.pupil).filter(Intervention.academic_year == academic_year)
+    if request.args.get('class_id'):
+        query = query.filter(Pupil.class_id == int(request.args['class_id']))
+    rows = query.order_by(Pupil.last_name, Pupil.first_name).all()
+    current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
+    csv_text = export_interventions_csv(
+        academic_year,
+        class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
+        anonymised=anon_mode,
+        current_scores=current_scores,
+    )
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=interventions_export.csv'})
 
 
