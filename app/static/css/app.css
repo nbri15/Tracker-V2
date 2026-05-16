@@ -618,6 +618,145 @@ a:hover {
   padding: 1rem 1.05rem;
 }
 
+/* Responsive layout utilities */
+.responsive-toolbar {
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.responsive-filter-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.tablet-card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.tracker-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sticky-pupil-col {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: #fff;
+  box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.08);
+}
+
+.touch-button,
+.compact-input,
+.tracker-scroll .btn,
+.tracker-scroll .form-control,
+.tracker-scroll .form-select {
+  min-height: 44px;
+}
+
+.compact-input {
+  min-width: 78px;
+  padding: 0.28rem 0.4rem;
+  font-size: 0.9rem;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(21, 87, 214, 0.35);
+  outline-offset: 2px;
+}
+
+.spreadsheet-wrap,
+.gap-wrap,
+.sats-wrap,
+.reception-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.spreadsheet-table thead th,
+.data-table thead th,
+.gap-table thead th,
+.sats-sheet-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.spreadsheet-table td:first-child,
+.spreadsheet-table th:first-child,
+.subject-table td:first-child,
+.subject-table th:first-child,
+.gap-table td:first-child,
+.gap-table th:first-child,
+.sats-sheet-table td:first-child,
+.sats-sheet-table th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: var(--bs-body-bg);
+}
+
+@media (max-width: 639px) {
+  .sidebar {
+    width: min(86vw, 320px);
+  }
+
+  .subject-nav-tabs .btn,
+  .btn {
+    min-height: 44px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 900px) {
+  .responsive-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tablet-card-grid,
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-select,
+  .form-control,
+  .btn {
+    font-size: 0.95rem;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1200px) {
+  .tablet-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: portrait) {
+  .tracker-scroll .data-table,
+  .spreadsheet-wrap .data-table {
+    min-width: 1000px;
+  }
+}
+
+@media (orientation: landscape) {
+  .tracker-scroll .data-table,
+  .spreadsheet-wrap .data-table {
+    min-width: 860px;
+  }
+
+  .topbar {
+    position: sticky;
+  }
+}
+
 .dashboard-kpi-card .kpi-label {
   color: #5a6d89;
   font-size: 0.77rem;

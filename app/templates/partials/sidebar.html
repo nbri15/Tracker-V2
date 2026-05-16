@@ -1,4 +1,9 @@
-<aside class="sidebar bg-dark text-white p-3">
+<aside class="sidebar offcanvas-lg offcanvas-start bg-dark text-white p-3" tabindex="-1" id="appSidebar" aria-labelledby="appSidebarLabel">
+  <div class="offcanvas-header d-lg-none px-0 pb-2">
+    <h5 class="offcanvas-title text-white" id="appSidebarLabel">Class Compass menu</h5>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body p-0">
   <div class="sidebar-brand mb-4">
     <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}"
          alt="Class Compass logo"
@@ -66,4 +71,5 @@
       {% endif %}
     {% endif %}
   </nav>
+  </div>
 </aside>
