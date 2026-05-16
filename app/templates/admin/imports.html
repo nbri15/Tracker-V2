@@ -2,8 +2,30 @@
 {% block title %}Imports{% endblock %}
 {% set page_heading = 'Import & Export Centre' %}
 {% block content %}
+{% if demo_mode %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center">
+  <div><strong>DEMO MODE</strong> — changes affect demo data only.</div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-dark" href="{{ url_for('admin.setup_checklist') }}">Reset demo school</a>
+    <a class="btn btn-sm btn-dark" href="{{ url_for('admin.setup_checklist') }}">Reseed demo data</a>
+  </div>
+</div>
+{% endif %}
 <div class="row g-4">
   <div class="col-lg-8">
+    <div class="card shadow-sm border-success">
+      <div class="card-body">
+        <h5 class="mb-3">First-time Setup Wizard</h5>
+        <ol class="list-group list-group-numbered">
+          {% for step in ['School details','Academic year','Create classes','Add teachers','Upload pupils','Configure assessments','Complete setup'] %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            {{ step }}
+            <span class="badge bg-{{ 'success' if overview.pupils > 0 and step in ['Upload pupils','Complete setup'] else 'secondary' }}">{{ loop.index }}/7</span>
+          </li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
     <div class="card shadow-sm border-primary">
       <div class="card-body">
         <h5>Download Full School Workbook</h5>
@@ -20,8 +42,34 @@
           <div class="col-md-2"><button class="btn btn-outline-primary w-100" name="confirm_save" value="0">Preview</button></div>
           <div class="col-md-2"><button class="btn btn-primary w-100" name="confirm_save" value="1">Save</button></div>
         </form>
+        <p class="text-muted small mt-2 mb-0">Preview now includes row-by-row validation, suggested fixes, and save confirmation.</p>
       </div>
     </div>
+    {% if workbook_preview %}
+    <div class="card shadow-sm mt-4">
+      <div class="card-header bg-white"><strong>Latest Preview</strong></div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">New/updated rows, warnings, and skipped rows before import is committed.</p>
+        <div class="d-flex gap-3 small mb-3">
+          <span class="badge bg-success">New/Updated: {{ workbook_preview.created + workbook_preview.updated }}</span>
+          <span class="badge bg-warning text-dark">Warnings: {{ workbook_preview.warnings }}</span>
+          <span class="badge bg-secondary">Skipped: {{ workbook_preview.skipped }}</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Sheet</th><th>Row</th><th>Status</th><th>Reason</th><th>Suggested fix</th></tr></thead>
+            <tbody>
+              {% for row in workbook_preview.rows %}
+              <tr>
+                <td>{{ row.sheet }}</td><td>{{ row.row_number }}</td><td>{{ row.status }}</td><td>{{ row.detail }}</td><td>{{ row.fix or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <div class="card shadow-sm mt-4">
       <div class="card-header bg-white"><strong>Legacy CSV Imports</strong></div>

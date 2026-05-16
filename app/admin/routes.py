@@ -8,7 +8,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Response, current_app, flash, redirect, render_template, request, url_for
+from flask import Response, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
 from sqlalchemy import and_, func, or_
@@ -1664,6 +1664,7 @@ def imports():
         'classes': demo_filter_classes(SchoolClass.query).count(),
         'pupils': demo_filter_pupils(Pupil.query).count(),
     }
+    workbook_preview = session.pop('workbook_import_preview', None)
     return render_template(
         'admin/imports.html',
         overview=overview,
@@ -1673,6 +1674,7 @@ def imports():
         sats_tabs=get_sats_exam_tabs(6, include_inactive=False),
         summary=summary,
         selected_import_type=selected_import_type,
+        workbook_preview=workbook_preview,
     )
 
 
@@ -1709,20 +1711,42 @@ def import_full_workbook():
         flash('Please upload a .xlsx workbook.', 'danger')
         return redirect(url_for('admin.imports'))
     wb = load_workbook(file, data_only=True)
-    preview_errors=[]
-    created=0
-    updated=0
-    for row in wb['Pupils'].iter_rows(min_row=2, values_only=True) if 'Pupils' in wb.sheetnames else []:
+    preview_errors = []
+    preview_table = []
+    created = 0
+    updated = 0
+    seen_pupil_rows = set()
+    valid_genders = {'male', 'female', 'm', 'f', ''}
+
+    def _preview_row(sheet_name: str, row_number: int, status: str, detail: str, fix: str = ''):
+        preview_table.append({'sheet': sheet_name, 'row_number': row_number, 'status': status, 'detail': detail, 'fix': fix})
+    for row_idx, row in enumerate(wb['Pupils'].iter_rows(min_row=2, values_only=True), start=2) if 'Pupils' in wb.sheetnames else []:
         if not _norm(row[0]) or not _norm(row[1]) or not _norm(row[3]):
+            _preview_row('Pupils', row_idx, 'skipped', 'Missing first name, last name, or class.', 'Complete required columns A, B, and D.')
+            continue
+        row_key = (_norm_key(row[0]), _norm_key(row[1]), _norm_key(row[3]))
+        if row_key in seen_pupil_rows:
+            preview_errors.append(f'Pupils row {row_idx}: duplicate row for {_norm(row[0])} {_norm(row[1])} in {_norm(row[3])}')
+            _preview_row('Pupils', row_idx, 'warning', 'Duplicate row detected.', 'Remove duplicate rows so each pupil appears once.')
+            continue
+        seen_pupil_rows.add(row_key)
+        gender_raw = _norm_key(row[4])
+        if gender_raw not in valid_genders:
+            preview_errors.append(f'Pupils row {row_idx}: invalid gender "{_norm(row[4])}"')
+            _preview_row('Pupils', row_idx, 'warning', f'Invalid gender "{_norm(row[4])}".', 'Use Male/Female or M/F.')
             continue
         school_class = demo_filter_classes(SchoolClass.query.filter_by(name=_norm(row[3]), school_id=current_user.school_id)).first()
         if not school_class:
-            preview_errors.append(f'Pupils: class not found {_norm(row[3])}')
+            preview_errors.append(f'Pupils row {row_idx}: class not found {_norm(row[3])}')
+            _preview_row('Pupils', row_idx, 'warning', f'Class "{_norm(row[3])}" does not exist.', 'Create the class first or fix the class name.')
             continue
         pupil=demo_filter_pupils(Pupil.query.filter_by(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, school_id=current_user.school_id)).first()
         if not pupil:
             pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=normalize_gender(_norm(row[4])) or '', school_id=current_user.school_id, is_demo=current_user.is_demo)
             db.session.add(pupil); created+=1
+            _preview_row('Pupils', row_idx, 'new', f'Will create pupil {_norm(row[0])} {_norm(row[1])}.')
+        else:
+            _preview_row('Pupils', row_idx, 'updated', f'Will update pupil {_norm(row[0])} {_norm(row[1])}.')
         pupil.gender=normalize_gender(_norm(row[4])) or pupil.gender or ''
         pupil.pupil_premium=_norm(row[5]).lower() in {'1','true','yes','y'}
         pupil.laps=_norm(row[6]).lower() in {'1','true','yes','y'}
@@ -1731,24 +1755,36 @@ def import_full_workbook():
         updated+=1
     for sheet, subject in [('Maths','maths'),('Reading','reading'),('SPaG','spag')]:
         if sheet not in wb.sheetnames: continue
-        for row in wb[sheet].iter_rows(min_row=2, values_only=True):
+        for row_idx, row in enumerate(wb[sheet].iter_rows(min_row=2, values_only=True), start=2):
             pupil=_find_pupil_by_class_name(row[0], row[1])
-            if not pupil: preview_errors.append(f'{sheet}: pupil not matched {_norm(row[1])}'); continue
+            if not pupil:
+                preview_errors.append(f'{sheet} row {row_idx}: pupil not matched {_norm(row[1])}')
+                _preview_row(sheet, row_idx, 'warning', f'Pupil "{_norm(row[1])}" not found.', 'Check class and pupil name match exactly.')
+                continue
             term=_norm(row[2]).lower()
-            if term not in {'autumn','spring','summer'}: preview_errors.append(f'{sheet}: invalid term {term}'); continue
+            if term not in {'autumn','spring','summer'}:
+                preview_errors.append(f'{sheet} row {row_idx}: invalid term {term}')
+                _preview_row(sheet, row_idx, 'warning', f'Invalid term "{_norm(row[2])}".', 'Use Autumn, Spring, or Summer.')
+                continue
             r=SubjectResult.query.filter_by(pupil_id=pupil.id, school_id=current_user.school_id, academic_year=get_current_academic_year(), term=term, subject=subject).first()
             if not r:
                 r=SubjectResult(pupil_id=pupil.id, school_id=current_user.school_id, academic_year=get_current_academic_year(), term=term, subject=subject)
                 db.session.add(r)
-            r.paper_1_score=int(row[3]) if row[3] not in (None,'') else None
-            r.paper_2_score=int(row[4]) if row[4] not in (None,'') else None
+            try:
+                r.paper_1_score=int(row[3]) if row[3] not in (None,'') else None
+                r.paper_2_score=int(row[4]) if row[4] not in (None,'') else None
+            except (TypeError, ValueError):
+                preview_errors.append(f'{sheet} row {row_idx}: invalid score value.')
+                _preview_row(sheet, row_idx, 'warning', 'Invalid score format.', 'Use numeric values only.')
+                continue
             r.combined_score=(r.paper_1_score or 0)+(r.paper_2_score or 0) if r.paper_1_score is not None and r.paper_2_score is not None else None
             r.notes=_norm(row[5])
+            _preview_row(sheet, row_idx, 'updated', f'Will import {sheet} data for {_norm(row[1])}.')
     if 'Phonics' in wb.sheetnames:
-        for row in wb['Phonics'].iter_rows(min_row=2, values_only=True):
+        for row_idx, row in enumerate(wb['Phonics'].iter_rows(min_row=2, values_only=True), start=2):
             pupil = _find_pupil_by_class_name(row[0], row[1])
             if not pupil:
-                preview_errors.append(f'Phonics: pupil not matched {_norm(row[1])}')
+                preview_errors.append(f'Phonics row {row_idx}: pupil not matched {_norm(row[1])}')
                 continue
             test_name = _norm(row[2])
             if not test_name:
@@ -1783,7 +1819,7 @@ def import_full_workbook():
                 )
                 db.session.add(result)
             result.score = score_value
-            preview_errors.append(f'Phonics: score will be saved for {_norm(row[1])} ({column.name})')
+            _preview_row('Phonics', row_idx, 'updated', f'Will save score for {_norm(row[1])} ({column.name}).')
     if 'SATs' in wb.sheetnames:
         for row in wb['SATs'].iter_rows(min_row=2, values_only=True):
             pupil = _find_pupil_by_class_name(row[0], row[1])
@@ -1850,10 +1886,18 @@ def import_full_workbook():
                 preview_errors.append(f'SATs: values to import {_norm(row[1])} {assessment_point}: {", ".join(imported_values)}')
     if request.form.get('confirm_save')!='1':
         db.session.rollback()
+        session['workbook_import_preview'] = {
+            'rows': preview_table[:120],
+            'created': created,
+            'updated': updated,
+            'skipped': len([row for row in preview_table if row['status'] == 'skipped']),
+            'warnings': len([row for row in preview_table if row['status'] == 'warning']),
+        }
         for e in preview_errors[:20]: flash(e,'warning')
         flash(f'Preview complete. {created} pupils would be created/updated. Re-upload and click Save Workbook Import to apply.', 'info')
         return redirect(url_for('admin.imports'))
     db.session.commit()
+    log_audit_event('import_full_workbook', 'school', current_user.school_id or 0, school_id=current_user.school_id, details=f'created={created};updated={updated};warnings={len(preview_errors)}')
     for subject in ('maths', 'reading', 'spag'):
         for term in ('autumn', 'spring', 'summer'):
             recalculate_subject_results_for_scope(6, subject, term, academic_year=get_current_academic_year())
