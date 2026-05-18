@@ -1,21 +1,10 @@
-<aside class="sidebar offcanvas-lg offcanvas-start bg-dark text-white p-3" tabindex="-1" id="appSidebar" aria-labelledby="appSidebarLabel">
+<aside class="sidebar offcanvas-lg offcanvas-start bg-dark text-white" tabindex="-1" id="appSidebar" aria-labelledby="appSidebarLabel">
   <div class="offcanvas-header d-lg-none px-0 pb-2">
     <h5 class="offcanvas-title text-white" id="appSidebarLabel">Class Compass menu</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
   </div>
-  <div class="offcanvas-body p-0">
-  <div class="sidebar-brand mb-4">
-    <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}"
-         alt="Class Compass logo"
-         class="sidebar-logo-full">
-    {% if is_demo_user() %}
-      <div class="mt-2">
-        <span class="badge text-bg-warning text-uppercase">Demo Mode</span>
-      </div>
-    {% endif %}
-  </div>
-
-  <nav class="nav flex-column gap-1">
+  <div class="offcanvas-body p-3 p-xl-3 d-flex flex-column">
+  <nav class="nav flex-column gap-1 sidebar-nav">
     {% if current_user.is_executive_admin %}
       <div class="text-uppercase small text-white-50 mt-1 mb-1">Executive</div>
       <a class="nav-link text-white {% if request.endpoint in ['executive.schools', 'executive.school_detail'] %}active{% endif %}" href="{{ url_for('executive.schools') }}">Schools</a>
@@ -71,5 +60,16 @@
       {% endif %}
     {% endif %}
   </nav>
+
+  <div class="sidebar-brand mt-auto pt-3">
+    <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}"
+         alt="Class Compass logo"
+         class="sidebar-logo-full">
+    {% if is_demo_user() %}
+      <div class="mt-2">
+        <span class="badge text-bg-warning text-uppercase sidebar-demo-badge">Demo Mode</span>
+      </div>
+    {% endif %}
+  </div>
   </div>
 </aside>
