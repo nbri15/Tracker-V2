@@ -181,6 +181,14 @@ input[type="number"] {
   max-width: 280px;
 }
 
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  padding: 0;
+}
+
 .form-control:focus,
 .form-select:focus {
   border-color: #7ea8ef;
@@ -762,12 +770,23 @@ input[type="number"] {
 
 
 @media (min-width: 1200px) {
+  table th,
+  table td {
+    white-space: normal;
+  }
+
+  .admin-table th,
+  .admin-table td {
+    vertical-align: middle;
+  }
+
   .form-control,
   .form-select,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"] {
-    max-width: 280px;
+    max-width: 260px;
   }
 
   .form-grid {
@@ -780,8 +799,12 @@ input[type="number"] {
 
   .btn,
   .compact-button,
-  .button {
+  .button,
+  button {
     min-height: 40px;
+    width: auto;
+    max-width: max-content;
+    white-space: nowrap;
   }
 
   .sidebar {
@@ -840,6 +863,7 @@ input[type="number"] {
   .form-select,
   select,
   input[type="text"],
+  input[type="password"],
   input[type="number"] {
     max-width: 100%;
   }
@@ -854,7 +878,8 @@ input[type="number"] {
   }
 
   .form-grid .btn,
-  .form-actions .btn {
+  .form-actions .btn,
+  .user-actions .btn {
     width: 100%;
     min-height: 44px;
   }
@@ -1076,18 +1101,71 @@ input[type="number"] {
   overflow: visible;
 }
 
+th {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
 .table td,
 .table th {
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .promotion-table .promotion-count-cell {
-  width: 1%;
-  white-space: nowrap;
+  width: 100px;
+  text-align: center;
 }
 
 .promotion-table .promotion-destination-cell {
-  min-width: 190px;
+  min-width: 220px;
+}
+
+.promotion-table {
+  width: 100%;
+  table-layout: auto;
+}
+
+.promotion-table th,
+.promotion-table td {
+  white-space: nowrap;
+}
+
+.promotion-table .class-col {
+  min-width: 140px;
+}
+
+.promotion-table .count-col {
+  width: 100px;
+  text-align: center;
+}
+
+.promotion-table .destination-col {
+  min-width: 220px;
+}
+
+.promotion-table select {
+  min-width: 220px;
+  max-width: 260px;
+}
+
+.user-row-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.user-row-form .form-control,
+.user-row-form .form-select {
+  max-width: 220px;
+}
+
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .promotion-warning-text {

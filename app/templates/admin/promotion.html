@@ -12,12 +12,12 @@
           <input type="hidden" name="action" value="promote">
           <input type="hidden" name="academic_year" value="{{ academic_year }}">
           <div class="table-responsive">
-            <table class="table table-sm align-middle promotion-table">
+            <table class="table table-sm align-middle promotion-table admin-table">
               <thead>
                 <tr>
-                  <th>Current class</th>
-                  <th>Active pupils</th>
-                  <th>Promote into</th>
+                  <th class="class-col">Current class</th>
+                  <th class="count-col">Active pupils</th>
+                  <th class="destination-col">Promote into</th>
                 </tr>
               </thead>
               <tbody>
@@ -28,8 +28,8 @@
                       <strong>{{ source.name }}</strong>
                       <div class="small text-muted">Year {{ source.year_group }}</div>
                     </td>
-                    <td class="promotion-count-cell">{{ row.active_pupil_count }}</td>
-                    <td class="promotion-destination-cell">
+                    <td class="promotion-count-cell count-col">{{ row.active_pupil_count }}</td>
+                    <td class="promotion-destination-cell destination-col">
                       {% if row.destination_classes %}
                         <select class="form-select form-select-sm compact-select" name="destination_{{ source.id }}" required>
                           {% if row.default_destination_id is none %}
@@ -50,7 +50,9 @@
               </tbody>
             </table>
           </div>
-          <button class="btn btn-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
+          <div class="form-actions">
+            <button class="btn btn-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
+          </div>
         </form>
         <div class="compact-toolbar">
           <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Archive current year snapshot</button></form>
