@@ -175,6 +175,12 @@ a:hover {
   border-radius: 0.65rem;
 }
 
+select,
+input[type="text"],
+input[type="number"] {
+  max-width: 280px;
+}
+
 .form-control:focus,
 .form-select:focus {
   border-color: #7ea8ef;
@@ -230,6 +236,7 @@ a:hover {
 .table-responsive {
   width: 100%;
   overflow-x: auto;
+  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
   border-radius: 12px;
   scrollbar-color: #b6c6df #f2f5fb;
@@ -686,6 +693,37 @@ a:hover {
   font-size: 0.9rem;
 }
 
+.compact-select {
+  width: auto;
+  min-width: 140px;
+  max-width: 240px;
+}
+
+.compact-button,
+.button {
+  width: auto;
+  min-width: fit-content;
+  padding: 0.55rem 0.9rem;
+  white-space: nowrap;
+}
+
+.compact-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.compact-toolbar label {
+  max-width: 260px;
+}
+
+.compact-toolbar select,
+.compact-toolbar input {
+  width: 100%;
+  max-width: 240px;
+}
+
 :focus-visible {
   outline: 3px solid rgba(21, 87, 214, 0.35);
   outline-offset: 2px;
@@ -724,6 +762,28 @@ a:hover {
 
 
 @media (min-width: 1200px) {
+  .form-control,
+  .form-select,
+  select,
+  input[type="text"],
+  input[type="number"] {
+    max-width: 280px;
+  }
+
+  .form-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, max-content));
+  }
+
+  .form-grid > .form-actions {
+    justify-content: flex-start;
+  }
+
+  .btn,
+  .compact-button,
+  .button {
+    min-height: 40px;
+  }
+
   .sidebar {
     width: 240px;
   }
@@ -744,6 +804,16 @@ a:hover {
 }
 
 @media (min-width: 900px) and (max-width: 1199px) {
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .btn,
+  .compact-button,
+  .button {
+    min-height: 44px;
+  }
+
   .sidebar {
     width: 220px;
   }
@@ -766,6 +836,29 @@ a:hover {
 }
 
 @media (max-width: 899px) {
+  .form-control,
+  .form-select,
+  select,
+  input[type="text"],
+  input[type="number"] {
+    max-width: 100%;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid .form-actions,
+  .form-actions {
+    justify-content: stretch;
+  }
+
+  .form-grid .btn,
+  .form-actions .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
   .sidebar {
     width: min(86vw, 320px);
   }
@@ -930,6 +1023,14 @@ a:hover {
   box-sizing: border-box;
 }
 
+.form-grid button.btn,
+.form-actions .btn,
+.compact-toolbar .btn {
+  width: auto;
+  min-height: 40px;
+  align-self: end;
+}
+
 .form-actions {
   grid-column: 1 / -1;
   display: flex;
@@ -968,6 +1069,31 @@ a:hover {
 .compact-filter-row .form-label {
   font-size: 0.78rem;
   margin-bottom: 0.25rem;
+}
+
+.card,
+.card-body {
+  overflow: visible;
+}
+
+.table td,
+.table th {
+  overflow-wrap: anywhere;
+}
+
+.promotion-table .promotion-count-cell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.promotion-table .promotion-destination-cell {
+  min-width: 190px;
+}
+
+.promotion-warning-text {
+  display: inline-block;
+  max-width: 230px;
+  white-space: normal;
 }
 
 .table-sort-link {
