@@ -715,6 +715,12 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
 .compact-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -801,7 +807,6 @@ input[type="checkbox"] {
   .compact-button,
   .button,
   button {
-    min-height: 40px;
     width: auto;
     max-width: max-content;
     white-space: nowrap;
@@ -1149,6 +1154,20 @@ th {
   max-width: 260px;
 }
 
+.promotion-form {
+  display: block;
+  width: 100%;
+}
+
+.promotion-actions {
+  margin-top: 0.75rem;
+  justify-content: flex-start;
+}
+
+.promotion-secondary-actions {
+  align-items: center;
+}
+
 .user-row-form {
   display: flex;
   flex-wrap: wrap;
@@ -1166,6 +1185,19 @@ th {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.admin-users-table .actions-col {
+  min-width: 360px;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  vertical-align: middle;
+}
+
+.status-check .form-check-label {
+  margin-bottom: 0;
 }
 
 .promotion-warning-text {
