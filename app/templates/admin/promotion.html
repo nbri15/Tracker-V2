@@ -8,11 +8,11 @@
       <div class="card-header bg-white"><strong>Promotion tools</strong></div>
       <div class="card-body">
         <p class="text-muted">Current working academic year: <strong>{{ academic_year }}</strong>. Next year: <strong>{{ next_year }}</strong>.</p>
-        <form method="post" class="form-grid mb-3">
+        <form method="post" class="form-grid compact-toolbar mb-3">
           <input type="hidden" name="action" value="promote">
           <input type="hidden" name="academic_year" value="{{ academic_year }}">
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle promotion-table">
               <thead>
                 <tr>
                   <th>Current class</th>
@@ -28,10 +28,10 @@
                       <strong>{{ source.name }}</strong>
                       <div class="small text-muted">Year {{ source.year_group }}</div>
                     </td>
-                    <td>{{ row.active_pupil_count }}</td>
-                    <td style="min-width: 220px;">
+                    <td class="promotion-count-cell">{{ row.active_pupil_count }}</td>
+                    <td class="promotion-destination-cell">
                       {% if row.destination_classes %}
-                        <select class="form-select form-select-sm" name="destination_{{ source.id }}" required>
+                        <select class="form-select form-select-sm compact-select" name="destination_{{ source.id }}" required>
                           {% if row.default_destination_id is none %}
                             <option value="">Choose destination class</option>
                           {% endif %}
@@ -42,7 +42,7 @@
                           {% endfor %}
                         </select>
                       {% else %}
-                        <span class="text-muted small">No next-year class available. Pupils will be marked inactive.</span>
+                        <span class="text-muted small promotion-warning-text">No next-year class available. Pupils will be marked inactive.</span>
                       {% endif %}
                     </td>
                   </tr>
@@ -50,11 +50,11 @@
               </tbody>
             </table>
           </div>
-          <button class="btn btn-primary" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
+          <button class="btn btn-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
         </form>
-        <div class="d-flex gap-2 flex-wrap">
-          <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Archive current year snapshot</button></form>
-          <a class="btn btn-outline-secondary" href="{{ url_for('admin.export_history', academic_year=academic_year) }}">Export history CSV</a>
+        <div class="compact-toolbar">
+          <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Archive current year snapshot</button></form>
+          <a class="btn btn-outline-secondary compact-button" href="{{ url_for('admin.export_history', academic_year=academic_year) }}">Export history CSV</a>
         </div>
       </div>
     </div>
