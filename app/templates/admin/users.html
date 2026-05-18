@@ -30,7 +30,7 @@
     <div class="card shadow-sm">
       <div class="card-header bg-white"><strong>Existing users</strong></div>
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0 admin-table">
+        <table class="table table-sm align-middle mb-0 admin-table admin-users-table">
           <thead class="table-light"><tr><th>Username</th><th>Role</th><th>Assigned class</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             {% for user in teachers %}
@@ -39,16 +39,16 @@
                 <td>{{ user.role }}</td>
                 <td>{% for school_class in classes if school_class.teacher_id == user.id %}{{ school_class.name }}{% if not loop.last %}, {% endif %}{% else %}Unassigned{% endfor %}</td>
                 <td>{{ 'Active' if user.is_active else 'Inactive' }}</td>
-                <td style="min-width: 360px;">
+                <td class="actions-col">
                   <form method="post" class="user-row-form">
                     <input type="hidden" name="action" value="update">
                     <input type="hidden" name="user_id" value="{{ user.id }}">
                     <input type="text" name="username_{{ user.id }}" value="{{ user.username }}" class="form-control form-control-sm">
                     <select name="class_id_{{ user.id }}" class="form-select form-select-sm"><option value="">Unassigned</option>{% for school_class in classes %}<option value="{{ school_class.id }}" {% if school_class.teacher_id == user.id %}selected{% endif %}>{{ school_class.name }}</option>{% endfor %}</select>
-                    <div class="form-check compact-check"><input class="form-check-input" type="checkbox" name="is_active_{{ user.id }}" id="user_active_{{ user.id }}" {% if user.is_active %}checked{% endif %}><label class="form-check-label small" for="user_active_{{ user.id }}">Active login</label></div>
-                    <div class="user-actions ms-auto">
-                      <a href="{{ url_for('admin.reset_user_password', user_id=user.id) }}" class="btn btn-outline-secondary btn-sm">Reset Password</a>
+                    <div class="form-check compact-check status-check"><input class="form-check-input" type="checkbox" name="is_active_{{ user.id }}" id="user_active_{{ user.id }}" {% if user.is_active %}checked{% endif %}><label class="form-check-label small" for="user_active_{{ user.id }}">Active login</label></div>
+                    <div class="user-actions">
                       <button class="btn btn-outline-primary btn-sm">Save</button>
+                      <a href="{{ url_for('admin.reset_user_password', user_id=user.id) }}" class="btn btn-outline-secondary btn-sm">Reset Password</a>
                       {% set disable_delete = demo_mode or user.id == current_user.id or (user.is_admin and active_admin_count <= 1) %}
                       <button
                         class="btn btn-outline-danger btn-sm"

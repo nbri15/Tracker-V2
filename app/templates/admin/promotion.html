@@ -8,10 +8,10 @@
       <div class="card-header bg-white"><strong>Promotion tools</strong></div>
       <div class="card-body">
         <p class="text-muted">Current working academic year: <strong>{{ academic_year }}</strong>. Next year: <strong>{{ next_year }}</strong>.</p>
-        <form method="post" class="form-grid compact-toolbar mb-3">
+        <form method="post" class="promotion-form mb-3">
           <input type="hidden" name="action" value="promote">
           <input type="hidden" name="academic_year" value="{{ academic_year }}">
-          <div class="table-responsive">
+          <div class="table-responsive table-scroll">
             <table class="table table-sm align-middle promotion-table admin-table">
               <thead>
                 <tr>
@@ -50,11 +50,11 @@
               </tbody>
             </table>
           </div>
-          <div class="form-actions">
+          <div class="form-actions promotion-actions">
             <button class="btn btn-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
           </div>
         </form>
-        <div class="compact-toolbar">
+        <div class="compact-toolbar promotion-secondary-actions">
           <form method="post"><input type="hidden" name="action" value="snapshot"><input type="hidden" name="academic_year" value="{{ academic_year }}"><button class="btn btn-outline-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Archive current year snapshot</button></form>
           <a class="btn btn-outline-secondary compact-button" href="{{ url_for('admin.export_history', academic_year=academic_year) }}">Export history CSV</a>
         </div>
