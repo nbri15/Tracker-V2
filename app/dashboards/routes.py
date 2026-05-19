@@ -317,16 +317,23 @@ def sats_simple_add_exam():
 
 
 @dashboards_bp.route('/api/sats/simple/settings', methods=['POST'])
+@dashboards_bp.route('/api/sats/settings/quick-save', methods=['POST'])
 @login_required
 def sats_simple_save_settings():
     data = request.get_json(silent=True) or request.form
     academic_year = str(data.get('academic_year') or get_current_academic_year())
-    exam_number = int(data.get('exam_number'))
+    exam_number = int(data.get('exam_number') or data.get('record_id') or 0)
+    if exam_number < 1:
+        return {'ok': False, 'error': 'Invalid exam'}, 400
     settings = SimpleSatsSetting.query.filter_by(school_id=current_user.school_id, academic_year=academic_year, exam_number=exam_number).first()
     if not settings:
         settings = SimpleSatsSetting(school_id=current_user.school_id, academic_year=academic_year, exam_number=exam_number)
-    for field in ['arithmetic_max', 'reasoning_1_max', 'reasoning_2_max', 'reading_max', 'spelling_max', 'grammar_max']:
-        setattr(settings, field, int(data.get(field) or getattr(settings, field)))
+    allowed = ['arithmetic_max', 'reasoning_1_max', 'reasoning_2_max', 'reading_max', 'spelling_max', 'grammar_max']
+    if data.get('field') in allowed:
+        setattr(settings, data.get('field'), int(data.get('value') or 0))
+    else:
+        for field in allowed:
+            setattr(settings, field, int(data.get(field) or getattr(settings, field)))
     settings.updated_at = datetime.now(timezone.utc)
     db.session.add(settings)
     db.session.commit()

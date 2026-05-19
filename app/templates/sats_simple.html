@@ -39,13 +39,13 @@
   </div>
 </div></div>
 
-<div id="settings-panel" class="card mb-3 d-none"><div class="card-body"><h6>Exam {{ exam_number }} max scores</h6>
+<div id="settings-panel" class="card mb-3 d-none"><div class="card-body"><h6>Exam {{ exam_number }} max scores <span class="autosave-status">Autosaves when changed</span></h6>
 <div class="row g-2">
 {% set st = settings.get(exam_number) %}
 {% for key,label,default in [('arithmetic_max','Arithmetic max',40),('reasoning_1_max','Reasoning 1 max',35),('reasoning_2_max','Reasoning 2 max',35),('reading_max','Reading max',50),('spelling_max','Spelling max',20),('grammar_max','Grammar max',50)] %}
-<div class="col-md-2"><label class="form-label">{{ label }}</label><input class="form-control form-control-sm js-setting" data-field="{{ key }}" value="{{ st[key] if st else default }}"></div>
+<div class="col-md-2"><label class="form-label">{{ label }}</label><input class="form-control form-control-sm js-setting" data-field="{{ key }}" data-autosave="true" data-autosave-url="/api/sats/settings/quick-save" data-record-id="{{ exam_number }}" data-autosave-status="#settings-status" value="{{ st[key] if st else default }}"></div>
 {% endfor %}
-<div class="col-12"><button type="button" id="save-settings" class="btn btn-sm btn-success">Save settings</button><span id="settings-status" class="ms-2"></span></div></div></div></div>
+<div class="col-12"><button type="button" id="save-settings" class="btn btn-sm btn-success">Save settings</button><span id="settings-status" class="ms-2 autosave-status"></span></div></div></div></div>
 
 <div class="card"><div class="card-body p-0"><div class="sats-table-wrap"><table class="table table-sm mb-0 table-sats"><thead><tr><th class="sticky-col">Pupil</th><th class="col-score">Arithmetic</th><th class="col-score">Reasoning 1</th><th class="col-score">Reasoning 2</th><th class="col-combined">Maths Combined</th><th class="col-scaled">Maths Scaled</th><th class="col-score">Reading</th><th class="col-scaled">Reading Scaled</th><th class="col-score">Spelling</th><th class="col-score">Grammar</th><th class="col-combined">SPaG Combined</th><th class="col-scaled">SPaG Scaled</th></tr></thead><tbody>
 {% for p in pupils %}{% set r=result_map.get(p.id) %}{% set prev=scores_by_pupil_exam.get(p.id, {}).get(exam_number-1) %}<tr data-pupil="{{ p.id }}"><td class="sticky-col">{{ p.full_name }}</td>

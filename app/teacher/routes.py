@@ -479,6 +479,34 @@ def interventions():
     )
 
 
+
+
+@teacher_bp.route('/api/interventions/quick-save', methods=['POST'])
+@login_required
+@teacher_required
+def interventions_quick_save():
+    data = request.get_json(silent=True) or {}
+    school_class = get_primary_class_for_user(current_user)
+    if not school_class:
+        return {'ok': False}, 400
+    try:
+        record_id = int(data.get('record_id') or 0)
+    except (TypeError, ValueError):
+        return {'ok': False}, 400
+    record = Intervention.query.join(Intervention.pupil).filter(Intervention.id == record_id, Pupil.class_id == school_class.id, Pupil.school_id == current_user.school_id).first()
+    if not record:
+        return {'ok': False}, 404
+    field = (data.get('field') or '').strip()
+    if field not in {'note', 'is_active'}:
+        return {'ok': False}, 400
+    value = data.get('value')
+    if field == 'note':
+        record.note = (value or '').strip() or None
+    else:
+        record.is_active = bool(value)
+    db.session.add(record); db.session.commit()
+    return {'ok': True}
+
 @teacher_bp.route('/sats', methods=['GET', 'POST'])
 @login_required
 @teacher_required
