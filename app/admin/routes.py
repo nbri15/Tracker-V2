@@ -1166,7 +1166,7 @@ def pupils():
         pupil_status_filter_choices=PUPIL_STATUS_FILTER_CHOICES,
         class_id_filter=class_id_raw,
         send_filter=send_filter,
-        class_options=demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all(),
+        class_options=demo_filter_classes(SchoolClass.query.filter(SchoolClass.is_active.is_(True))).order_by(SchoolClass.year_group, SchoolClass.name).all(),
     )
 
 
@@ -1470,6 +1470,8 @@ def settings_quick_save():
         return {'ok': False, 'error': 'Field not allowed'}, 400
 
     school_id = current_school_id()
+    if not current_user.is_executive_admin:
+        school_id = current_user.school_id
     try:
         if school_id is None and data.get('school_id') not in (None, ''):
             school_id = int(data.get('school_id'))
@@ -1499,7 +1501,7 @@ def settings_quick_save():
     if setting is None:
         return {'ok': False, 'error': 'Setting row not found'}, 404
     if not require_same_school(setting):
-        return {'ok': False, 'error': 'Forbidden for selected school context'}, 403
+        return {'ok': False, 'error': 'Forbidden for selected school context', 'selected_school_id': school_id}, 403
 
     raw_value = data.get('value')
     try:
