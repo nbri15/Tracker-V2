@@ -596,7 +596,7 @@ def classes():
     filter_teacher = request.args.get('teacher_id', '').strip()
     filter_class = request.args.get('class_id', '').strip()
     show_archived = request.args.get('show_archived', '0').strip() == '1'
-    subgroup = request.args.get('subgroup', 'all').strip() or 'all'
+    send_filter = (request.args.get('send', 'all') or 'all').strip().lower()
     sort = request.args.get('sort', 'year_group')
 
     query = demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(True))
@@ -608,7 +608,7 @@ def classes():
         query = query.filter(SchoolClass.id == int(filter_class))
 
     classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
-    rows = [build_class_overview_row(school_class, academic_year, subgroup) for school_class in classes]
+    rows = [build_class_overview_row(school_class, academic_year, filters={'send': send_filter}) for school_class in classes]
     rows = sort_class_rows(rows, sort)
     return render_template(
         'admin/classes.html',
@@ -619,8 +619,7 @@ def classes():
         filter_class=filter_class,
         show_archived=show_archived,
         sort=sort,
-        subgroup=subgroup,
-        subgroup_filters=SUBGROUP_FILTERS,
+        send_filter=send_filter,
         sort_options=CLASS_SORT_OPTIONS,
         teacher_options=_teacher_options(),
         class_options=demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
@@ -1469,14 +1468,15 @@ def settings_quick_save():
     if field not in allowed:
         return {'ok': False, 'error': 'Field not allowed'}, 400
 
-    school_id = current_school_id()
-    if not current_user.is_executive_admin:
+    selected_school_id = current_school_id()
+    if current_user.is_executive_admin:
+        if selected_school_id is None:
+            return {'ok': False, 'error': 'Select a school before editing settings'}, 400
+        school_id = selected_school_id
+    else:
         school_id = current_user.school_id
-    try:
-        if school_id is None and data.get('school_id') not in (None, ''):
-            school_id = int(data.get('school_id'))
-    except (TypeError, ValueError):
-        return {'ok': False, 'error': 'Invalid school_id'}, 400
+        if school_id is None:
+            return {'ok': False, 'error': 'Your account is not linked to a school'}, 403
 
     setting = None
     try:
@@ -1500,8 +1500,8 @@ def settings_quick_save():
         setting = query.first()
     if setting is None:
         return {'ok': False, 'error': 'Setting row not found'}, 404
-    if not require_same_school(setting):
-        return {'ok': False, 'error': 'Forbidden for selected school context', 'selected_school_id': school_id}, 403
+    if setting.school_id != school_id:
+        return {'ok': False, 'error': 'Forbidden for selected school context', 'setting_school_id': setting.school_id, 'selected_school_id': school_id}, 403
 
     raw_value = data.get('value')
     try:
@@ -2023,13 +2023,13 @@ def headline_report():
     if subject == 'sats' and year_group is None:
         year_group_raw = '6'
         year_group = 6
-    subgroup = (request.args.get('subgroup', 'all') or 'all').strip() or 'all'
+    send_filter = (request.args.get('send', 'all') or 'all').strip().lower()
     pupil_filters = build_admin_pupil_filter_state(request.args)
+    pupil_filters['send'] = send_filter
     report = build_headline_report(
         subject=subject,
         academic_year=academic_year,
         year_group=year_group,
-        subgroup=subgroup,
         filters=pupil_filters,
         tracker_key=tracker_key or None,
     )
@@ -2058,11 +2058,10 @@ def headline_report():
         tracker_options=tracker_options,
         academic_year=academic_year,
         year_group=year_group_raw,
-        subgroup=subgroup,
+        send_filter=send_filter,
         pupil_filters=pupil_filters,
         subjects=['writing', 'reading', 'maths', 'spag', 'eyfs', 'phonics', 'times_tables', 'sats'],
-        subgroup_filters=SUBGROUP_FILTERS,
-        boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
+                boolean_filter_choices=BOOLEAN_FILTER_CHOICES,
     )
 
 
@@ -2081,13 +2080,13 @@ def export_headline_report():
         year_group = 4
     if subject == 'sats' and year_group is None:
         year_group = 6
-    subgroup = (request.args.get('subgroup', 'all') or 'all').strip() or 'all'
+    send_filter = (request.args.get('send', 'all') or 'all').strip().lower()
     pupil_filters = build_admin_pupil_filter_state(request.args)
+    pupil_filters['send'] = send_filter
     report = build_headline_report(
         subject=subject,
         academic_year=academic_year,
         year_group=year_group,
-        subgroup=subgroup,
         filters=pupil_filters,
         tracker_key=tracker_key or None,
     )
@@ -2098,7 +2097,7 @@ def export_headline_report():
     writer.writerow(['Subject', report['subject_label']])
     writer.writerow(['Academic year', academic_year])
     writer.writerow(['Year group', f"Year {year_group}" if year_group else 'Whole school'])
-    writer.writerow(['Subgroup', SUBGROUP_FILTERS.get(subgroup, subgroup.title())])
+    writer.writerow(['SEND', {'all':'All','yes':'Yes','no':'No'}.get(send_filter, 'All')])
     writer.writerow([])
     header = [report.get('row_header_label', 'Year group')]
     for term in report['buckets']:
