@@ -1453,29 +1453,72 @@ def settings():
 
 
 @admin_bp.route('/api/settings/quick-save', methods=['POST'])
+@admin_bp.route('/api/admin/settings/quick-save', methods=['POST'])
 @login_required
 @admin_required
 def settings_quick_save():
     data = request.get_json(silent=True) or {}
-    try:
-        setting_id = int(data.get('record_id') or 0)
-    except (TypeError, ValueError):
-        return {'ok': False, 'error': 'Invalid record'}, 400
     field = (data.get('field') or '').strip()
+    field_aliases = {
+        'working_towards_pct': 'below_are_threshold_percent',
+        'exceeding_pct': 'exceeding_threshold_percent',
+    }
+    field = field_aliases.get(field, field)
     allowed = {'year_group', 'term', 'subject', 'paper_1_name', 'paper_1_max', 'paper_2_name', 'paper_2_max', 'combined_max', 'below_are_threshold_percent', 'exceeding_threshold_percent'}
     if field not in allowed:
         return {'ok': False, 'error': 'Field not allowed'}, 400
-    setting = AssessmentSetting.query.get_or_404(setting_id)
-    if setting.school_id != current_user.school_id:
-        return {'ok': False, 'error': 'Forbidden'}, 403
-    value = data.get('value')
+
+    school_id = current_school_id()
     try:
-        if field in {'paper_1_max', 'paper_2_max', 'combined_max', 'year_group'}:
+        if school_id is None and data.get('school_id') not in (None, ''):
+            school_id = int(data.get('school_id'))
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': 'Invalid school_id'}, 400
+
+    setting = None
+    try:
+        setting_id = int(data.get('record_id') or 0)
+    except (TypeError, ValueError):
+        setting_id = 0
+    if setting_id > 0:
+        setting = AssessmentSetting.query.get(setting_id)
+    if setting is None:
+        try:
+            year_group = int(data.get('year_group'))
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': 'Missing record_id or valid row identity'}, 400
+        subject = (data.get('subject') or '').strip()
+        term = (data.get('term') or '').strip()
+        if not subject or not term:
+            return {'ok': False, 'error': 'Missing subject/term for row identity'}, 400
+        query = AssessmentSetting.query.filter_by(year_group=year_group, subject=subject, term=term)
+        if school_id is not None:
+            query = query.filter(AssessmentSetting.school_id == school_id)
+        setting = query.first()
+    if setting is None:
+        return {'ok': False, 'error': 'Setting row not found'}, 404
+    if not require_same_school(setting):
+        return {'ok': False, 'error': 'Forbidden for selected school context'}, 403
+
+    raw_value = data.get('value')
+    try:
+        if field in {'paper_1_max', 'paper_2_max', 'combined_max'}:
+            if raw_value in (None, ''):
+                raise ValueError('Blank numeric value')
+            value = float(raw_value)
+            if not value.is_integer():
+                raise ValueError('Score maxima must be whole numbers')
             value = int(value)
+        elif field == 'year_group':
+            if raw_value in (None, ''):
+                raise ValueError('Blank numeric value')
+            value = int(raw_value)
         elif field in {'below_are_threshold_percent', 'exceeding_threshold_percent'}:
-            value = float(value)
+            if raw_value in (None, ''):
+                raise ValueError('Blank numeric value')
+            value = float(raw_value)
         else:
-            value = (value or '').strip()
+            value = (raw_value or '').strip()
         setattr(setting, field, value)
         payload = validate_setting_payload({
             'year_group': setting.year_group, 'subject': setting.subject, 'term': setting.term,
@@ -1486,9 +1529,13 @@ def settings_quick_save():
         })
         update_assessment_setting(setting, payload)
         db.session.add(setting); db.session.commit()
-    except (ValueError, AssessmentValidationError):
-        db.session.rollback(); return {'ok': False, 'error': 'Invalid value'}, 400
-    return {'ok': True}
+    except ValueError as exc:
+        db.session.rollback()
+        return {'ok': False, 'error': str(exc) or 'Invalid value'}, 400
+    except AssessmentValidationError as exc:
+        db.session.rollback()
+        return {'ok': False, 'error': str(exc) or 'Invalid value'}, 400
+    return {'ok': True, 'message': 'Saved'}
 @admin_bp.route('/interventions')
 @login_required
 @admin_required
