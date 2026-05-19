@@ -1457,6 +1457,7 @@ def settings():
 @login_required
 @admin_required
 def settings_quick_save():
+    print("AUTOSAVE HIT")
     data = request.get_json(silent=True) or {}
     field = (data.get('field') or '').strip()
     field_aliases = {
