@@ -8,7 +8,7 @@
     <h3 class="h4 mb-1">School headline report</h3>
     <p class="text-muted mb-0">Leadership summary of {{ report.subject_label }} outcomes by year group and term.</p>
   </div>
-  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.export_headline_report', subject=subject, tracker_key=tracker_key or None, academic_year=academic_year, year_group=year_group or None, subgroup=subgroup, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, send=pupil_filters.send, search=pupil_filters.search) }}">Download Excel-friendly CSV</a>
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin.export_headline_report', subject=subject, tracker_key=tracker_key or None, academic_year=academic_year, year_group=year_group or None, gender=pupil_filters.gender, pupil_premium=pupil_filters.pupil_premium, laps=pupil_filters.laps, service_child=pupil_filters.service_child, send=pupil_filters.send, search=pupil_filters.search) }}">Download Excel-friendly CSV</a>
 </div>
 
 <div class="card shadow-sm mb-4">
@@ -46,9 +46,9 @@
         </div>
       {% endif %}
       <div class="col-md-2">
-        <label class="form-label">Subgroup</label>
-        <select name="subgroup" class="form-select">
-          {% for value, label in subgroup_filters.items() %}<option value="{{ value }}" {% if subgroup == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        <label class="form-label">SEND</label>
+        <select name="send" class="form-select">
+          <option value='all' {% if send_filter == 'all' %}selected{% endif %}>All</option><option value='yes' {% if send_filter == 'yes' %}selected{% endif %}>Yes</option><option value='no' {% if send_filter == 'no' %}selected{% endif %}>No</option>
         </select>
       </div>
       <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select"><option value="all" {% if pupil_filters.gender == 'all' %}selected{% endif %}>All</option><option value="Female" {% if pupil_filters.gender == 'Female' %}selected{% endif %}>Female</option><option value="Male" {% if pupil_filters.gender == 'Male' %}selected{% endif %}>Male</option><option value="Non-binary" {% if pupil_filters.gender == 'Non-binary' %}selected{% endif %}>Non-binary</option><option value="Unknown" {% if pupil_filters.gender == 'Unknown' %}selected{% endif %}>Unknown</option></select></div>

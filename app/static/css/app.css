@@ -1484,3 +1484,6 @@ select.has-ghost-value {
 .autosave-ok{outline:2px solid #22c55e!important;}
 .autosave-error{outline:2px solid #ef4444!important;}
 .autosave-status{font-size:.8rem;color:#6b7280;}
+
+.mini-donut{width:34px;height:34px;border-radius:50%;position:relative;display:inline-block;vertical-align:middle;}
+.mini-donut::after{content:'';position:absolute;inset:7px;background:#fff;border-radius:50%;}
