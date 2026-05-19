@@ -88,8 +88,10 @@ def build_pupil_overview_data(pupil: Pupil, academic_year: str | None = None) ->
         'sats': [],
     }
 
+    eyfs_data = get_eyfs_data(pupil, year)
+    payload['eyfs']['foundation_rows'] = eyfs_data['foundation_rows']
     if year_group == 0:
-        payload['eyfs'] = get_eyfs_data(pupil, year)
+        payload['eyfs']['reception_rows'] = eyfs_data['reception_rows']
     elif year_group == 1:
         payload['phonics'] = get_phonics_data(pupil, year)
     elif year_group == 2:

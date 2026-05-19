@@ -58,6 +58,7 @@ def directory():
     latest_subject = _latest_subject_snapshots(pupil_ids)
 
     class_options_query = demo_filter_classes(SchoolClass.query)
+    class_options_query = class_options_query.filter(SchoolClass.is_active.is_(True))
     if current_user.is_teacher:
         class_options_query = class_options_query.filter(SchoolClass.teacher_id == current_user.id, SchoolClass.is_active.is_(True))
     class_options = class_options_query.order_by(SchoolClass.year_group, SchoolClass.name).all()
@@ -302,7 +303,7 @@ def _apply_common_filters(query, filters: dict):
         if value == 'yes':
             query = query.filter(field.is_(True))
         elif value == 'no':
-            query = query.filter(field.is_(False))
+            query = query.filter(or_(field.is_(False), field.is_(None)))
 
     search = filters.get('search', '')
     if search:
