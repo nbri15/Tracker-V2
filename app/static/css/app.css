@@ -1480,3 +1480,7 @@ select.has-ghost-value {
   .report-print-wrap { page-break-after: auto; }
 }
 .report-print-table td, .report-print-table th { white-space: nowrap; font-size: 0.85rem; }
+
+.autosave-ok{outline:2px solid #22c55e!important;}
+.autosave-error{outline:2px solid #ef4444!important;}
+.autosave-status{font-size:.8rem;color:#6b7280;}

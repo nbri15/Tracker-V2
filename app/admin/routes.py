@@ -1450,6 +1450,45 @@ def settings():
     )
 
 
+
+
+@admin_bp.route('/api/settings/quick-save', methods=['POST'])
+@login_required
+@admin_required
+def settings_quick_save():
+    data = request.get_json(silent=True) or {}
+    try:
+        setting_id = int(data.get('record_id') or 0)
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': 'Invalid record'}, 400
+    field = (data.get('field') or '').strip()
+    allowed = {'year_group', 'term', 'subject', 'paper_1_name', 'paper_1_max', 'paper_2_name', 'paper_2_max', 'combined_max', 'below_are_threshold_percent', 'exceeding_threshold_percent'}
+    if field not in allowed:
+        return {'ok': False, 'error': 'Field not allowed'}, 400
+    setting = AssessmentSetting.query.get_or_404(setting_id)
+    if setting.school_id != current_user.school_id:
+        return {'ok': False, 'error': 'Forbidden'}, 403
+    value = data.get('value')
+    try:
+        if field in {'paper_1_max', 'paper_2_max', 'combined_max', 'year_group'}:
+            value = int(value)
+        elif field in {'below_are_threshold_percent', 'exceeding_threshold_percent'}:
+            value = float(value)
+        else:
+            value = (value or '').strip()
+        setattr(setting, field, value)
+        payload = validate_setting_payload({
+            'year_group': setting.year_group, 'subject': setting.subject, 'term': setting.term,
+            'paper_1_name': setting.paper_1_name, 'paper_1_max': setting.paper_1_max,
+            'paper_2_name': setting.paper_2_name, 'paper_2_max': setting.paper_2_max,
+            'combined_max': setting.combined_max, 'below_are_threshold_percent': setting.below_are_threshold_percent,
+            'on_track_threshold_percent': setting.below_are_threshold_percent, 'exceeding_threshold_percent': setting.exceeding_threshold_percent,
+        })
+        update_assessment_setting(setting, payload)
+        db.session.add(setting); db.session.commit()
+    except (ValueError, AssessmentValidationError):
+        db.session.rollback(); return {'ok': False, 'error': 'Invalid value'}, 400
+    return {'ok': True}
 @admin_bp.route('/interventions')
 @login_required
 @admin_required

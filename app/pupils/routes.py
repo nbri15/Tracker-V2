@@ -176,6 +176,31 @@ def profile(pupil_id: int):
     )
 
 
+
+
+@pupils_bp.route('/api/pupil-profile/quick-save', methods=['POST'])
+@login_required
+@teacher_or_admin_required
+def quick_save_profile():
+    data = request.get_json(silent=True) or {}
+    try:
+        pupil_id = int(data.get('record_id') or 0)
+    except (TypeError, ValueError):
+        return {'ok': False}, 400
+    pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
+    if not _can_view_pupil(pupil):
+        return {'ok': False}, 403
+    field = (data.get('field') or '').strip()
+    allowed = {'strengths_notes', 'next_steps_notes', 'general_notes', 'pupil_premium', 'laps', 'service_child', 'send'}
+    if field not in allowed:
+        return {'ok': False}, 400
+    if field in {'pupil_premium', 'laps', 'service_child', 'send'} and not current_user.can_manage_school:
+        return {'ok': False}, 403
+    value = data.get('value')
+    setattr(pupil, field, bool(value) if field in {'pupil_premium','laps','service_child','send'} else ((value or '').strip() or None))
+    db.session.add(pupil); db.session.commit()
+    return {'ok': True}
 @pupils_bp.route('/<int:pupil_id>/archive', methods=['POST'])
 @login_required
 @teacher_or_admin_required

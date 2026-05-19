@@ -83,24 +83,24 @@
     <div class="card-body">
       <form method="post">
       {% if current_user.can_manage_school %}<div class="d-flex gap-3 mb-3">
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="pupil_premium" id="p_pp" {% if pupil.pupil_premium %}checked{% endif %}><label class="form-check-label" for="p_pp">Pupil Premium</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="laps" id="p_laps" {% if pupil.laps %}checked{% endif %}><label class="form-check-label" for="p_laps">LAPS</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="service_child" id="p_service" {% if pupil.service_child %}checked{% endif %}><label class="form-check-label" for="p_service">Service child</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" name="send" id="p_send" {% if pupil.send %}checked{% endif %}><label class="form-check-label" for="p_send">SEND</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="pupil_premium" id="p_pp" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="pupil_premium" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.pupil_premium %}checked{% endif %}><label class="form-check-label" for="p_pp">Pupil Premium</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="laps" id="p_laps" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="laps" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.laps %}checked{% endif %}><label class="form-check-label" for="p_laps">LAPS</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="service_child" id="p_service" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="service_child" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.service_child %}checked{% endif %}><label class="form-check-label" for="p_service">Service child</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="send" id="p_send" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="send" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.send %}checked{% endif %}><label class="form-check-label" for="p_send">SEND</label></div>
       </div>{% endif %}
         <div class="mb-3">
           <label class="form-label">Strengths</label>
-          <textarea class="form-control" name="strengths_notes" rows="3">{{ pupil.strengths_notes or '' }}</textarea>
+          <textarea class="form-control" name="strengths_notes" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="strengths_notes" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" rows="3">{{ pupil.strengths_notes or '' }}</textarea>
         </div>
         <div class="mb-3">
           <label class="form-label">Next steps</label>
-          <textarea class="form-control" name="next_steps_notes" rows="3">{{ pupil.next_steps_notes or '' }}</textarea>
+          <textarea class="form-control" name="next_steps_notes" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="next_steps_notes" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" rows="3">{{ pupil.next_steps_notes or '' }}</textarea>
         </div>
         <div class="mb-3">
           <label class="form-label">General notes</label>
-          <textarea class="form-control" name="general_notes" rows="4">{{ pupil.general_notes or '' }}</textarea>
+          <textarea class="form-control" name="general_notes" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="general_notes" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" rows="4">{{ pupil.general_notes or '' }}</textarea>
         </div>
-        <button class="btn btn-primary btn-sm">Save notes</button>
+        <div class="autosave-status" id="pupil-autosave-status">Autosaves when changed</div><button class="btn btn-primary btn-sm">Save notes</button>
       </form>
     </div>
   </div>
