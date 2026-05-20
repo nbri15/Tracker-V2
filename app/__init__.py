@@ -94,6 +94,11 @@ def register_error_handlers(app: Flask) -> None:
 def register_request_guards(app: Flask) -> None:
     """Apply application-wide access guards."""
 
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        db.session.remove()
+
+
     @app.before_request
     def force_password_change():
         if not current_user.is_authenticated or not getattr(current_user, 'require_password_change', False):
