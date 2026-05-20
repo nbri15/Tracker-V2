@@ -39,10 +39,10 @@
       <div class="card-body">
         <form method="post" action="{{ url_for('admin.import_full_workbook') }}" enctype="multipart/form-data" class="form-grid">
           <div class="col-md-4">
-            <label class="form-label">Academic Year</label>
-            <select name="academic_year" class="form-select" required>
-              {% for year in academic_year_options %}
-              <option value="{{ year }}" {% if year == current_year %}selected{% endif %}>{{ year }}</option>
+            <label class="form-label">Academic year this data belongs to</label>
+            <select name="academic_year_id" class="form-select" required>
+              {% for year in years %}
+              <option value="{{ year.id }}" {% if year.id|string == selected_year_id|string %}selected{% endif %}>{{ year.label }}</option>
               {% endfor %}
             </select>
           </div>
@@ -58,7 +58,7 @@
     <div class="card shadow-sm mt-4">
       <div class="card-header bg-white"><strong>Latest Preview</strong></div>
       <div class="card-body">
-        <p class="small text-muted mb-2">New/updated rows, warnings, and skipped rows before import is committed. Academic year: <strong>{{ workbook_preview.academic_year or current_year }}</strong>.</p>
+        <p class="small text-muted mb-2">New/updated rows, warnings, and skipped rows before import is committed. Academic year: <strong>{{ workbook_preview.academic_year or selected_year or current_year }}</strong>.</p>
         <div class="d-flex gap-3 small mb-3">
           <span class="badge bg-success">New/Updated: {{ workbook_preview.created + workbook_preview.updated }}</span>
           <span class="badge bg-warning text-dark">Warnings: {{ workbook_preview.warnings }}</span>

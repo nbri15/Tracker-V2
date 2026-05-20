@@ -11,14 +11,13 @@ class AcademicYear(db.Model):
     __tablename__ = 'academic_years'
 
     id = db.Column(db.Integer, primary_key=True)
-    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
-    name = db.Column(db.String(20), nullable=False, unique=True)
+    label = db.Column(db.String(20), nullable=False, unique=True)
     is_current = db.Column(db.Boolean, nullable=False, default=False)
     is_archived = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self) -> str:
-        return f'<AcademicYear {self.name}>'
+        return f'<AcademicYear {self.label}>'
 
 
 class PupilClassHistory(db.Model):
