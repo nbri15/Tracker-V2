@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import time
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import date, datetime, timedelta, timezone
@@ -1846,12 +1847,64 @@ def import_full_workbook():
         flash('Please upload a .xlsx workbook.', 'danger')
         return redirect(url_for('admin.imports'))
     wb = load_workbook(file, data_only=True)
+    start_time = time.perf_counter()
     preview_errors = []
     preview_table = []
     created = 0
     updated = 0
     seen_pupil_rows = set()
     valid_genders = {'male', 'female', 'm', 'f', ''}
+    school_id = current_user.school_id
+    academic_year = get_current_academic_year()
+    batch_size = 200
+    processed_rows = 0
+
+    class_rows = demo_filter_classes(SchoolClass.query.filter_by(school_id=school_id)).all()
+    class_by_name = {_norm_key(c.name): c for c in class_rows}
+    pupil_rows = demo_filter_pupils(Pupil.query.filter_by(school_id=school_id)).all()
+    pupil_by_lookup = {
+        (_norm_key(p.first_name), _norm_key(p.last_name), p.class_id): p
+        for p in pupil_rows
+    }
+    pupil_by_class_and_name = {
+        (_norm_key(p.school_class.name) if p.school_class else '', _norm_key(f'{p.first_name} {p.last_name}')): p
+        for p in pupil_rows
+        if p.school_class
+    }
+    subject_results = SubjectResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    subject_result_map = {(r.pupil_id, r.term, r.subject): r for r in subject_results}
+    writing_results = WritingResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    writing_result_map = {(r.pupil_id, r.term): r for r in writing_results}
+    foundation_results = FoundationResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    foundation_result_map = {(r.pupil_id, r.term, r.subject): r for r in foundation_results}
+    reception_results = ReceptionTrackerEntry.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    reception_result_map = {(r.pupil_id, r.tracking_point, r.area_key): r for r in reception_results}
+    sats_results = SatsResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    sats_result_map = {(r.pupil_id, r.exam_number): r for r in sats_results}
+    sats_column_results = SatsColumnResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    sats_column_result_map = {(r.pupil_id, r.column_id): r for r in sats_column_results}
+    sats_writing_results = SatsWritingResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    sats_writing_result_map = {(r.pupil_id, r.assessment_point): r for r in sats_writing_results}
+    phonics_results = PhonicsScore.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    phonics_result_map = {(r.pupil_id, r.phonics_test_column_id): r for r in phonics_results}
+    times_table_results = TimesTableScore.query.filter_by(school_id=school_id, academic_year=academic_year).all()
+    times_table_result_map = {(r.pupil_id, r.times_table_test_column_id): r for r in times_table_results}
+
+    phonics_columns = PhonicsTestColumn.query.filter_by(school_id=school_id).all()
+    phonics_column_map: dict[tuple[int, str], PhonicsTestColumn] = {}
+    phonics_display_order_by_year: dict[int, int] = {}
+    for column in phonics_columns:
+        phonics_column_map[(column.year_group, _norm_key(column.name))] = column
+        phonics_display_order_by_year[column.year_group] = max(phonics_display_order_by_year.get(column.year_group, 0), column.display_order or 0)
+
+    def _flush_batch(sheet_name: str, row_idx: int) -> None:
+        nonlocal processed_rows
+        processed_rows += 1
+        if processed_rows % batch_size == 0:
+            db.session.flush()
+            db.session.expire_all()
+            elapsed = time.perf_counter() - start_time
+            current_app.logger.info('Importing %s sheet: %s rows processed (elapsed %.2fs)', sheet_name, processed_rows, elapsed)
 
     def _preview_row(sheet_name: str, row_number: int, status: str, detail: str, fix: str = ''):
         preview_table.append({'sheet': sheet_name, 'row_number': row_number, 'status': status, 'detail': detail, 'fix': fix})
@@ -1870,15 +1923,19 @@ def import_full_workbook():
             preview_errors.append(f'Pupils row {row_idx}: invalid gender "{_norm(row[4])}"')
             _preview_row('Pupils', row_idx, 'warning', f'Invalid gender "{_norm(row[4])}".', 'Use Male/Female or M/F.')
             continue
-        school_class = demo_filter_classes(SchoolClass.query.filter_by(name=_norm(row[3]), school_id=current_user.school_id)).first()
+        school_class = class_by_name.get(_norm_key(row[3]))
         if not school_class:
             preview_errors.append(f'Pupils row {row_idx}: class not found {_norm(row[3])}')
             _preview_row('Pupils', row_idx, 'warning', f'Class "{_norm(row[3])}" does not exist.', 'Create the class first or fix the class name.')
             continue
-        pupil=demo_filter_pupils(Pupil.query.filter_by(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, school_id=current_user.school_id)).first()
+        pupil = pupil_by_lookup.get((_norm_key(row[0]), _norm_key(row[1]), school_class.id))
         if not pupil:
-            pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=normalize_gender(_norm(row[4])) or '', school_id=current_user.school_id, is_demo=current_user.is_demo)
-            db.session.add(pupil); created+=1
+            pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=normalize_gender(_norm(row[4])) or '', school_id=school_id, is_demo=current_user.is_demo)
+            db.session.add(pupil)
+            db.session.flush()
+            pupil_by_lookup[(_norm_key(pupil.first_name), _norm_key(pupil.last_name), school_class.id)] = pupil
+            pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(f'{pupil.first_name} {pupil.last_name}'))] = pupil
+            created+=1
             _preview_row('Pupils', row_idx, 'new', f'Will create pupil {_norm(row[0])} {_norm(row[1])}.')
         else:
             _preview_row('Pupils', row_idx, 'updated', f'Will update pupil {_norm(row[0])} {_norm(row[1])}.')
@@ -1888,10 +1945,11 @@ def import_full_workbook():
         pupil.service_child=_norm(row[7]).lower() in {'1','true','yes','y'}
         pupil.send=_norm(row[8]).lower() in {'1','true','yes','y'}
         updated+=1
+        _flush_batch('Pupils', row_idx)
     for sheet, subject in [('Maths','maths'),('Reading','reading'),('SPaG','spag')]:
         if sheet not in wb.sheetnames: continue
         for row_idx, row in enumerate(wb[sheet].iter_rows(min_row=2, values_only=True), start=2):
-            pupil=_find_pupil_by_class_name(row[0], row[1])
+            pupil = pupil_by_class_and_name.get((_norm_key(row[0]), _norm_key(row[1])))
             if not pupil:
                 preview_errors.append(f'{sheet} row {row_idx}: pupil not matched {_norm(row[1])}')
                 _preview_row(sheet, row_idx, 'warning', f'Pupil "{_norm(row[1])}" not found.', 'Check class and pupil name match exactly.')
@@ -1901,10 +1959,11 @@ def import_full_workbook():
                 preview_errors.append(f'{sheet} row {row_idx}: invalid term {term}')
                 _preview_row(sheet, row_idx, 'warning', f'Invalid term "{_norm(row[2])}".', 'Use Autumn, Spring, or Summer.')
                 continue
-            r=SubjectResult.query.filter_by(pupil_id=pupil.id, school_id=current_user.school_id, academic_year=get_current_academic_year(), term=term, subject=subject).first()
+            r = subject_result_map.get((pupil.id, term, subject))
             if not r:
-                r=SubjectResult(pupil_id=pupil.id, school_id=current_user.school_id, academic_year=get_current_academic_year(), term=term, subject=subject)
+                r=SubjectResult(pupil_id=pupil.id, school_id=school_id, academic_year=academic_year, term=term, subject=subject)
                 db.session.add(r)
+                subject_result_map[(pupil.id, term, subject)] = r
             try:
                 r.paper_1_score=int(row[3]) if row[3] not in (None,'') else None
                 r.paper_2_score=int(row[4]) if row[4] not in (None,'') else None
@@ -1915,9 +1974,10 @@ def import_full_workbook():
             r.combined_score=(r.paper_1_score or 0)+(r.paper_2_score or 0) if r.paper_1_score is not None and r.paper_2_score is not None else None
             r.notes=_norm(row[5])
             _preview_row(sheet, row_idx, 'updated', f'Will import {sheet} data for {_norm(row[1])}.')
+            _flush_batch(sheet, row_idx)
     if 'Phonics' in wb.sheetnames:
         for row_idx, row in enumerate(wb['Phonics'].iter_rows(min_row=2, values_only=True), start=2):
-            pupil = _find_pupil_by_class_name(row[0], row[1])
+            pupil = pupil_by_class_and_name.get((_norm_key(row[0]), _norm_key(row[1])))
             if not pupil:
                 preview_errors.append(f'Phonics row {row_idx}: pupil not matched {_norm(row[1])}')
                 continue
@@ -1934,30 +1994,37 @@ def import_full_workbook():
             except (TypeError, ValueError):
                 preview_errors.append(f'Phonics: invalid score "{_norm(score_raw)}" for {_norm(row[1])} ({test_name})')
                 continue
-            column, is_new_column = _find_or_create_phonics_column(pupil.school_class.year_group, test_name)
+            col_key = (pupil.school_class.year_group, _norm_key(test_name))
+            column = phonics_column_map.get(col_key)
+            is_new_column = False
+            if not column:
+                next_order = phonics_display_order_by_year.get(pupil.school_class.year_group, 0) + 1
+                phonics_display_order_by_year[pupil.school_class.year_group] = next_order
+                column = PhonicsTestColumn(school_id=school_id, year_group=pupil.school_class.year_group, name=_norm(test_name), display_order=next_order, is_active=True)
+                db.session.add(column)
+                db.session.flush()
+                phonics_column_map[col_key] = column
+                is_new_column = True
             if is_new_column:
                 preview_errors.append(f'Phonics: new test column will be created ({column.name}, Year {column.year_group})')
             else:
                 preview_errors.append(f'Phonics: existing test column used ({column.name}, Year {column.year_group})')
-            result = PhonicsScore.query.filter_by(
-                school_id=current_user.school_id,
-                pupil_id=pupil.id,
-                academic_year=get_current_academic_year(),
-                phonics_test_column_id=column.id,
-            ).first()
+            result = phonics_result_map.get((pupil.id, column.id))
             if not result:
                 result = PhonicsScore(
-                    school_id=current_user.school_id,
+                    school_id=school_id,
                     pupil_id=pupil.id,
-                    academic_year=get_current_academic_year(),
+                    academic_year=academic_year,
                     phonics_test_column_id=column.id,
                 )
                 db.session.add(result)
+                phonics_result_map[(pupil.id, column.id)] = result
             result.score = score_value
             _preview_row('Phonics', row_idx, 'updated', f'Will save score for {_norm(row[1])} ({column.name}).')
+            _flush_batch('Phonics', row_idx)
     if 'SATs' in wb.sheetnames:
         for row in wb['SATs'].iter_rows(min_row=2, values_only=True):
-            pupil = _find_pupil_by_class_name(row[0], row[1])
+            pupil = pupil_by_class_and_name.get((_norm_key(row[0]), _norm_key(row[1])))
             if not pupil:
                 preview_errors.append(f'SATs: pupil not matched {_norm(row[1])}')
                 continue
@@ -1988,15 +2055,11 @@ def import_full_workbook():
                 except (TypeError, ValueError):
                     preview_errors.append(f'SATs: invalid value for {csv_key} on {_norm(row[1])}')
                     continue
-                result = SatsColumnResult.query.filter_by(
-                    school_id=current_user.school_id,
-                    pupil_id=pupil.id,
-                    academic_year=get_current_academic_year(),
-                    column_id=column.id,
-                ).first()
+                result = sats_column_result_map.get((pupil.id, column.id))
                 action = 'will update existing row' if result else 'will create new row'
                 if not result:
-                    result = SatsColumnResult(school_id=current_user.school_id, pupil_id=pupil.id, academic_year=get_current_academic_year(), column_id=column.id)
+                    result = SatsColumnResult(school_id=school_id, pupil_id=pupil.id, academic_year=academic_year, column_id=column.id)
+                    sats_column_result_map[(pupil.id, column.id)] = result
                 result.raw_score = score_value
                 db.session.add(result)
                 imported_values.append(f'{csv_key}={score_value}')
@@ -2007,12 +2070,11 @@ def import_full_workbook():
                 preview_errors.append(f'SATs: invalid writing_band "{_norm(row[11])}" for {_norm(row[1])}')
             elif band_value:
                 ap_index = SATS_ASSESSMENT_POINTS.index(assessment_point) + 1
-                writing_row = SatsWritingResult.query.filter_by(
-                    school_id=current_user.school_id, pupil_id=pupil.id, academic_year=get_current_academic_year(), assessment_point=ap_index
-                ).first()
+                writing_row = sats_writing_result_map.get((pupil.id, ap_index))
                 action = 'will update existing row' if writing_row else 'will create new row'
                 if not writing_row:
-                    writing_row = SatsWritingResult(school_id=current_user.school_id, pupil_id=pupil.id, academic_year=get_current_academic_year(), assessment_point=ap_index)
+                    writing_row = SatsWritingResult(school_id=school_id, pupil_id=pupil.id, academic_year=academic_year, assessment_point=ap_index)
+                    sats_writing_result_map[(pupil.id, ap_index)] = writing_row
                 writing_row.band = band_value
                 writing_row.notes = _norm(row[12])
                 db.session.add(writing_row)
@@ -2032,6 +2094,7 @@ def import_full_workbook():
         flash(f'Preview complete. {created} pupils would be created/updated. Re-upload and click Save Workbook Import to apply.', 'info')
         return redirect(url_for('admin.imports'))
     try:
+        db.session.flush()
         db.session.commit()
     except OperationalError:
         _log_operational_error(route_name='admin.import_full_workbook', import_type='full_workbook', retry_attempted=False)
