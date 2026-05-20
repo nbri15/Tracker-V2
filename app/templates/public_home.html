@@ -1,19 +1,91 @@
 {% extends 'base.html' %}
-{% block title %}Class Compass{% endblock %}
+{% block title %}Class Compass | Primary Assessment Intelligence{% endblock %}
 {% block auth_content %}
-<section class="py-5 bg-light border-bottom"><div class="container">
-  <h1 class="display-5 fw-bold">Class Compass</h1>
-  <p class="lead">Guiding pupil progress with clarity.</p>
-  <p class="text-muted">Whole-school assessment intelligence designed around real teacher workflows.</p>
-  <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Login</a>
-</div></section>
-<section class="py-5"><div class="container"><div class="row g-3">
-{% for item in ['Whole-school assessment tracking','Teacher-friendly score entry','SATs, phonics, times tables and foundation trackers','Interventions and pupil support','Anonymised reporting','Multi-school ready'] %}
-<div class="col-md-6 col-lg-4"><div class="card h-100 shadow-sm"><div class="card-body"><h6 class="mb-0">{{ item }}</h6></div></div></div>
-{% endfor %}
-</div></div></section>
-<section class="py-5 bg-light"><div class="container"><h2 class="h4 mb-3">Screenshots</h2><div class="row g-3">{% for _ in range(3) %}<div class="col-md-4"><div class="card"><div class="card-body text-muted text-center" style="height:140px;display:flex;align-items:center;justify-content:center;">Screenshot placeholder</div></div></div>{% endfor %}</div></div></section>
-<section class="py-5"><div class="container"><h2 class="h4">GDPR & trust</h2><ul><li>School-level access controls</li><li>Anonymised exports</li><li><a href="/static/docs/privacy-policy.pdf">Privacy Policy</a></li><li><a href="/static/docs/terms-of-use.pdf">Terms of Use</a></li></ul></div></section>
-<section class="py-5 bg-light border-top"><div class="container text-center"><h2 class="h4">Built for primary schools</h2><p class="text-muted">Designed around real teacher workflows.</p><a class="btn btn-outline-primary" href="{{ url_for('auth.login') }}">Login / Demo</a></div></section>
-<footer class="py-4"><div class="container d-flex flex-wrap gap-3"><a href="/static/docs/privacy-policy.pdf">Privacy Policy</a><a href="/static/docs/terms-of-use.pdf">Terms of Use</a><span class="text-muted">Contact: hello@classcompass.app</span></div></footer>
+{% set hide_site_footer = true %}
+<div class="public-home">
+  <header class="public-header">
+    <div class="container public-header-inner">
+      <a class="brand-link" href="{{ url_for('dashboards.home') }}">Class Compass</a>
+      <nav class="public-nav" aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="/static/docs/privacy-policy.pdf" target="_blank" rel="noopener">Privacy</a>
+        <a href="/static/docs/terms-of-use.pdf" target="_blank" rel="noopener">Terms</a>
+      </nav>
+      <a class="btn btn-primary" href="{{ url_for('auth.login') }}">Login</a>
+    </div>
+  </header>
+
+  <section class="hero-section">
+    <div class="container">
+      <div class="hero-grid">
+        <div>
+          <p class="hero-kicker">Class Compass</p>
+          <h1>Guiding pupil progress with clarity.</h1>
+          <p class="hero-copy">Whole-school assessment intelligence designed around real teacher workflows. Track attainment, spot gaps and support every pupil with confidence.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Login</a>
+            <a class="btn btn-outline-secondary btn-lg" href="#features">View features</a>
+          </div>
+        </div>
+        <div class="preview-shell" aria-label="Class Compass dashboard preview">
+          <div class="preview-toolbar">
+            <span></span><span></span><span></span>
+          </div>
+          <img src="{{ url_for('static', filename='img/class-compass-logo.png') }}" alt="Class Compass dashboard preview" class="preview-image">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="feature-section">
+    <div class="container">
+      <h2>Everything schools need in one assessment workspace</h2>
+      <div class="feature-grid">
+        {% set features = [
+          ('📊', 'Whole-school assessment tracking', 'Monitor progress by class, cohort and subject with up-to-date dashboards for leadership and teaching teams.'),
+          ('✍️', 'Teacher-friendly score entry', 'Capture data quickly with familiar workflows that reduce admin load and keep assessments consistent.'),
+          ('🎯', 'SATs, phonics and foundation trackers', 'Use dedicated trackers for core statutory and foundation assessments across the primary journey.'),
+          ('🤝', 'Interventions and pupil support', 'Identify pupils needing support early and track interventions alongside attainment evidence.'),
+          ('🛡️', 'Anonymised reporting', 'Share insights confidently using anonymised exports for governors, trusts and external stakeholders.'),
+          ('🏫', 'Multi-school ready', 'Designed for scaling from a single school to federations with consistent structure and oversight.')
+        ] %}
+        {% for icon, title, description in features %}
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">{{ icon }}</div>
+            <h3>{{ title }}</h3>
+            <p>{{ description }}</p>
+          </article>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="trust-section">
+    <div class="container">
+      <h2>Built with trust and privacy at the core</h2>
+      <div class="trust-items">
+        <p>✓ School-level access controls</p>
+        <p>✓ Anonymised exports</p>
+        <p>✓ <a href="/static/docs/privacy-policy.pdf" target="_blank" rel="noopener">Privacy policy</a></p>
+        <p>✓ <a href="/static/docs/terms-of-use.pdf" target="_blank" rel="noopener">Terms of use</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="container">
+      <h2>Built for primary schools. Designed around real teacher workflows.</h2>
+      <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Login to Class Compass</a>
+    </div>
+  </section>
+
+  <footer class="public-footer">
+    <div class="container">
+      <span>Class Compass</span>
+      <a href="/static/docs/privacy-policy.pdf" target="_blank" rel="noopener">Privacy Policy</a>
+      <a href="/static/docs/terms-of-use.pdf" target="_blank" rel="noopener">Terms of Use</a>
+      <a href="{{ url_for('auth.login') }}">Login</a>
+    </div>
+  </footer>
+</div>
 {% endblock %}
