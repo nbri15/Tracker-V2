@@ -26,7 +26,7 @@ class PupilClassHistory(db.Model):
 
     __tablename__ = 'pupil_class_history'
     __table_args__ = (
-        db.UniqueConstraint('pupil_id', 'academic_year', name='uq_pupil_class_history_scope'),
+        db.UniqueConstraint('school_id', 'pupil_id', 'academic_year', name='uq_pupil_class_history_school_scope'),
         db.Index('ix_pupil_class_history_year_group', 'academic_year', 'year_group'),
     )
 

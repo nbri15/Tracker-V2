@@ -38,18 +38,27 @@
       <div class="card-header bg-white"><strong>Workbook Upload</strong></div>
       <div class="card-body">
         <form method="post" action="{{ url_for('admin.import_full_workbook') }}" enctype="multipart/form-data" class="form-grid">
-          <div class="col-md-8"><input type="file" name="workbook_file" class="form-control" accept=".xlsx" required></div>
-          <div class="col-md-2"><button class="btn btn-outline-primary w-100" name="confirm_save" value="0">Preview</button></div>
-          <div class="col-md-2"><button class="btn btn-primary w-100" name="confirm_save" value="1">Save</button></div>
+          <div class="col-md-4">
+            <label class="form-label">Academic Year</label>
+            <select name="academic_year" class="form-select" required>
+              {% for year in academic_year_options %}
+              <option value="{{ year }}" {% if year == current_year %}selected{% endif %}>{{ year }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label">Workbook (.xlsx)</label><input type="file" name="workbook_file" class="form-control" accept=".xlsx" required></div>
+          <div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-primary w-100" name="confirm_save" value="0">Preview</button></div>
+          <div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100" name="confirm_save" value="1">Save</button></div>
         </form>
-        <p class="text-muted small mt-2 mb-0">Preview now includes row-by-row validation, suggested fixes, and save confirmation.</p>
+        <p class="text-muted small mt-2 mb-0">Preview now includes row-by-row validation, suggested fixes, and save confirmation.
+        <br><span class="text-warning">Choose the academic year this data belongs to. Historical imports will not move pupils’ current classes; they will update class history for that year.</span></p>
       </div>
     </div>
     {% if workbook_preview %}
     <div class="card shadow-sm mt-4">
       <div class="card-header bg-white"><strong>Latest Preview</strong></div>
       <div class="card-body">
-        <p class="small text-muted mb-2">New/updated rows, warnings, and skipped rows before import is committed.</p>
+        <p class="small text-muted mb-2">New/updated rows, warnings, and skipped rows before import is committed. Academic year: <strong>{{ workbook_preview.academic_year or current_year }}</strong>.</p>
         <div class="d-flex gap-3 small mb-3">
           <span class="badge bg-success">New/Updated: {{ workbook_preview.created + workbook_preview.updated }}</span>
           <span class="badge bg-warning text-dark">Warnings: {{ workbook_preview.warnings }}</span>
