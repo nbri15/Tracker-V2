@@ -1801,11 +1801,17 @@ def imports():
         'pupils': demo_filter_pupils(Pupil.query).count(),
     }
     workbook_preview = session.pop('workbook_import_preview', None)
+    years = school_scoped_query(AcademicYear, AcademicYear.query).order_by(AcademicYear.name.desc()).all()
+    current_year = get_current_academic_year()
+    academic_year_options = [year.name for year in years]
+    if current_year not in academic_year_options:
+        academic_year_options.insert(0, current_year)
     return render_template(
         'admin/imports.html',
         overview=overview,
         class_options=demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
-        current_year=get_current_academic_year(),
+        current_year=current_year,
+        academic_year_options=academic_year_options,
         reception_tracking_points=RECEPTION_TRACKING_POINTS,
         sats_tabs=get_sats_exam_tabs(6, include_inactive=False),
         summary=summary,
@@ -1855,7 +1861,9 @@ def import_full_workbook():
     seen_pupil_rows = set()
     valid_genders = {'male', 'female', 'm', 'f', ''}
     school_id = current_user.school_id
-    academic_year = get_current_academic_year()
+    selected_academic_year = (request.form.get('academic_year') or '').strip()
+    academic_year = selected_academic_year or get_current_academic_year()
+    current_academic_year = get_current_academic_year()
     batch_size = 200
     processed_rows = 0
 
@@ -1864,6 +1872,10 @@ def import_full_workbook():
     pupil_rows = demo_filter_pupils(Pupil.query.filter_by(school_id=school_id)).all()
     pupil_by_lookup = {
         (_norm_key(p.first_name), _norm_key(p.last_name), p.class_id): p
+        for p in pupil_rows
+    }
+    pupil_by_name = {
+        (_norm_key(p.first_name), _norm_key(p.last_name)): p
         for p in pupil_rows
     }
     pupil_by_class_and_name = {
@@ -1928,17 +1940,36 @@ def import_full_workbook():
             preview_errors.append(f'Pupils row {row_idx}: class not found {_norm(row[3])}')
             _preview_row('Pupils', row_idx, 'warning', f'Class "{_norm(row[3])}" does not exist.', 'Create the class first or fix the class name.')
             continue
-        pupil = pupil_by_lookup.get((_norm_key(row[0]), _norm_key(row[1]), school_class.id))
+        pupil = pupil_by_name.get((_norm_key(row[0]), _norm_key(row[1])))
         if not pupil:
             pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=normalize_gender(_norm(row[4])) or '', school_id=school_id, is_demo=current_user.is_demo)
             db.session.add(pupil)
             db.session.flush()
             pupil_by_lookup[(_norm_key(pupil.first_name), _norm_key(pupil.last_name), school_class.id)] = pupil
+            pupil_by_name[(_norm_key(pupil.first_name), _norm_key(pupil.last_name))] = pupil
             pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(f'{pupil.first_name} {pupil.last_name}'))] = pupil
             created+=1
             _preview_row('Pupils', row_idx, 'new', f'Will create pupil {_norm(row[0])} {_norm(row[1])}.')
         else:
+            if academic_year == current_academic_year and pupil.class_id != school_class.id:
+                pupil.class_id = school_class.id
             _preview_row('Pupils', row_idx, 'updated', f'Will update pupil {_norm(row[0])} {_norm(row[1])}.')
+
+        history_row = school_scoped_query(PupilClassHistory, PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=academic_year)).first()
+        if not history_row:
+            history_row = PupilClassHistory(
+                school_id=school_id,
+                pupil_id=pupil.id,
+                academic_year=academic_year,
+                class_name=school_class.name,
+                year_group=school_class.year_group,
+                teacher_username=school_class.teacher.username if school_class.teacher else None,
+            )
+            db.session.add(history_row)
+        else:
+            history_row.class_name = school_class.name
+            history_row.year_group = school_class.year_group
+            history_row.teacher_username = school_class.teacher.username if school_class.teacher else None
         pupil.gender=normalize_gender(_norm(row[4])) or pupil.gender or ''
         pupil.pupil_premium=_norm(row[5]).lower() in {'1','true','yes','y'}
         pupil.laps=_norm(row[6]).lower() in {'1','true','yes','y'}
@@ -2084,6 +2115,7 @@ def import_full_workbook():
     if request.form.get('confirm_save')!='1':
         db.session.rollback()
         session['workbook_import_preview'] = {
+            'academic_year': academic_year,
             'rows': preview_table[:120],
             'created': created,
             'updated': updated,
@@ -2101,10 +2133,11 @@ def import_full_workbook():
         db.session.rollback()
         db.session.remove()
         raise
-    log_audit_event('import_full_workbook', 'school', current_user.school_id or 0, school_id=current_user.school_id, details=f'created={created};updated={updated};warnings={len(preview_errors)}')
+    ensure_academic_year(academic_year, mark_current=False)
+    log_audit_event('import_full_workbook', 'school', current_user.school_id or 0, school_id=current_user.school_id, details=f'academic_year={academic_year};created={created};updated={updated};warnings={len(preview_errors)}')
     for subject in ('maths', 'reading', 'spag'):
         for term in ('autumn', 'spring', 'summer'):
-            recalculate_subject_results_for_scope(6, subject, term, academic_year=get_current_academic_year())
+            recalculate_subject_results_for_scope(6, subject, term, academic_year=academic_year)
     for e in preview_errors[:20]: flash(e,'warning')
     flash('Workbook import complete.', 'success')
     return redirect(url_for('admin.imports'))
