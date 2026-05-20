@@ -188,7 +188,6 @@ def _permanently_delete_school_data(school: School) -> None:
     SatsColumnSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     SatsExamTab.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     TrackerModeSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
-    AcademicYear.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     SchoolClass.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     AuditLog.query.filter_by(school_id=school_id).delete(synchronize_session=False)
 

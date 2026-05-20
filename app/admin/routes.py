@@ -1802,14 +1802,14 @@ def imports():
         'pupils': demo_filter_pupils(Pupil.query).count(),
     }
     workbook_preview = session.pop('workbook_import_preview', None)
-    years = school_scoped_query(AcademicYear, AcademicYear.query).order_by(AcademicYear.name.desc()).all()
+    years = AcademicYear.query.order_by(AcademicYear.label.desc()).all()
     current_year = get_current_academic_year()
     selected_year_id = request.args.get('academic_year_id') or request.form.get('academic_year_id')
     if selected_year_id is None:
-        current_year_record = next((year for year in years if year.name == current_year), None)
+        current_year_record = next((year for year in years if year.label == current_year), None)
         selected_year_id = str(current_year_record.id) if current_year_record else None
     selected_year = next((year for year in years if str(year.id) == str(selected_year_id)), None)
-    selected_year_label = selected_year.name if selected_year else current_year
+    selected_year_label = selected_year.label if selected_year else current_year
     return render_template(
         'admin/imports.html',
         overview=overview,
@@ -1869,7 +1869,7 @@ def import_full_workbook():
     school_id = current_user.school_id
     selected_year_id = (request.form.get('academic_year_id') or '').strip()
     selected_year = AcademicYear.query.filter_by(id=selected_year_id).first() if selected_year_id else None
-    selected_academic_year = (selected_year.name if selected_year else '').strip()
+    selected_academic_year = (selected_year.label if selected_year else '').strip()
     academic_year = selected_academic_year or get_current_academic_year()
     current_academic_year = get_current_academic_year()
     batch_size = 200

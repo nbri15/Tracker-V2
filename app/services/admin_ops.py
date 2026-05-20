@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from flask_login import current_user
-
 from app.extensions import db
 from app.models import AcademicYear, AssessmentSetting, Pupil, PupilClassHistory, School, SchoolClass, TrackerModeSetting, User
-from app.utils import school_scoped_query
 from .assessments import get_current_academic_year, get_setting_defaults
 
 
@@ -76,11 +73,11 @@ def sort_teacher_accounts(users: list[User]) -> list[User]:
 
 def ensure_academic_year(name: str | None = None, *, mark_current: bool = False, archived: bool = False) -> AcademicYear:
     target_name = name or get_current_academic_year()
-    record = school_scoped_query(AcademicYear, AcademicYear.query.filter_by(name=target_name)).first()
+    record = AcademicYear.query.filter_by(label=target_name).first()
     if not record:
-        record = AcademicYear(name=target_name, school_id=getattr(current_user, 'school_id', None))
+        record = AcademicYear(label=target_name)
     if mark_current:
-        school_scoped_query(AcademicYear, AcademicYear.query).update({'is_current': False})
+        AcademicYear.query.update({'is_current': False})
         record.is_current = True
     if archived:
         record.is_archived = True
