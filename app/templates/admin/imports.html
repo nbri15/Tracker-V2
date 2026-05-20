@@ -42,7 +42,7 @@
             <label class="form-label">Academic year this data belongs to</label>
             <select name="academic_year_id" class="form-select" required>
               {% for year in years %}
-              <option value="{{ year.id }}" {% if year.id|string == selected_year_id|string %}selected{% endif %}>{{ year.label }}</option>
+              <option value="{{ year.id }}" {% if year.id|string == selected_year_id|string %}selected{% endif %}>{{ year.name }}</option>
               {% endfor %}
             </select>
           </div>

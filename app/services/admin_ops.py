@@ -73,9 +73,9 @@ def sort_teacher_accounts(users: list[User]) -> list[User]:
 
 def ensure_academic_year(name: str | None = None, *, mark_current: bool = False, archived: bool = False) -> AcademicYear:
     target_name = name or get_current_academic_year()
-    record = AcademicYear.query.filter_by(label=target_name).first()
+    record = AcademicYear.query.filter_by(name=target_name).first()
     if not record:
-        record = AcademicYear(label=target_name)
+        record = AcademicYear(name=target_name)
     if mark_current:
         AcademicYear.query.update({'is_current': False})
         record.is_current = True

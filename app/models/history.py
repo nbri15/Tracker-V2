@@ -11,13 +11,18 @@ class AcademicYear(db.Model):
     __tablename__ = 'academic_years'
 
     id = db.Column(db.Integer, primary_key=True)
-    label = db.Column(db.String(20), nullable=False, unique=True)
+    name = db.Column(db.String(20), nullable=False, unique=True)
     is_current = db.Column(db.Boolean, nullable=False, default=False)
     is_archived = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+    @property
+    def label(self) -> str:
+        """Backward-compatible alias for templates still reading .label."""
+        return self.name
+
     def __repr__(self) -> str:
-        return f'<AcademicYear {self.label}>'
+        return f'<AcademicYear {self.name}>'
 
 
 class PupilClassHistory(db.Model):
