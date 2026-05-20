@@ -16,8 +16,12 @@
         <form method="post" novalidate>
           {{ form.hidden_tag() }}
           <div class="mb-3">
+            {{ form.school_code.label(class='form-label') }}
+            {{ form.school_code(class='form-control form-control-lg', placeholder='Enter school code (optional for email login)', autocomplete='organization') }}
+          </div>
+          <div class="mb-3">
             {{ form.username.label(class='form-label') }}
-            {{ form.username(class='form-control form-control-lg', placeholder='Enter username', autocomplete='username') }}
+            {{ form.username(class='form-control form-control-lg', placeholder='Enter username or email', autocomplete='username') }}
           </div>
           <div class="mb-3">
             {{ form.password.label(class='form-label') }}

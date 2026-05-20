@@ -6,7 +6,7 @@ from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from app.extensions import db
-from app.models import User
+from app.models import School, User
 from app.utils import is_demo_mode_enabled
 
 from . import auth_bp
@@ -22,7 +22,18 @@ def login():
 
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data.strip()).first()
+        school_code = (form.school_code.data or '').strip().lower()
+        identifier = form.username.data.strip()
+        user = None
+        if school_code:
+            school = School.query.filter(School.slug == school_code).first()
+            if school:
+                user = User.query.filter(
+                    User.school_id == school.id,
+                    User.username.ilike(identifier),
+                ).first()
+        else:
+            user = User.query.filter(User.username.ilike(identifier)).first()
         credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
         school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
         if credentials_valid and school_active_or_exec:
@@ -39,7 +50,7 @@ def login():
         if credentials_valid and not school_active_or_exec:
             flash('Your school is inactive. Contact an executive administrator.', 'danger')
         else:
-            flash('Invalid username or password.', 'danger')
+            flash('Invalid school code/username/password.', 'danger')
 
     return render_template('auth/login.html', form=form)
 
@@ -56,7 +67,11 @@ def demo_login():
 
     account = (request.args.get('account') or 'teacher').strip().lower()
     username = 'demo_admin' if account == 'admin' else 'demo_teacher'
-    user = User.query.filter_by(username=username, is_active=True).first()
+    demo_school = School.query.filter_by(slug='demo-school').first()
+    user_query = User.query.filter(User.username.ilike(username), User.is_active.is_(True))
+    if demo_school:
+        user_query = user_query.filter(User.school_id == demo_school.id)
+    user = user_query.first()
     if not user:
         flash('Demo account is missing. Run seed_demo.py to create demo users.', 'danger')
         return redirect(url_for('auth.login'))

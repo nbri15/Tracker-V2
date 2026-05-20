@@ -12,9 +12,17 @@ class User(UserMixin, db.Model):
     """Application user with either admin or teacher access."""
 
     __tablename__ = 'users'
+    __table_args__ = (
+        db.Index(
+            'uq_users_school_id_username_lower',
+            'school_id',
+            db.text('lower(username)'),
+            unique=True,
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
+    username = db.Column(db.String(80), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     legacy_is_admin = db.Column('is_admin', db.Boolean, nullable=False, default=False)
     school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)

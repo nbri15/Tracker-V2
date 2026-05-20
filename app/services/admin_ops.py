@@ -101,7 +101,10 @@ def ensure_default_logins_and_classes() -> dict:
         default_school = School(name='Barrow School', slug='barrow-school', is_active=True, is_demo=False)
         db.session.add(default_school)
         db.session.flush()
-    admin = User.query.filter_by(username=DEFAULT_ADMIN.username).first() or User(username=DEFAULT_ADMIN.username)
+    admin = User.query.filter(
+        User.school_id == default_school.id,
+        User.username.ilike(DEFAULT_ADMIN.username),
+    ).first() or User(username=DEFAULT_ADMIN.username)
     admin.role = DEFAULT_ADMIN.role
     admin.legacy_is_admin = True
     admin.is_active = True
@@ -111,7 +114,10 @@ def ensure_default_logins_and_classes() -> dict:
 
     teachers: dict[int, User] = {}
     for login in DEFAULT_TEACHERS:
-        teacher = User.query.filter_by(username=login.username).first() or User(username=login.username)
+        teacher = User.query.filter(
+            User.school_id == default_school.id,
+            User.username.ilike(login.username),
+        ).first() or User(username=login.username)
         teacher.username = login.username
         teacher.role = login.role
         teacher.legacy_is_admin = False

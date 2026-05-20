@@ -534,7 +534,10 @@ def create_school_admin(school_id: int):
     if not username or not password:
         flash('Username and password are required.', 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))
-    if User.query.filter_by(username=username).first():
+    if User.query.filter(
+        User.school_id == school.id,
+        User.username.ilike(username),
+    ).first():
         flash('Username already exists.', 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))
 
