@@ -1692,7 +1692,7 @@ def promotion():
         action = request.form.get('action', 'snapshot')
         try:
             if action == 'snapshot':
-                count = snapshot_pupil_history(academic_year)
+                count = snapshot_pupil_history(academic_year, effective_school_id)
                 ensure_academic_year(academic_year, mark_current=True)
                 db.session.commit()
                 flash(f'Archived {count} pupil class history record(s) for {academic_year}.', 'success')
@@ -1714,7 +1714,7 @@ def promotion():
                         class_mapping[source_class.id] = selected_id
                     else:
                         class_mapping[source_class.id] = None
-                outcome = promote_pupils_to_next_year(academic_year, class_mapping=class_mapping)
+                outcome = promote_pupils_to_next_year(academic_year, effective_school_id, class_mapping=class_mapping)
                 db.session.commit()
                 flash(f"Promotion complete. Moved {outcome['moved']} pupil(s), marked {outcome['leavers']} Year 6 leavers, and set {outcome['target_year']} as current.", 'success')
             return redirect(url_for('admin.promotion', academic_year=academic_year))
@@ -1722,7 +1722,7 @@ def promotion():
             db.session.rollback()
             flash(f'Promotion changes could not be saved: {exc}', 'danger')
 
-    history_rows = get_history_rows(academic_year)
+    history_rows = get_history_rows(academic_year, effective_school_id)
     return render_template(
         'admin/promotion.html',
         academic_year=academic_year,
