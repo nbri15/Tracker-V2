@@ -991,7 +991,10 @@ def users():
                 class_id_raw = request.form.get('class_id', '').strip()
                 if not username or not password:
                     raise ValueError('Username and password are required.')
-                if User.query.filter_by(username=username).first():
+                if User.query.filter(
+                    User.school_id == current_user.school_id,
+                    User.username.ilike(username),
+                ).first():
                     raise ValueError('That username already exists.')
                 user = User(
                     username=username,
@@ -1015,7 +1018,11 @@ def users():
                 username = request.form.get(f'username_{user.id}', '').strip()
                 class_id_raw = request.form.get(f'class_id_{user.id}', '').strip()
                 if username and username != user.username:
-                    if User.query.filter(User.username == username, User.id != user.id).first():
+                    if User.query.filter(
+                        User.school_id == current_user.school_id,
+                        User.username.ilike(username),
+                        User.id != user.id,
+                    ).first():
                         raise ValueError('That username is already in use.')
                     user.username = username
                 user.is_active = request.form.get(f'is_active_{user.id}') == 'on'
