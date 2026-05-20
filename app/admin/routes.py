@@ -513,6 +513,9 @@ def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
 @admin_required
 def classes():
     if request.method == 'POST':
+        if effective_school_id is None:
+            flash('Select a school before running promotion.', 'warning')
+            return redirect(url_for('admin.promotion', academic_year=academic_year))
         action = request.form.get('action', 'create_class')
         if is_demo_user() and action == 'archive_class':
             flash('This action is disabled in Demo Mode.', 'warning')
@@ -1677,8 +1680,12 @@ def _legacy_admin_sats_disabled():
 def promotion():
     academic_year = request.values.get('academic_year', get_current_academic_year())
     next_year = build_next_academic_year(academic_year)
-    mapping_rows = get_promotion_mapping_options()
+    effective_school_id = _selected_school_id_for_admin_actions()
+    mapping_rows = get_promotion_mapping_options(effective_school_id) if effective_school_id else []
     if request.method == 'POST':
+        if effective_school_id is None:
+            flash('Select a school before running promotion.', 'warning')
+            return redirect(url_for('admin.promotion', academic_year=academic_year))
         if is_demo_user():
             flash('This action is disabled in Demo Mode.', 'warning')
             return redirect(url_for('admin.promotion', academic_year=academic_year))

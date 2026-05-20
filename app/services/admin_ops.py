@@ -170,14 +170,27 @@ def snapshot_pupil_history(academic_year: str) -> int:
     return created
 
 
-def get_promotion_mapping_options() -> list[dict]:
+def get_promotion_mapping_options(school_id: int) -> list[dict]:
     """Build source-class rows and valid destination options for promotion UI."""
-    classes = school_scoped_query(SchoolClass, SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    classes = (
+        SchoolClass.query
+        .filter(
+            SchoolClass.school_id == school_id,
+            SchoolClass.is_active.is_(True),
+        )
+        .order_by(SchoolClass.year_group, SchoolClass.name)
+        .all()
+    )
     options: list[dict] = []
     for school_class in classes:
         active_pupil_count = school_class.pupils.filter_by(is_active=True).count()
         destination_classes = (
-            school_scoped_query(SchoolClass, SchoolClass.query.filter_by(is_active=True, year_group=school_class.year_group + 1))
+            SchoolClass.query
+            .filter(
+                SchoolClass.school_id == school_id,
+                SchoolClass.is_active.is_(True),
+                SchoolClass.year_group == school_class.year_group + 1,
+            )
             .order_by(SchoolClass.name)
             .all()
         )
