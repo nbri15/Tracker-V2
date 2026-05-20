@@ -417,6 +417,8 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
     summary = CsvImportSummary()
     for index, row in enumerate(rows, start=2):
         summary.rows_processed += 1
+        if summary.rows_processed % 100 == 0:
+            db.session.flush()
         try:
             with db.session.begin_nested():
                 school_class = _find_class(_require_value(row, 'class_name', label='class_name'))
@@ -549,6 +551,8 @@ def import_reception_tracker(rows: list[dict]) -> CsvImportSummary:
 
     for index, row in enumerate(rows, start=2):
         summary.rows_processed += 1
+        if summary.rows_processed % 100 == 0:
+            db.session.flush()
         try:
             pupil = _find_pupil(row.get('pupil_first_name', ''), row.get('pupil_last_name', ''), row.get('class_name', ''))
             if pupil.school_class.year_group != RECEPTION_YEAR_GROUP:
@@ -605,6 +609,8 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
 
     for index, row in enumerate(rows, start=2):
         summary.rows_processed += 1
+        if summary.rows_processed % 100 == 0:
+            db.session.flush()
         try:
             pupil = _find_pupil(row.get('pupil_first_name', ''), row.get('pupil_last_name', ''), row.get('class_name', ''))
             if pupil.school_class.year_group != 6:

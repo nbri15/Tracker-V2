@@ -12,6 +12,7 @@ from flask import Response, current_app, flash, redirect, render_template, reque
 from flask_login import current_user, login_required
 
 from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import OperationalError
 
 from app.extensions import db
 from app.models import (
@@ -1722,6 +1723,50 @@ def promotion():
     )
 
 
+def _log_operational_error(*, route_name: str, import_type: str, retry_attempted: bool) -> None:
+    user_name = getattr(current_user, 'username', 'anonymous') if current_user.is_authenticated else 'anonymous'
+    current_app.logger.exception(
+        'OperationalError during %s (route=%s, user=%s, import_type=%s, retry_attempted=%s)',
+        route_name,
+        request.path,
+        user_name,
+        import_type,
+        retry_attempted,
+    )
+
+
+def _safe_import_commit(*, route_name: str, import_type: str, retry_attempted: bool = False) -> None:
+    try:
+        db.session.commit()
+    except OperationalError:
+        _log_operational_error(route_name=route_name, import_type=import_type, retry_attempted=retry_attempted)
+        db.session.rollback()
+        db.session.remove()
+        raise
+
+
+def _run_import_with_single_retry(import_type: str, rows: list[dict]):
+    importers = {
+        'combined': import_combined_results,
+        'reception': import_reception_tracker,
+        'sats_tracker': import_sats_tracker_results,
+    }
+    if import_type not in importers:
+        raise CsvImportError('Unknown import type.')
+
+    try:
+        summary = importers[import_type](rows)
+        _safe_import_commit(route_name='admin.imports', import_type=import_type)
+        return summary, False
+    except OperationalError:
+        db.session.rollback()
+        db.session.remove()
+        summary = importers[import_type](rows)
+        _safe_import_commit(route_name='admin.imports', import_type=import_type, retry_attempted=True)
+        return summary, True
+
+
+
 @admin_bp.route('/imports', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -1732,15 +1777,7 @@ def imports():
         selected_import_type = request.form.get('import_type', 'combined')
         try:
             rows = parse_uploaded_csv(request.files.get('csv_file'))
-            if selected_import_type == 'combined':
-                summary = import_combined_results(rows)
-            elif selected_import_type == 'reception':
-                summary = import_reception_tracker(rows)
-            elif selected_import_type == 'sats_tracker':
-                summary = import_sats_tracker_results(rows)
-            else:
-                raise CsvImportError('Unknown import type.')
-            db.session.commit()
+            summary, retried = _run_import_with_single_retry(selected_import_type, rows)
             if summary.errors:
                 for error in summary.errors[:20]:
                     flash(error, 'warning')
@@ -1751,6 +1788,8 @@ def imports():
                 f'manual/protected results skipped {summary.manual_results_skipped}, validation errors {summary.validation_errors}.',
                 'success',
             )
+            if retried:
+                flash('Import connection dropped once and was retried automatically.', 'warning')
         except CsvImportError as exc:
             db.session.rollback()
             flash(f'Import failed: {exc}', 'danger')
@@ -1992,7 +2031,13 @@ def import_full_workbook():
         for e in preview_errors[:20]: flash(e,'warning')
         flash(f'Preview complete. {created} pupils would be created/updated. Re-upload and click Save Workbook Import to apply.', 'info')
         return redirect(url_for('admin.imports'))
-    db.session.commit()
+    try:
+        db.session.commit()
+    except OperationalError:
+        _log_operational_error(route_name='admin.import_full_workbook', import_type='full_workbook', retry_attempted=False)
+        db.session.rollback()
+        db.session.remove()
+        raise
     log_audit_event('import_full_workbook', 'school', current_user.school_id or 0, school_id=current_user.school_id, details=f'created={created};updated={updated};warnings={len(preview_errors)}')
     for subject in ('maths', 'reading', 'spag'):
         for term in ('autumn', 'spring', 'summer'):

@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -15,6 +16,17 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def _ensure_sslmode_require(db_uri: str) -> str:
+    if not db_uri.startswith(('postgresql://', 'postgres://')):
+        return db_uri
+    parts = urlsplit(db_uri)
+    query_pairs = parse_qsl(parts.query, keep_blank_values=True)
+    if any(key == 'sslmode' for key, _ in query_pairs):
+        return db_uri
+    query_pairs.append(('sslmode', 'require'))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query_pairs), parts.fragment))
+
+
 def _normalize_database_uri(raw_uri: str | None) -> str:
     """Normalize DB URLs so SQLAlchemy works across local and Render environments."""
 
@@ -22,8 +34,8 @@ def _normalize_database_uri(raw_uri: str | None) -> str:
         return f"sqlite:///{INSTANCE_DIR / 'assessment_tracker.db'}"
     # Render/Heroku style URLs may use postgres:// which SQLAlchemy 1.4+/2 expects as postgresql://
     if raw_uri.startswith('postgres://'):
-        return raw_uri.replace('postgres://', 'postgresql://', 1)
-    return raw_uri
+        raw_uri = raw_uri.replace('postgres://', 'postgresql://', 1)
+    return _ensure_sslmode_require(raw_uri)
 
 
 class Config:
@@ -32,6 +44,12 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-me')
     SQLALCHEMY_DATABASE_URI = _normalize_database_uri(os.environ.get('DATABASE_URL'))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        'pool_timeout': 30,
+        'max_overflow': 10,
+    }
     REMEMBER_COOKIE_DURATION = timedelta(days=7)
     # Default hardening is safe for both environments; Production overrides as needed.
     SESSION_COOKIE_HTTPONLY = True
