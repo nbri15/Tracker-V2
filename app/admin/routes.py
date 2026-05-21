@@ -513,6 +513,9 @@ def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
 @admin_required
 def classes():
     if request.method == 'POST':
+        if effective_school_id is None:
+            flash('Select a school before running promotion.', 'warning')
+            return redirect(url_for('admin.promotion', academic_year=academic_year))
         action = request.form.get('action', 'create_class')
         if is_demo_user() and action == 'archive_class':
             flash('This action is disabled in Demo Mode.', 'warning')
@@ -1677,15 +1680,19 @@ def _legacy_admin_sats_disabled():
 def promotion():
     academic_year = request.values.get('academic_year', get_current_academic_year())
     next_year = build_next_academic_year(academic_year)
-    mapping_rows = get_promotion_mapping_options()
+    effective_school_id = _selected_school_id_for_admin_actions()
+    mapping_rows = get_promotion_mapping_options(effective_school_id) if effective_school_id else []
     if request.method == 'POST':
+        if effective_school_id is None:
+            flash('Select a school before running promotion.', 'warning')
+            return redirect(url_for('admin.promotion', academic_year=academic_year))
         if is_demo_user():
             flash('This action is disabled in Demo Mode.', 'warning')
             return redirect(url_for('admin.promotion', academic_year=academic_year))
         action = request.form.get('action', 'snapshot')
         try:
             if action == 'snapshot':
-                count = snapshot_pupil_history(academic_year)
+                count = snapshot_pupil_history(academic_year, effective_school_id)
                 ensure_academic_year(academic_year, mark_current=True)
                 db.session.commit()
                 flash(f'Archived {count} pupil class history record(s) for {academic_year}.', 'success')
@@ -1707,7 +1714,7 @@ def promotion():
                         class_mapping[source_class.id] = selected_id
                     else:
                         class_mapping[source_class.id] = None
-                outcome = promote_pupils_to_next_year(academic_year, class_mapping=class_mapping)
+                outcome = promote_pupils_to_next_year(academic_year, effective_school_id, class_mapping=class_mapping)
                 db.session.commit()
                 flash(f"Promotion complete. Moved {outcome['moved']} pupil(s), marked {outcome['leavers']} Year 6 leavers, and set {outcome['target_year']} as current.", 'success')
             return redirect(url_for('admin.promotion', academic_year=academic_year))
@@ -1715,7 +1722,7 @@ def promotion():
             db.session.rollback()
             flash(f'Promotion changes could not be saved: {exc}', 'danger')
 
-    history_rows = get_history_rows(academic_year)
+    history_rows = get_history_rows(academic_year, effective_school_id)
     return render_template(
         'admin/promotion.html',
         academic_year=academic_year,
