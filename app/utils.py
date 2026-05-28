@@ -162,7 +162,7 @@ def demo_filter_classes(query):
         return query
     scoped = school_scoped_query(SchoolClass, query)
     if getattr(current_user, 'is_executive_admin', False) and current_school_id() is None:
-        return scoped
+        return scoped.filter(False)
     return scoped.filter(SchoolClass.is_demo.is_(is_demo_user()))
 
 
@@ -171,7 +171,7 @@ def demo_filter_pupils(query):
         return query
     scoped = school_scoped_query(Pupil, query)
     if getattr(current_user, 'is_executive_admin', False) and current_school_id() is None:
-        return scoped
+        return scoped.filter(False)
     return scoped.filter(Pupil.is_demo.is_(is_demo_user()))
 
 

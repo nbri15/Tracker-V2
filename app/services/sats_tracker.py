@@ -203,6 +203,9 @@ def validate_sats_column_payload(payload: dict) -> dict:
 
 def save_sats_column(year_group: int, payload: dict, *, exam_tab_id: int, column_id: int | None = None) -> SatsColumnSetting:
     cleaned = validate_sats_column_payload(payload)
+    tab = school_scoped_query(SatsExamTab.query, SatsExamTab).filter_by(id=exam_tab_id, year_group=year_group).first()
+    if not tab:
+        raise SatsColumnValidationError('SATs exam tab not found.')
     column = school_scoped_query(SatsColumnSetting.query, SatsColumnSetting).filter_by(id=column_id).first() if column_id else None
     if column_id and not column:
         raise SatsColumnValidationError('SATs column not found.')

@@ -9,7 +9,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Response, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
 from sqlalchemy import and_, func, or_
@@ -154,7 +154,7 @@ def _apply_common_report_filters(query):
     laps = request.args.get('laps', 'all').strip().lower()
     service_child = request.args.get('service_child', 'all').strip().lower()
 
-    query = query.join(SchoolClass, Pupil.class_id == SchoolClass.id).filter(Pupil.is_archived.is_(False), SchoolClass.academic_year == academic_year)
+    query = query.join(SchoolClass, Pupil.class_id == SchoolClass.id).filter(Pupil.is_archived.is_(False))
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     if year_group is not None:
@@ -178,7 +178,7 @@ def _latest_subject_map(pupil_ids):
     for r in rows:
         key=(r.pupil_id,r.subject)
         if key not in latest:
-            latest[key]=r.score
+            latest[key]=r.band_label or r.combined_score or '—'
     return latest
 
 
@@ -217,7 +217,10 @@ def _redirect_non_year6_sats_access():
 
 
 def _teacher_options():
-    teachers = school_scoped_query(User, User.query).filter_by(role='teacher', is_demo=current_user.is_demo).all()
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        return []
+    teachers = User.query.filter_by(school_id=school_id, role='teacher', is_demo=is_demo_user()).all()
     return sort_teacher_accounts(teachers)
 
 
@@ -264,21 +267,27 @@ def _split_name(full_name):
     return parts[0], ' '.join(parts[1:]) if len(parts)>1 else ''
 
 def _find_pupil_by_class_name(class_name, pupil_name):
-    school_class = demo_filter_classes(SchoolClass.query.filter_by(name=_norm(class_name), school_id=current_user.school_id)).first()
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        return None
+    school_class = demo_filter_classes(SchoolClass.query.filter_by(name=_norm(class_name), school_id=school_id)).first()
     if not school_class:
         return None
     first,last=_split_name(pupil_name)
     if not first or not last:
         return None
-    return demo_filter_pupils(Pupil.query.filter_by(class_id=school_class.id, first_name=first, last_name=last, school_id=current_user.school_id)).first()
+    return demo_filter_pupils(Pupil.query.filter_by(class_id=school_class.id, first_name=first, last_name=last, school_id=school_id)).first()
 
 
 def _find_or_create_phonics_column(year_group: int, test_name: str) -> tuple[PhonicsTestColumn, bool]:
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        raise ValueError('Select a school before importing phonics columns.')
     normalized_name = _norm(test_name)
     key = normalized_name.lower()
     existing = (
         PhonicsTestColumn.query
-        .filter_by(school_id=current_user.school_id, year_group=year_group)
+        .filter_by(school_id=school_id, year_group=year_group)
         .all()
     )
     for column in existing:
@@ -286,7 +295,7 @@ def _find_or_create_phonics_column(year_group: int, test_name: str) -> tuple[Pho
             return column, False
     next_order = max((column.display_order or 0 for column in existing), default=0) + 1
     created = PhonicsTestColumn(
-        school_id=current_user.school_id,
+        school_id=school_id,
         year_group=year_group,
         name=normalized_name,
         display_order=next_order,
@@ -298,12 +307,15 @@ def _find_or_create_phonics_column(year_group: int, test_name: str) -> tuple[Pho
 
 
 def _find_or_create_sats_column(subject: str, test_name: str) -> tuple[SatsColumnSetting, bool]:
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        raise ValueError('Select a school before importing SATs columns.')
     normalized_name = _norm(test_name)
     key = normalized_name.lower()
     subject_key = _norm_key(subject)
     existing = (
         SatsColumnSetting.query
-        .filter_by(school_id=current_user.school_id, year_group=6, subject=subject_key)
+        .filter_by(school_id=school_id, year_group=6, subject=subject_key)
         .all()
     )
     for column in existing:
@@ -312,13 +324,13 @@ def _find_or_create_sats_column(subject: str, test_name: str) -> tuple[SatsColum
 
     tabs = (
         SatsExamTab.query
-        .filter_by(school_id=current_user.school_id, year_group=6, is_active=True)
+        .filter_by(school_id=school_id, year_group=6, is_active=True)
         .order_by(SatsExamTab.display_order.asc(), SatsExamTab.id.asc())
         .all()
     )
     if not tabs:
         first_tab = SatsExamTab(
-            school_id=current_user.school_id,
+            school_id=school_id,
             year_group=6,
             name='Default',
             display_order=1,
@@ -330,7 +342,7 @@ def _find_or_create_sats_column(subject: str, test_name: str) -> tuple[SatsColum
     selected_tab = tabs[0]
     next_order = max((column.display_order or 0 for column in existing), default=0) + 1
     created = SatsColumnSetting(
-        school_id=current_user.school_id,
+        school_id=school_id,
         year_group=6,
         exam_tab_id=selected_tab.id,
         name=normalized_name,
@@ -356,16 +368,22 @@ def _normalize_writing_band(value) -> str | None:
 
 
 def _selected_template_class():
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        return None
     class_id = request.args.get('class_id', type=int)
     if not class_id:
         return None
     return demo_filter_classes(
-        SchoolClass.query.filter_by(id=class_id, school_id=current_user.school_id, is_active=True)
+        SchoolClass.query.filter_by(id=class_id, school_id=school_id, is_active=True)
     ).first()
 
 
 def _template_pupils(selected_class: SchoolClass | None):
-    pupil_query = demo_filter_pupils(Pupil.query.filter_by(school_id=current_user.school_id, is_active=True))
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        return []
+    pupil_query = demo_filter_pupils(Pupil.query.filter_by(school_id=school_id, is_active=True))
     if selected_class:
         pupil_query = pupil_query.filter_by(class_id=selected_class.id)
     return pupil_query.join(Pupil.school_class).order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all()
@@ -512,11 +530,13 @@ def _table_header_state(sort_state: dict, allowed_columns: set[str]) -> dict:
 @login_required
 @admin_required
 def classes():
+    effective_school_id = _selected_school_id_for_admin_actions()
+
     if request.method == 'POST':
-        if effective_school_id is None:
-            flash('Select a school before running promotion.', 'warning')
-            return redirect(url_for('admin.promotion', academic_year=academic_year))
         action = request.form.get('action', 'create_class')
+        if effective_school_id is None:
+            flash('Select a school before managing classes.', 'warning')
+            return redirect(url_for('admin.classes'))
         if is_demo_user() and action == 'archive_class':
             flash('This action is disabled in Demo Mode.', 'warning')
             return redirect(url_for('admin.classes'))
@@ -527,10 +547,10 @@ def classes():
                 teacher_id_raw = request.form.get('teacher_id', '').strip()
                 if not name:
                     raise ValueError('Class name is required.')
-                existing = demo_filter_classes(SchoolClass.query).filter_by(school_id=current_user.school_id, name=name).first()
+                existing = demo_filter_classes(SchoolClass.query).filter_by(school_id=effective_school_id, name=name).first()
                 if existing:
                     raise ValueError('A class with that name already exists in your school.')
-                school_class = SchoolClass(name=name, year_group=year_group, school_id=current_user.school_id)
+                school_class = SchoolClass(name=name, year_group=year_group, school_id=effective_school_id)
                 school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
                 school_class.is_active = True
                 school_class.is_demo = current_user.is_demo
@@ -560,7 +580,7 @@ def classes():
             elif action == 'archive_class':
                 school_class = demo_filter_classes(SchoolClass.query).filter_by(
                     id=int(request.form.get('class_id', '0')),
-                    school_id=current_user.school_id,
+                    school_id=effective_school_id,
                 ).first_or_404()
                 school_class.is_active = False
                 if hasattr(school_class, 'is_archived'):
@@ -571,7 +591,7 @@ def classes():
             elif action == 'restore_class':
                 school_class = demo_filter_classes(SchoolClass.query).filter_by(
                     id=int(request.form.get('class_id', '0')),
-                    school_id=current_user.school_id,
+                    school_id=effective_school_id,
                 ).first_or_404()
                 school_class.is_active = True
                 if hasattr(school_class, 'is_archived'):
@@ -581,7 +601,7 @@ def classes():
             elif action == 'delete_class':
                 school_class = demo_filter_classes(SchoolClass.query).filter_by(
                     id=int(request.form.get('class_id', '0')),
-                    school_id=current_user.school_id,
+                    school_id=effective_school_id,
                 ).first_or_404()
                 linked_counts = _class_linked_data_counts(school_class)
                 if any(linked_counts.values()):
@@ -606,6 +626,10 @@ def classes():
     sort = request.args.get('sort', 'year_group')
 
     query = demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(True))
+    if effective_school_id is not None:
+        query = query.filter(SchoolClass.school_id == effective_school_id)
+    elif current_user.is_executive_admin:
+        query = query.filter(False)
     if filter_year_group:
         query = query.filter(SchoolClass.year_group == int(filter_year_group))
     if filter_teacher:
@@ -628,8 +652,8 @@ def classes():
         send_filter=send_filter,
         sort_options=CLASS_SORT_OPTIONS,
         teacher_options=_teacher_options(),
-        class_options=demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
-        archived_classes=demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(False)).order_by(SchoolClass.year_group, SchoolClass.name).all() if show_archived else [],
+        class_options=demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(True), SchoolClass.school_id == effective_school_id).order_by(SchoolClass.year_group, SchoolClass.name).all() if effective_school_id is not None else [],
+        archived_classes=demo_filter_classes(SchoolClass.query).filter(SchoolClass.is_active.is_(False), SchoolClass.school_id == effective_school_id).order_by(SchoolClass.year_group, SchoolClass.name).all() if show_archived and effective_school_id is not None else [],
     )
 
 
@@ -639,6 +663,7 @@ def classes():
 def class_detail(class_id: int):
     academic_year = request.args.get('academic_year', get_current_academic_year())
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
+    require_same_school(school_class)
     pupil_filters = build_admin_pupil_filter_state(request.args)
     selected_subject = request.args.get('subject', 'maths').strip() or 'maths'
     selected_term = request.args.get('term', '').strip() or None
@@ -701,7 +726,9 @@ def class_detail(class_id: int):
 @login_required
 @admin_required
 def class_sats(class_id: int):
-    return redirect(url_for('dashboards.sats_simple', class_id=class_id))
+    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
+    require_same_school(school_class)
+    return redirect(url_for('dashboards.sats_simple', class_id=class_id, school_id=school_class.school_id))
 
 # legacy disabled
 def _legacy_class_sats_disabled(class_id: int):
@@ -740,6 +767,7 @@ def _legacy_class_sats_disabled(class_id: int):
 @admin_required
 def class_phonics(class_id: int):
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
+    require_same_school(school_class)
     academic_year = request.values.get('academic_year', get_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
@@ -748,7 +776,7 @@ def class_phonics(class_id: int):
         return redirect(url_for('admin.class_detail', class_id=class_id, academic_year=academic_year))
 
     pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
-    columns = ensure_phonics_columns(school_class.year_group, current_user.school_id)
+    columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
     sort_state = build_table_sort_state(request.values, allowed_columns=sortable_columns, default_column='name')
@@ -765,22 +793,22 @@ def class_phonics(class_id: int):
         action = request.form.get('action', 'save_scores')
         try:
             if action == 'save_columns':
-                columns = save_phonics_columns(school_class.year_group, current_user.school_id, request.form)
+                columns = save_phonics_columns(school_class.year_group, school_class.school_id, request.form)
                 flash('Phonics test columns updated.', 'success')
             elif action == 'add_column':
-                column = add_phonics_column(school_class.year_group, current_user.school_id, request.form)
+                column = add_phonics_column(school_class.year_group, school_class.school_id, request.form)
                 flash(f'Added phonics column {column.name}.', 'success')
             else:
-                save_phonics_scores(pupils, columns, academic_year, current_user.school_id, request.form)
+                save_phonics_scores(pupils, columns, academic_year, school_class.school_id, request.form)
                 flash('Phonics scores saved.', 'success')
             db.session.commit()
             return redirect(url_for('admin.class_phonics', class_id=class_id, academic_year=academic_year, pupil_status=filters['pupil_status'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], send=filters['send'], search=filters['search'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Phonics changes could not be saved: {exc}', 'danger')
-            columns = ensure_phonics_columns(school_class.year_group, current_user.school_id)
+            columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
 
-    rows = build_phonics_tracker_rows(pupils, columns, academic_year, current_user.school_id)
+    rows = build_phonics_tracker_rows(pupils, columns, academic_year, school_class.school_id)
     rows = sort_phonics_tracker_rows(rows, sort_state['column'], sort_state['direction'])
     return render_template(
         'admin/class_phonics.html',
@@ -807,6 +835,7 @@ def class_phonics(class_id: int):
 @admin_required
 def class_times_tables(class_id: int):
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
+    require_same_school(school_class)
     academic_year = request.values.get('academic_year', get_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
@@ -985,12 +1014,16 @@ def reception_tracker():
 @login_required
 @admin_required
 def users():
+    effective_school_id = _selected_school_id_for_admin_actions()
+
     if request.method == 'POST':
         action = request.form.get('action', 'create')
         if is_demo_user() and action == 'delete':
             flash('This action is disabled in Demo Mode.', 'warning')
             return redirect(url_for('admin.users'))
         try:
+            if effective_school_id is None:
+                raise ValueError('Select a school before managing users.')
             if action == 'create':
                 username = request.form.get('username', '').strip()
                 password = request.form.get('password', '').strip()
@@ -998,7 +1031,7 @@ def users():
                 if not username or not password:
                     raise ValueError('Username and password are required.')
                 if User.query.filter(
-                    User.school_id == current_user.school_id,
+                    User.school_id == effective_school_id,
                     User.username.ilike(username),
                 ).first():
                     raise ValueError('That username already exists.')
@@ -1007,14 +1040,15 @@ def users():
                     role='teacher',
                     legacy_is_admin=False,
                     is_active=True,
-                    is_demo=current_user.is_demo,
-                    school_id=current_user.school_id,
+                    is_demo=is_demo_user(),
+                    school_id=effective_school_id,
                 )
                 user.set_password(password)
                 db.session.add(user)
                 db.session.flush()
                 if class_id_raw:
-                    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == int(class_id_raw)).first_or_404()
+                    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == int(class_id_raw), SchoolClass.school_id == effective_school_id).first_or_404()
+                    require_same_school(school_class)
                     school_class.teacher_id = user.id
                     db.session.add(school_class)
                 flash(f'Created teacher user {username}.', 'success')
@@ -1025,7 +1059,7 @@ def users():
                 class_id_raw = request.form.get(f'class_id_{user.id}', '').strip()
                 if username and username != user.username:
                     if User.query.filter(
-                        User.school_id == current_user.school_id,
+                        User.school_id == effective_school_id,
                         User.username.ilike(username),
                         User.id != user.id,
                     ).first():
@@ -1037,7 +1071,8 @@ def users():
                         school_class.teacher_id = None
                         db.session.add(school_class)
                 if class_id_raw:
-                    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == int(class_id_raw)).first_or_404()
+                    school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == int(class_id_raw), SchoolClass.school_id == effective_school_id).first_or_404()
+                    require_same_school(school_class)
                     school_class.teacher_id = user.id
                     db.session.add(school_class)
                 db.session.add(user)
@@ -1066,10 +1101,12 @@ def users():
             flash(f'User changes could not be saved: {exc}', 'danger')
 
     users_query = User.query
-    if current_user.role != 'executive_admin':
-        users_query = users_query.filter(User.school_id == current_user.school_id)
+    if effective_school_id is not None:
+        users_query = users_query.filter(User.school_id == effective_school_id)
+    elif current_user.role == 'executive_admin':
+        users_query = users_query.filter(False)
     teachers = sort_teacher_accounts(users_query.order_by(User.role.desc(), User.username).all())
-    classes = demo_filter_classes(SchoolClass.query).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    classes = demo_filter_classes(SchoolClass.query).filter(SchoolClass.school_id == effective_school_id).order_by(SchoolClass.year_group, SchoolClass.name).all() if effective_school_id is not None else []
     return render_template(
         'admin/users.html',
         teachers=teachers,
@@ -1186,6 +1223,13 @@ def pupils():
 
 def _selected_school_id_for_admin_actions() -> int | None:
     return current_user.school_id if not current_user.is_executive_admin else current_school_id()
+
+
+def _require_admin_school_context(message: str = 'Select a school before downloading data.'):
+    if _selected_school_id_for_admin_actions() is not None:
+        return None
+    flash(message, 'warning')
+    return redirect(url_for('admin.classes'))
 
 
 def _resolve_admin_quick_add_class(class_id_raw: str):
@@ -1566,7 +1610,11 @@ def interventions():
     print_mode = request.args.get('print', '0') == '1'
     anon_mode = request.args.get('anon', '0') == '1'
 
-    query = Intervention.query.join(Intervention.pupil).filter(Pupil.is_demo.is_(current_user.is_demo), Intervention.is_demo.is_(current_user.is_demo))
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        flash('Select a school before viewing interventions.', 'warning')
+        return redirect(url_for('admin.classes'))
+    query = Intervention.query.join(Intervention.pupil).filter(Pupil.school_id == school_id, Pupil.is_demo.is_(is_demo_user()), Intervention.is_demo.is_(is_demo_user()))
     query = query.filter(Intervention.academic_year == academic_year)
     query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
@@ -1592,7 +1640,8 @@ def interventions():
 @login_required
 @admin_required
 def sats():
-    return redirect(url_for('dashboards.sats_simple'))
+    school_id = current_school_id()
+    return redirect(url_for('dashboards.sats_simple', school_id=school_id) if school_id is not None else url_for('dashboards.sats_simple'))
 
 # legacy disabled
 def _legacy_admin_sats_disabled():
@@ -1873,7 +1922,10 @@ def import_full_workbook():
     updated = 0
     seen_pupil_rows = set()
     valid_genders = {'male', 'female', 'm', 'f', ''}
-    school_id = current_user.school_id
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        flash('Select a school before importing workbook data.', 'warning')
+        return redirect(url_for('admin.imports'))
     selected_year_id = (request.form.get('academic_year_id') or '').strip()
     selected_year = AcademicYear.query.filter_by(id=selected_year_id).first() if selected_year_id else None
     selected_academic_year = (selected_year.name if selected_year else '').strip()
@@ -2149,7 +2201,7 @@ def import_full_workbook():
         db.session.remove()
         raise
     ensure_academic_year(academic_year, mark_current=False)
-    log_audit_event('import_full_workbook', 'school', current_user.school_id or 0, school_id=current_user.school_id, details=f'academic_year={academic_year};created={created};updated={updated};warnings={len(preview_errors)}')
+    log_audit_event('import_full_workbook', 'school', school_id, school_id=school_id, details=f'academic_year={academic_year};created={created};updated={updated};warnings={len(preview_errors)}')
     for subject in ('maths', 'reading', 'spag'):
         for term in ('autumn', 'spring', 'summer'):
             recalculate_subject_results_for_scope(6, subject, term, academic_year=academic_year)
@@ -2172,6 +2224,9 @@ def export_full_workbook():
 @login_required
 @admin_required
 def headline_report():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     academic_year = request.args.get('academic_year', get_current_academic_year())
     subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
     tracker_key = (request.args.get('tracker_key', '') or '').strip()
@@ -2204,7 +2259,7 @@ def headline_report():
     elif subject == 'phonics':
         phonics_years = [year_group] if year_group in {1, 2} else [1, 2]
         for year in phonics_years:
-            for column in ensure_phonics_columns(year, current_user.school_id):
+            for column in ensure_phonics_columns(year, current_school_id()):
                 tracker_options.append({'value': str(column.id), 'label': f'Year {year} · {column.name}'})
     elif subject == 'times_tables':
         for column in ensure_times_tables_columns(4):
@@ -2294,6 +2349,9 @@ def export_headline_report():
 @login_required
 @admin_required
 def reports_export_centre():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     class_options = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.name).all()
     year_groups = sorted({c.year_group for c in class_options})
     return render_template('admin/reports_export_centre.html', class_options=class_options, year_groups=year_groups)
@@ -2303,6 +2361,9 @@ def reports_export_centre():
 @login_required
 @admin_required
 def report_class_overview():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     query, filters = _apply_common_report_filters(demo_filter_pupils(Pupil.query))
     pupils = query.order_by(Pupil.last_name, Pupil.first_name).all()
     latest = _latest_subject_map([p.id for p in pupils])
@@ -2324,6 +2385,9 @@ def report_class_overview():
 @login_required
 @admin_required
 def report_governor_summary():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     query, filters = _apply_common_report_filters(demo_filter_pupils(Pupil.query))
     pupils = query.all()
     total = len(pupils) or 1
@@ -2345,6 +2409,9 @@ def report_governor_summary():
 @login_required
 @admin_required
 def export_subject_results():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     csv_text = export_subject_results_csv(
         class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
         subject=request.args.get('subject') or None,
@@ -2358,6 +2425,9 @@ def export_subject_results():
 @login_required
 @admin_required
 def export_writing_results():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     csv_text = export_writing_results_csv(
         class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
         academic_year=request.args.get('academic_year') or None,
@@ -2370,6 +2440,9 @@ def export_writing_results():
 @login_required
 @admin_required
 def export_class_overview():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     academic_year = request.args.get('academic_year', get_current_academic_year())
     csv_text = export_class_overview_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=class_overview_export.csv'})
@@ -2379,6 +2452,9 @@ def export_class_overview():
 @login_required
 @admin_required
 def export_pupil_overview():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     academic_year = request.args.get('academic_year', get_current_academic_year())
     csv_text = export_pupil_overview_csv(
         academic_year,
@@ -2393,6 +2469,9 @@ def export_pupil_overview():
 @login_required
 @admin_required
 def export_sats():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     academic_year = request.args.get('academic_year', get_current_academic_year())
     selected_class_id = int(request.args['class_id']) if request.args.get('class_id') else None
     if selected_class_id and not _is_active_year6_class(selected_class_id):
@@ -2409,6 +2488,9 @@ def export_sats():
 @login_required
 @admin_required
 def export_reception_tracker():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     academic_year = request.args.get('academic_year', get_current_academic_year())
     tracking_point = request.args.get('tracking_point', RECEPTION_TRACKING_POINTS[0][0]).strip().lower()
     csv_text = export_reception_tracker_csv(academic_year, tracking_point)
@@ -2419,6 +2501,9 @@ def export_reception_tracker():
 @login_required
 @admin_required
 def export_sats_tracker():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     academic_year = request.args.get('academic_year', get_current_academic_year())
     exam_tab = request.args.get('exam_tab', '').strip()
     if not exam_tab:
@@ -2438,7 +2523,11 @@ def export_sats_tracker():
 def export_interventions():
     academic_year = request.args.get('academic_year', get_current_academic_year())
     anon_mode = request.args.get('anon', '0') == '1'
-    query = Intervention.query.join(Intervention.pupil).filter(Intervention.academic_year == academic_year)
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        flash('Select a school before exporting interventions.', 'warning')
+        return redirect(url_for('admin.interventions', academic_year=academic_year))
+    query = Intervention.query.join(Intervention.pupil).filter(Intervention.academic_year == academic_year, Pupil.school_id == school_id)
     if request.args.get('class_id'):
         query = query.filter(Pupil.class_id == int(request.args['class_id']))
     rows = query.order_by(Pupil.last_name, Pupil.first_name).all()
@@ -2456,6 +2545,9 @@ def export_interventions():
 @login_required
 @admin_required
 def export_history():
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
     academic_year = request.args.get('academic_year', get_current_academic_year())
     csv_text = export_history_csv(academic_year)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=promotion_history_export.csv'})
@@ -2530,6 +2622,9 @@ def data_quality():
 @login_required
 @admin_required
 def setup_checklist():
+    context_redirect = _require_admin_school_context('Select a school before viewing the setup checklist.')
+    if context_redirect:
+        return context_redirect
     school_id = current_school_id()
     classes_count = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).count()
     teachers_count = school_scoped_query(User, User.query).filter_by(role='teacher', is_active=True, is_demo=is_demo_user()).count()
