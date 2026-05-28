@@ -105,6 +105,7 @@ def suggest_interventions_for_scope(school_class, subject: str, term: str, acade
             SubjectResult.term == term,
             SubjectResult.academic_year == academic_year,
             Pupil.class_id == school_class.id,
+            Pupil.school_id == school_class.school_id,
             SubjectResult.combined_percent.isnot(None),
             SubjectResult.combined_percent < pass_threshold,
         )
@@ -135,6 +136,7 @@ def sync_auto_interventions(school_class, subject: str, term: str, academic_year
             Intervention.academic_year == academic_year,
             Intervention.auto_flagged.is_(True),
             Pupil.class_id == school_class.id,
+            Pupil.school_id == school_class.school_id,
         )
         .all()
     )
@@ -148,6 +150,7 @@ def sync_auto_interventions(school_class, subject: str, term: str, academic_year
                 subject=subject,
                 term=term,
                 academic_year=academic_year,
+                school_id=school_class.school_id,
                 reason=suggestion['reason'],
                 auto_flagged=True,
                 is_active=True,
@@ -172,6 +175,7 @@ def sync_auto_interventions(school_class, subject: str, term: str, academic_year
             Intervention.academic_year == academic_year,
             Intervention.is_active.is_(True),
             Pupil.class_id == school_class.id,
+            Pupil.school_id == school_class.school_id,
         )
         .order_by(Intervention.auto_flagged.desc(), Pupil.last_name, Pupil.first_name)
         .all()

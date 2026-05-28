@@ -23,8 +23,8 @@ from app.models import (
     SubjectResult,
     WritingResult,
 )
-from app.utils import school_scoped_query
-from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
+from app.utils import get_current_academic_year, school_scoped_query
+from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting, short_band_label
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
 from .pupil_overview import build_pupil_overview_data, summarize_gld_status
 from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
@@ -657,7 +657,7 @@ def export_subject_results_csv(class_id: int | None = None, subject: str | None 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'academic_year', 'term', 'subject', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'source', 'notes'])
-    query = SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)
+    query = school_scoped_query(SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class), Pupil)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     if subject:
@@ -675,7 +675,7 @@ def export_writing_results_csv(class_id: int | None = None, academic_year: str |
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'academic_year', 'term', 'band', 'notes', 'source'])
-    query = WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class)
+    query = school_scoped_query(WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class), Pupil)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     if academic_year:
@@ -691,7 +691,7 @@ def export_class_overview_csv(academic_year: str, class_id: int | None = None) -
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['class_name', 'year_group', 'teacher', 'pupil_count', 'active_interventions', 'maths_on_track_plus', 'reading_on_track_plus', 'spag_on_track_plus', 'writing_on_track_plus'])
-    query = SchoolClass.query.filter_by(is_active=True)
+    query = school_scoped_query(SchoolClass.query.filter_by(is_active=True), SchoolClass)
     if class_id:
         query = query.filter(SchoolClass.id == class_id)
     for school_class in query.order_by(SchoolClass.year_group, SchoolClass.name).all():
@@ -714,7 +714,7 @@ def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'send', 'academic_year', 'gld', 'phonics', 'mtc', 'y6_sats_entries'])
-    query = Pupil.query.join(Pupil.school_class)
+    query = school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     if send == 'yes':
@@ -738,7 +738,7 @@ def export_reception_tracker_csv(academic_year: str, tracking_point: str) -> str
     writer = csv.writer(output)
     writer.writerow(RECEPTION_TEMPLATE_COLUMNS)
     pupils = (
-        Pupil.query.join(Pupil.school_class)
+        school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
         .filter(SchoolClass.year_group == RECEPTION_YEAR_GROUP, Pupil.is_active.is_(True))
         .order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name)
         .all()
@@ -807,7 +807,7 @@ def export_interventions_csv(academic_year: str, class_id: int | None = None, an
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note'])
-    query = Intervention.query.join(Intervention.pupil).join(Pupil.school_class).filter(Intervention.academic_year == academic_year)
+    query = school_scoped_query(Intervention.query.join(Intervention.pupil).join(Pupil.school_class), Pupil).filter(Intervention.academic_year == academic_year)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     for idx, row in enumerate(query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
@@ -821,7 +821,7 @@ def export_history_csv(academic_year: str) -> str:
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'academic_year', 'class_name', 'year_group', 'teacher_username', 'promoted_to_year_group'])
     rows = (
-        PupilClassHistory.query.join(PupilClassHistory.pupil)
+        school_scoped_query(PupilClassHistory.query.join(PupilClassHistory.pupil), PupilClassHistory)
         .filter(PupilClassHistory.academic_year == academic_year)
         .order_by(PupilClassHistory.year_group, PupilClassHistory.class_name, Pupil.last_name, Pupil.first_name)
         .all()

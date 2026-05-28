@@ -152,7 +152,7 @@ def phonics():
         return redirect(url_for('dashboards.teacher_dashboard'))
 
     pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
-    columns = ensure_phonics_columns(school_class.year_group, current_user.school_id)
+    columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
     sort_state = build_table_sort_state(request.values, allowed_columns=sortable_columns, default_column='name')
@@ -169,22 +169,22 @@ def phonics():
         action = request.form.get('action', 'save_scores')
         try:
             if action == 'save_columns':
-                columns = save_phonics_columns(school_class.year_group, current_user.school_id, request.form)
+                columns = save_phonics_columns(school_class.year_group, school_class.school_id, request.form)
                 flash('Phonics test columns updated.', 'success')
             elif action == 'add_column':
-                column = add_phonics_column(school_class.year_group, current_user.school_id, request.form)
+                column = add_phonics_column(school_class.year_group, school_class.school_id, request.form)
                 flash(f'Added phonics column {column.name}.', 'success')
             else:
-                save_phonics_scores(pupils, columns, academic_year, current_user.school_id, request.form)
+                save_phonics_scores(pupils, columns, academic_year, school_class.school_id, request.form)
                 flash('Phonics scores saved.', 'success')
             db.session.commit()
             return redirect(url_for('teacher.phonics', academic_year=academic_year, search=filters['search'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Phonics changes could not be saved: {exc}', 'danger')
-            columns = ensure_phonics_columns(school_class.year_group, current_user.school_id)
+            columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
 
-    rows = build_phonics_tracker_rows(pupils, columns, academic_year, current_user.school_id)
+    rows = build_phonics_tracker_rows(pupils, columns, academic_year, school_class.school_id)
     rows = sort_phonics_tracker_rows(rows, sort_state['column'], sort_state['direction'])
     return render_template(
         'teacher/phonics_tracker.html',
@@ -424,12 +424,16 @@ def interventions():
         try:
             if action == 'add_manual':
                 pupil_id = int(request.form.get('pupil_id', '0'))
+                pupil = school_class.pupils.filter_by(id=pupil_id, is_active=True, school_id=school_class.school_id).first()
+                if not pupil:
+                    raise ValueError('Choose a pupil from your assigned class.')
                 note = request.form.get('note', '').strip() or None
                 reason = request.form.get('reason', '').strip() or 'Teacher added manually'
-                record = Intervention.query.filter_by(pupil_id=pupil_id, subject=subject, term=term, academic_year=academic_year, is_active=True).first()
+                record = Intervention.query.join(Intervention.pupil).filter(Intervention.pupil_id == pupil_id, Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Intervention.is_active.is_(True), Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id).first()
                 if not record:
                     record = Intervention(
                         pupil_id=pupil_id,
+                        school_id=school_class.school_id,
                         subject=subject,
                         term=term,
                         academic_year=academic_year,
@@ -446,7 +450,7 @@ def interventions():
                 db.session.add(record)
                 flash('Manual intervention added.', 'success')
             else:
-                for record in Intervention.query.join(Intervention.pupil).filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True)).all():
+                for record in Intervention.query.join(Intervention.pupil).filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id, Pupil.is_active.is_(True)).all():
                     record.note = request.form.get(f'note_{record.id}', '').strip() or None
                     record.is_active = request.form.get(f'active_{record.id}') == 'on'
                     db.session.add(record)
@@ -459,7 +463,7 @@ def interventions():
 
     interventions = (
         Intervention.query.join(Intervention.pupil)
-        .filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True))
+        .filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id, Pupil.is_active.is_(True))
         .order_by(Intervention.is_active.desc(), Intervention.auto_flagged.desc(), Pupil.last_name, Pupil.first_name)
         .all()
     )
@@ -493,7 +497,7 @@ def interventions_quick_save():
         record_id = int(data.get('record_id') or 0)
     except (TypeError, ValueError):
         return {'ok': False}, 400
-    record = Intervention.query.join(Intervention.pupil).filter(Intervention.id == record_id, Pupil.class_id == school_class.id, Pupil.school_id == current_user.school_id).first()
+    record = Intervention.query.join(Intervention.pupil).filter(Intervention.id == record_id, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id).first()
     if not record:
         return {'ok': False}, 404
     field = (data.get('field') or '').strip()
