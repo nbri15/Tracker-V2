@@ -20,7 +20,6 @@ SCHOOL_ID_TABLES = [
     'users',
     'school_classes',
     'pupils',
-    'academic_years',
     'term_configs',
     'assessment_settings',
     'subject_results',

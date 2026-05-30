@@ -22,7 +22,8 @@ def upgrade():
     op.add_column('pupils', sa.Column('archive_reason', sa.Text(), nullable=True))
     op.create_index('ix_pupils_is_archived', 'pupils', ['is_archived'], unique=False)
     op.create_index('ix_pupils_archived_by_user_id', 'pupils', ['archived_by_user_id'], unique=False)
-    op.create_foreign_key('fk_pupils_archived_by_user_id', 'pupils', 'users', ['archived_by_user_id'], ['id'])
+    if op.get_bind().dialect.name != 'sqlite':
+        op.create_foreign_key('fk_pupils_archived_by_user_id', 'pupils', 'users', ['archived_by_user_id'], ['id'])
 
     op.add_column('schools', sa.Column('is_archived', sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column('schools', sa.Column('archived_at', sa.DateTime(), nullable=True))
@@ -30,7 +31,8 @@ def upgrade():
     op.add_column('schools', sa.Column('archive_reason', sa.Text(), nullable=True))
     op.create_index('ix_schools_is_archived', 'schools', ['is_archived'], unique=False)
     op.create_index('ix_schools_archived_by_user_id', 'schools', ['archived_by_user_id'], unique=False)
-    op.create_foreign_key('fk_schools_archived_by_user_id', 'schools', 'users', ['archived_by_user_id'], ['id'])
+    if op.get_bind().dialect.name != 'sqlite':
+        op.create_foreign_key('fk_schools_archived_by_user_id', 'schools', 'users', ['archived_by_user_id'], ['id'])
 
     op.create_table(
         'audit_logs',

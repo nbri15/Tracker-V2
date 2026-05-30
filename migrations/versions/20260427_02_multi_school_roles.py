@@ -20,7 +20,6 @@ SCHOOL_ID_TABLES = [
     'users',
     'school_classes',
     'pupils',
-    'academic_years',
     'assessment_settings',
     'subject_results',
     'writing_results',
@@ -76,7 +75,8 @@ def upgrade():
         if _has_table(bind, table_name) and not _has_column(bind, table_name, 'school_id'):
             op.add_column(table_name, sa.Column('school_id', sa.Integer(), nullable=True))
             op.create_index(f'ix_{table_name}_school_id', table_name, ['school_id'], unique=False)
-            op.create_foreign_key(f'fk_{table_name}_school_id', table_name, 'schools', ['school_id'], ['id'])
+            if bind.dialect.name != 'sqlite':
+                op.create_foreign_key(f'fk_{table_name}_school_id', table_name, 'schools', ['school_id'], ['id'])
 
     if _has_table(bind, 'users') and _has_column(bind, 'users', 'role'):
         bind.execute(text("UPDATE users SET role = 'school_admin' WHERE role = 'admin'"))

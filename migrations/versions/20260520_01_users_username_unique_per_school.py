@@ -23,17 +23,26 @@ def upgrade():
         if index.get('unique') and index.get('column_names') == ['username']:
             op.drop_index(index['name'], table_name='users')
 
-    for constraint in inspector.get_unique_constraints('users'):
-        cols = constraint.get('column_names') or []
-        if cols == ['username']:
-            op.drop_constraint(constraint['name'], 'users', type_='unique')
+    if bind.dialect.name != 'sqlite':
+        for constraint in inspector.get_unique_constraints('users'):
+            cols = constraint.get('column_names') or []
+            if cols == ['username']:
+                op.drop_constraint(constraint['name'], 'users', type_='unique')
 
-    op.create_index(
-        'uq_users_school_id_username_lower',
-        'users',
-        ['school_id', sa.text('lower(username)')],
-        unique=True,
-    )
+    if bind.dialect.name != 'sqlite':
+        op.create_index(
+            'uq_users_school_id_username_lower',
+            'users',
+            ['school_id', sa.text('lower(username)')],
+            unique=True,
+        )
+    else:
+        op.create_index(
+            'uq_users_school_id_username_lower',
+            'users',
+            ['school_id', 'username'],
+            unique=True,
+        )
 
 
 def downgrade():

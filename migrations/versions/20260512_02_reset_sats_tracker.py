@@ -22,7 +22,10 @@ FIXED_COLUMNS = [
 ]
 
 def _backup_table(conn, table_name):
-    conn.execute(sa.text(f"CREATE TABLE IF NOT EXISTS {table_name}_backup_20260512 AS TABLE {table_name}"))
+    if conn.dialect.name == 'sqlite':
+        conn.execute(sa.text(f"CREATE TABLE IF NOT EXISTS {table_name}_backup_20260512 AS SELECT * FROM {table_name}"))
+    else:
+        conn.execute(sa.text(f"CREATE TABLE IF NOT EXISTS {table_name}_backup_20260512 AS TABLE {table_name}"))
 
 def upgrade():
     conn = op.get_bind()
@@ -40,14 +43,14 @@ def upgrade():
         for exam_number in range(1, 5):
             tab_res = conn.execute(sa.text(
                 "INSERT INTO sats_exam_tabs (school_id, year_group, name, display_order, is_active, created_at, updated_at) "
-                "VALUES (:school_id, 6, :name, :order_no, true, NOW(), NOW()) RETURNING id"
-            ), {'school_id': school_id, 'name': f'Exam {exam_number}', 'order_no': exam_number})
+                "VALUES (:school_id, 6, :name, :order_no, :is_active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id"
+            ), {'school_id': school_id, 'name': f'Exam {exam_number}', 'order_no': exam_number, 'is_active': True})
             tab_id = tab_res.scalar()
             for name, subject, score_type, column_key, max_marks, display_order in FIXED_COLUMNS:
                 conn.execute(sa.text(
                     "INSERT INTO sats_column_settings (school_id, year_group, exam_tab_id, name, subject, score_type, column_key, max_marks, pass_percentage, display_order, is_active, created_at, updated_at) "
-                    "VALUES (:school_id, 6, :tab_id, :name, :subject, :score_type, :column_key, :max_marks, 60.0, :display_order, true, NOW(), NOW())"
-                ), dict(school_id=school_id, tab_id=tab_id, name=name, subject=subject, score_type=score_type, column_key=column_key, max_marks=max_marks, display_order=display_order))
+                    "VALUES (:school_id, 6, :tab_id, :name, :subject, :score_type, :column_key, :max_marks, 60.0, :display_order, :is_active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ), dict(school_id=school_id, tab_id=tab_id, name=name, subject=subject, score_type=score_type, column_key=column_key, max_marks=max_marks, display_order=display_order, is_active=True))
 
 
 def downgrade():

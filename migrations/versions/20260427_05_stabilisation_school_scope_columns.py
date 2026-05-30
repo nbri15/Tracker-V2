@@ -70,7 +70,7 @@ def upgrade():
             op.create_index(index_name, table_name, ['school_id'], unique=False)
 
         fk_name = f'fk_{table_name}_school_id'
-        if not _has_fk(bind, table_name, fk_name):
+        if bind.dialect.name != 'sqlite' and not _has_fk(bind, table_name, fk_name):
             op.create_foreign_key(fk_name, table_name, 'schools', ['school_id'], ['id'])
 
 
