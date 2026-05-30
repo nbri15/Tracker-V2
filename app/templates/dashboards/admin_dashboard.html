@@ -32,12 +32,12 @@
   </div>
 </div>
 
-<div class="card shadow-sm mb-4">
+<div class="card shadow-sm mb-4 filter-card">
   <div class="card-header bg-white">
     <strong>Filters</strong>
   </div>
   <div class="card-body">
-    <form method="get" class="row g-3 align-items-end">
+    <form method="get" class="row g-3 align-items-end responsive-filter-form">
       <div class="col-md-2">
         <label class="form-label">Academic year</label>
         <input type="text" class="form-control" name="academic_year" value="{{ academic_year }}">
@@ -131,7 +131,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-12 d-flex justify-content-end gap-2">
+      <div class="col-12 filter-actions">
         <button class="btn btn-primary">Apply filters</button>
         <a class="btn btn-outline-secondary" href="{{ url_for('dashboards.admin_dashboard') }}">Clear</a>
       </div>

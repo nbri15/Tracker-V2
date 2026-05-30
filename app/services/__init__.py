@@ -22,6 +22,7 @@ from .assessments import (
     build_sort_indicator,
     build_table_sort_state,
     build_class_overview_row,
+    build_class_overview_rows,
     build_dashboard_summary,
     build_headline_report,
     build_subject_overview_cards,

@@ -13,6 +13,7 @@ from flask import Response, current_app, flash, jsonify, redirect, render_templa
 from flask_login import current_user, login_required
 
 from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
 
 from app.extensions import db
@@ -1934,9 +1935,9 @@ def import_full_workbook():
     batch_size = 200
     processed_rows = 0
 
-    class_rows = demo_filter_classes(SchoolClass.query.filter_by(school_id=school_id)).all()
+    class_rows = demo_filter_classes(SchoolClass.query.options(joinedload(SchoolClass.teacher)).filter_by(school_id=school_id)).all()
     class_by_name = {_norm_key(c.name): c for c in class_rows}
-    pupil_rows = demo_filter_pupils(Pupil.query.filter_by(school_id=school_id)).all()
+    pupil_rows = demo_filter_pupils(Pupil.query.options(joinedload(Pupil.school_class)).filter_by(school_id=school_id)).all()
     pupil_by_lookup = {
         (_norm_key(p.first_name), _norm_key(p.last_name), p.class_id): p
         for p in pupil_rows
@@ -1968,6 +1969,18 @@ def import_full_workbook():
     phonics_result_map = {(r.pupil_id, r.phonics_test_column_id): r for r in phonics_results}
     times_table_results = TimesTableScore.query.filter_by(school_id=school_id, academic_year=academic_year).all()
     times_table_result_map = {(r.pupil_id, r.times_table_test_column_id): r for r in times_table_results}
+    history_rows = PupilClassHistory.query.filter(
+        PupilClassHistory.school_id == school_id,
+        PupilClassHistory.academic_year == academic_year,
+        PupilClassHistory.pupil_id.in_([pupil.id for pupil in pupil_rows] or [0]),
+    ).all()
+    history_result_map = {row.pupil_id: row for row in history_rows}
+    sats_tabs = get_sats_exam_tabs(6, include_inactive=True) if 'SATs' in wb.sheetnames else []
+    sats_tabs_by_name = {_norm(tab.name).lower(): tab for tab in sats_tabs}
+    sats_column_maps_by_tab = {
+        tab.id: {_norm(column.column_key): column for column in get_sats_columns(6, exam_tab_id=tab.id, active_only=False) if column.column_key}
+        for tab in sats_tabs
+    }
 
     phonics_columns = PhonicsTestColumn.query.filter_by(school_id=school_id).all()
     phonics_column_map: dict[tuple[int, str], PhonicsTestColumn] = {}
@@ -1981,7 +1994,6 @@ def import_full_workbook():
         processed_rows += 1
         if processed_rows % batch_size == 0:
             db.session.flush()
-            db.session.expire_all()
             elapsed = time.perf_counter() - start_time
             current_app.logger.info('Importing %s sheet: %s rows processed (elapsed %.2fs)', sheet_name, processed_rows, elapsed)
 
@@ -2022,7 +2034,7 @@ def import_full_workbook():
                 pupil.class_id = school_class.id
             _preview_row('Pupils', row_idx, 'updated', f'Will update pupil {_norm(row[0])} {_norm(row[1])}.')
 
-        history_row = school_scoped_query(PupilClassHistory, PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=academic_year)).first()
+        history_row = history_result_map.get(pupil.id)
         if not history_row:
             history_row = PupilClassHistory(
                 school_id=school_id,
@@ -2033,6 +2045,7 @@ def import_full_workbook():
                 teacher_username=school_class.teacher.username if school_class.teacher else None,
             )
             db.session.add(history_row)
+            history_result_map[pupil.id] = history_row
         else:
             history_row.class_name = school_class.name
             history_row.year_group = school_class.year_group
@@ -2133,12 +2146,11 @@ def import_full_workbook():
             if assessment_point not in SATS_ASSESSMENT_POINTS:
                 preview_errors.append(f'SATs: invalid assessment_point "{assessment_point}" for {_norm(row[1])}')
                 continue
-            tabs = get_sats_exam_tabs(6, include_inactive=True)
-            tab = next((tab for tab in tabs if _norm(tab.name).lower() == assessment_point.lower()), None)
+            tab = sats_tabs_by_name.get(assessment_point.lower())
             if not tab:
                 preview_errors.append(f'SATs: assessment tab missing for {assessment_point}')
                 continue
-            column_map = {_norm(c.column_key): c for c in get_sats_columns(6, exam_tab_id=tab.id, active_only=False) if c.column_key}
+            column_map = sats_column_maps_by_tab.get(tab.id, {})
             imported_values = []
             for idx, csv_key in enumerate(SATS_FIXED_COLUMNS.keys(), start=3):
                 raw_value = row[idx]

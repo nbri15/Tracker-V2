@@ -41,6 +41,7 @@ class SubjectResult(db.Model):
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'academic_year', 'term', 'subject', name='uq_subject_result_scope'),
         db.Index('ix_subject_results_lookup', 'academic_year', 'term', 'subject'),
+        db.Index('ix_subject_results_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -276,6 +277,7 @@ class FoundationResult(db.Model):
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'academic_year', 'half_term', 'subject', name='uq_foundation_result_scope'),
         db.Index('ix_foundation_results_lookup', 'academic_year', 'half_term', 'subject'),
+        db.Index('ix_foundation_results_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
