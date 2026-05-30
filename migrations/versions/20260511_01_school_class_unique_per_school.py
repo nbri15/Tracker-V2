@@ -12,7 +12,7 @@ from sqlalchemy import inspect, text
 
 # revision identifiers, used by Alembic.
 revision = '20260511_01'
-down_revision = '20260508_01'
+down_revision = '20260508_01_schema_safety_backfill'
 branch_labels = None
 depends_on = None
 
@@ -35,7 +35,8 @@ def upgrade() -> None:
 
     if not _has_column(inspector, 'school_classes', 'school_id'):
         op.add_column('school_classes', sa.Column('school_id', sa.Integer(), nullable=True))
-        op.create_foreign_key('fk_school_classes_school_id_schools', 'school_classes', 'schools', ['school_id'], ['id'])
+        if bind.dialect.name != 'sqlite':
+            op.create_foreign_key('fk_school_classes_school_id_schools', 'school_classes', 'schools', ['school_id'], ['id'])
         op.create_index(op.f('ix_school_classes_school_id'), 'school_classes', ['school_id'], unique=False)
 
     default_school_id = bind.execute(text("SELECT id FROM schools WHERE slug = 'barrow-school' LIMIT 1")).scalar()
@@ -49,10 +50,11 @@ def upgrade() -> None:
 
     inspector = inspect(bind)
     unique_names = {c.get('name') for c in inspector.get_unique_constraints('school_classes')}
-    if 'uq_school_class_name_per_school' not in unique_names:
+    if bind.dialect.name != 'sqlite' and 'uq_school_class_name_per_school' not in unique_names:
         op.create_unique_constraint('uq_school_class_name_per_school', 'school_classes', ['school_id', 'name'])
 
-    op.execute("ALTER TABLE school_classes ALTER COLUMN school_id SET NOT NULL")
+    if bind.dialect.name != 'sqlite':
+        op.execute("ALTER TABLE school_classes ALTER COLUMN school_id SET NOT NULL")
 
 
 def downgrade() -> None:

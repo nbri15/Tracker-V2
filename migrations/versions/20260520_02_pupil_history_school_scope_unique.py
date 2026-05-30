@@ -15,6 +15,8 @@ depends_on = None
 
 
 def upgrade():
+    if op.get_bind().dialect.name == 'sqlite':
+        return
     op.drop_constraint('uq_pupil_class_history_scope', 'pupil_class_history', type_='unique')
     op.create_unique_constraint(
         'uq_pupil_class_history_school_scope',

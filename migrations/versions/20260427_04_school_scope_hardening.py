@@ -32,7 +32,8 @@ def _ensure_school_ids_on_settings(bind) -> None:
         if not _has_column(bind, table_name, 'school_id'):
             op.add_column(table_name, sa.Column('school_id', sa.Integer(), nullable=True))
             op.create_index(f'ix_{table_name}_school_id', table_name, ['school_id'], unique=False)
-            op.create_foreign_key(f'fk_{table_name}_school_id', table_name, 'schools', ['school_id'], ['id'])
+            if bind.dialect.name != 'sqlite':
+                op.create_foreign_key(f'fk_{table_name}_school_id', table_name, 'schools', ['school_id'], ['id'])
 
 
 def _force_school_backfill(bind, demo_id: int, barrow_id: int) -> None:

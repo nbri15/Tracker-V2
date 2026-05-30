@@ -23,7 +23,8 @@ from app.models import (
     SubjectResult,
     WritingResult,
 )
-from app.utils import get_current_academic_year, school_scoped_query
+from app.utils import school_scoped_query
+from .assessments import get_current_academic_year
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting, short_band_label
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
 from .pupil_overview import build_pupil_overview_data, summarize_gld_status
