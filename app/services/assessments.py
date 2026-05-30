@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
@@ -818,6 +818,174 @@ def build_dashboard_summary(class_id: int | None, academic_year: str, subgroup: 
     if not class_id:
         return [_empty_subject_summary(subject) for subject in ALL_SUBJECTS]
     return [compute_class_subject_summary(class_id, subject, academic_year, subgroup, filters=filters) for subject in ALL_SUBJECTS]
+
+
+def _summary_from_grouped_rows(
+    *,
+    subject: str,
+    latest_term: str | None,
+    rows: list,
+    filtered_pupil_count: int,
+    setting_cache: dict[tuple[int, str, str], AssessmentSetting],
+    class_year_groups: dict[int, int],
+) -> dict:
+    if not latest_term:
+        summary = _empty_subject_summary(subject)
+        summary['filtered_pupil_count'] = filtered_pupil_count
+        return summary
+
+    latest_rows = [row for row in rows if getattr(row, 'term', None) == latest_term]
+    if subject in CORE_SUBJECTS:
+        counts = {'Working Towards': 0, 'On Track': 0, 'Exceeding': 0}
+        percents = []
+        for row in latest_rows:
+            if row.combined_percent is None:
+                continue
+            class_id = getattr(row.pupil, 'class_id', None)
+            year_group = class_year_groups.get(class_id)
+            if year_group is None:
+                band_label = row.band_label
+            else:
+                cache_key = (year_group, row.subject, row.term)
+                setting = setting_cache.get(cache_key)
+                if setting is None:
+                    setting = get_subject_setting(year_group, row.subject, row.term)
+                    setting_cache[cache_key] = setting
+                band_label = resolve_subject_band_label(
+                    percent=row.combined_percent,
+                    setting=setting,
+                    pupil_year_group=year_group,
+                    assessment_year_group=row.assessment_year_group,
+                )
+            if band_label in counts:
+                counts[band_label] += 1
+            percents.append(row.combined_percent)
+        average_percent = round(sum(percents) / len(percents), 1) if percents else None
+    else:
+        counts = _counts_from_writing_bands(latest_rows)
+        average_percent = None
+
+    return _build_summary_payload(
+        subject,
+        latest_term,
+        counts,
+        len(latest_rows),
+        average_percent=average_percent,
+        filtered_pupil_count=filtered_pupil_count,
+    )
+
+
+def build_class_overview_rows(
+    classes: list[SchoolClass],
+    academic_year: str,
+    subgroup: str = 'all',
+    filters: dict | None = None,
+    term: str | None = None,
+) -> list[dict]:
+    """Build admin dashboard class rows with batched pupil/result queries."""
+    if not classes:
+        return []
+
+    class_ids = [school_class.id for school_class in classes]
+    class_year_groups = {school_class.id: school_class.year_group for school_class in classes}
+    filtered_pupils = apply_pupil_filters(
+        Pupil.query.filter(Pupil.class_id.in_(class_ids)),
+        subgroup=subgroup,
+        filters=filters,
+    ).all()
+    pupil_ids = [pupil.id for pupil in filtered_pupils]
+    pupil_counts: dict[int, int] = defaultdict(int)
+    for pupil in filtered_pupils:
+        pupil_counts[pupil.class_id] += 1
+
+    rows_by_class_subject: dict[tuple[int, str], list] = defaultdict(list)
+    if pupil_ids:
+        subject_rows = (
+            SubjectResult.query.join(SubjectResult.pupil)
+            .options(joinedload(SubjectResult.pupil))
+            .filter(
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.subject.in_(CORE_SUBJECTS),
+                SubjectResult.pupil_id.in_(pupil_ids),
+            )
+            .all()
+        )
+        for row in subject_rows:
+            rows_by_class_subject[(row.pupil.class_id, row.subject)].append(row)
+
+        writing_rows = (
+            WritingResult.query.join(WritingResult.pupil)
+            .options(joinedload(WritingResult.pupil))
+            .filter(
+                WritingResult.academic_year == academic_year,
+                WritingResult.pupil_id.in_(pupil_ids),
+            )
+            .all()
+        )
+        for row in writing_rows:
+            rows_by_class_subject[(row.pupil.class_id, 'writing')].append(row)
+
+    intervention_query = (
+        db.session.query(Pupil.class_id, func.count(Intervention.id))
+        .join(Intervention, Intervention.pupil_id == Pupil.id)
+        .filter(
+            Pupil.class_id.in_(class_ids),
+            Intervention.is_active.is_(True),
+            Intervention.academic_year == academic_year,
+            Pupil.is_active.is_(True),
+        )
+    )
+    if term and term != 'all':
+        intervention_query = intervention_query.filter(Intervention.term == term)
+    intervention_query = apply_admin_pupil_filters(intervention_query, filters).group_by(Pupil.class_id)
+    intervention_counts = {class_id: count for class_id, count in intervention_query.all()}
+
+    existing_settings = AssessmentSetting.query.filter(
+        AssessmentSetting.year_group.in_(set(class_year_groups.values())),
+        AssessmentSetting.subject.in_(CORE_SUBJECTS),
+        AssessmentSetting.term.in_([term_key for term_key, _label in TERMS]),
+    ).all()
+    setting_cache = {(setting.year_group, setting.subject, setting.term): setting for setting in existing_settings}
+
+    overview_rows = []
+    for school_class in classes:
+        subject_summaries = {}
+        for subject in ALL_SUBJECTS:
+            scoped_rows = rows_by_class_subject.get((school_class.id, subject), [])
+            if term and term != 'all':
+                latest_term = term
+            else:
+                term_candidates = (
+                    row.term
+                    for row in scoped_rows
+                    if getattr(row, 'term', None)
+                    and (subject == 'writing' or getattr(row, 'combined_percent', None) is not None)
+                )
+                latest_term = max(
+                    term_candidates,
+                    key=lambda value: TERM_SEQUENCE.get(value, 0),
+                    default=None,
+                )
+            subject_summaries[subject] = _summary_from_grouped_rows(
+                subject=subject,
+                latest_term=latest_term,
+                rows=scoped_rows,
+                filtered_pupil_count=pupil_counts.get(school_class.id, 0),
+                setting_cache=setting_cache,
+                class_year_groups=class_year_groups,
+            )
+
+        overview_rows.append({
+            'class': school_class,
+            'class_id': school_class.id,
+            'class_name': school_class.name,
+            'year_group': school_class.year_group,
+            'teacher_name': school_class.teacher.username if school_class.teacher else 'Unassigned',
+            'pupil_count': pupil_counts.get(school_class.id, 0),
+            'active_interventions': intervention_counts.get(school_class.id, 0),
+            'subjects': subject_summaries,
+        })
+    return overview_rows
 
 
 def build_class_overview_row(school_class: SchoolClass, academic_year: str, subgroup: str = 'all', filters: dict | None = None, term: str | None = None) -> dict:

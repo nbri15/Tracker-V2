@@ -17,6 +17,7 @@ class ReceptionTrackerEntry(db.Model):
             'area_key',
             name='uq_reception_tracker_entry_scope',
         ),
+        db.Index('ix_reception_entries_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)

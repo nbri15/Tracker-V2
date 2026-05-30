@@ -4,13 +4,14 @@ from datetime import datetime, timezone
 
 from flask import redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy.orm import joinedload
 
 from app.models import Intervention, Pupil, SatsResult, SchoolClass, SimpleSatsExamTab, SimpleSatsSetting, User
 from app.services import (
     BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
     build_admin_pupil_filter_state,
-    build_class_overview_row,
+    build_class_overview_rows,
     build_dashboard_summary,
     build_subject_overview_cards,
     calculate_progress,
@@ -61,7 +62,7 @@ def teacher_dashboard():
         term = "Summer"
 
     school_class = get_primary_class_for_user(current_user)
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all() if school_class else []
+    pupil_count = school_class.pupils.filter_by(is_active=True).count() if school_class else 0
     academic_year = get_current_academic_year()
     summary_rows = get_dashboard_stats(school_class.id if school_class else None, academic_year)
     active_interventions = (
@@ -74,6 +75,7 @@ def teacher_dashboard():
             Pupil.is_demo.is_(school_class.is_demo),
             Intervention.is_demo.is_(school_class.is_demo),
         )
+        .options(joinedload(Intervention.pupil))
         .order_by(Pupil.last_name, Pupil.first_name)
         .all()
         if school_class
@@ -83,7 +85,7 @@ def teacher_dashboard():
     context = {
         'school_class': school_class,
         'has_year6_sats_access': get_year_group_class_for_user(current_user, 6) is not None,
-        'pupil_count': len(pupils),
+        'pupil_count': pupil_count,
         'academic_year': academic_year,
         'term': term,
         'term_label': 'All terms' if term == 'All' else term,
@@ -124,8 +126,8 @@ def admin_dashboard():
     if filter_class:
         query = query.filter(SchoolClass.id == int(filter_class))
 
-    classes = query.order_by(SchoolClass.year_group, SchoolClass.name).all()
-    class_rows = [build_class_overview_row(school_class, academic_year, filters=pupil_filters, term=term_filter) for school_class in classes]
+    classes = query.options(joinedload(SchoolClass.teacher)).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    class_rows = build_class_overview_rows(classes, academic_year, filters=pupil_filters, term=term_filter)
     class_rows = sort_class_rows(class_rows, sort)
     subject_cards = build_subject_overview_cards(class_rows)
     teacher_options = school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).order_by(User.username).all()

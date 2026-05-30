@@ -9,6 +9,9 @@ class Pupil(db.Model):
     """Stores a pupil's core demographic and class membership details."""
 
     __tablename__ = 'pupils'
+    __table_args__ = (
+        db.Index('ix_pupils_dashboard_scope', 'school_id', 'is_demo', 'is_active', 'class_id'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)

@@ -1547,3 +1547,96 @@ select.has-ghost-value {
 @media (max-width: 768px) {
   .public-header-inner { flex-wrap: wrap; justify-content: center; }
 }
+
+/* Standardised responsive components */
+.card {
+  overflow-wrap: anywhere;
+}
+
+.card-body {
+  padding: clamp(0.9rem, 1.4vw, 1.25rem);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.35rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.btn-sm {
+  min-height: 2rem;
+  padding-inline: 0.65rem;
+}
+
+.filter-card .form-select,
+.filter-card .form-control,
+.responsive-filter-form .form-select,
+.responsive-filter-form .form-control {
+  width: 100%;
+  max-width: none;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.table thead th {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.admin-overview-table,
+.report-print-table {
+  min-width: 860px;
+}
+
+.admin-overview-table td,
+.report-print-table td {
+  vertical-align: top;
+}
+
+.subject-summary-legend span,
+.subject-result-pill,
+.kpi-note,
+.small.text-muted {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 899px) {
+  .content-area {
+    width: 100%;
+  }
+
+  .card-header {
+    gap: 0.65rem;
+  }
+
+  .filter-actions,
+  .filter-actions .btn,
+  .card-header .btn {
+    width: 100%;
+  }
+
+  .table-responsive {
+    border-radius: 0.75rem;
+  }
+
+  .admin-overview-table,
+  .report-print-table {
+    min-width: 760px;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1199px) {
+  .admin-overview-table,
+  .report-print-table {
+    min-width: 820px;
+  }
+}

@@ -83,6 +83,7 @@ class SatsColumnResult(db.Model):
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'column_id', 'academic_year', name='uq_sats_column_result_scope'),
         db.Index('ix_sats_column_result_lookup', 'academic_year', 'column_id'),
+        db.Index('ix_sats_column_results_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -108,6 +109,7 @@ class SatsResult(db.Model):
         db.UniqueConstraint('school_id', 'pupil_id', 'academic_year', 'exam_number', name='uq_sats_result_exam_scope'),
         db.UniqueConstraint('pupil_id', 'subject', 'assessment_point', 'academic_year', name='uq_sats_result_scope'),
         db.Index('ix_sats_result_lookup', 'academic_year', 'subject', 'assessment_point'),
+        db.Index('ix_sats_results_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -147,6 +149,7 @@ class SatsWritingResult(db.Model):
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'assessment_point', 'academic_year', name='uq_sats_writing_scope'),
         db.Index('ix_sats_writing_lookup', 'academic_year', 'assessment_point'),
+        db.Index('ix_sats_writing_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)

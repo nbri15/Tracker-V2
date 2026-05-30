@@ -11,6 +11,7 @@ class WritingResult(db.Model):
     __tablename__ = 'writing_results'
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'academic_year', 'term', name='uq_writing_result_scope'),
+        db.Index('ix_writing_results_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
