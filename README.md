@@ -308,7 +308,7 @@ pip install -r requirements.txt
 ### Render start command
 
 ```bash
-gunicorn wsgi:app
+gunicorn wsgi:app --timeout 180
 ```
 
 ### Required Render environment variables

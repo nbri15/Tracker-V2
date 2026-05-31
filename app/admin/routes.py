@@ -94,7 +94,8 @@ from app.services import (
     format_subject_name,
     generate_csv,
     get_class_detail_context,
-    get_current_academic_year,
+    get_class_pupil_query,
+    get_selected_current_academic_year,
     get_foundation_half_term,
     get_gender_filter_options,
     get_next_sort_direction,
@@ -147,7 +148,7 @@ from app.services.pupil_quick_add import create_quick_add_pupil
 
 
 def _apply_common_report_filters(query):
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     term = request.args.get('term', '').strip()
     class_id = request.args.get('class_id', type=int)
     year_group = request.args.get('year_group', type=int)
@@ -620,7 +621,7 @@ def classes():
             db.session.rollback()
             flash(f'Class changes could not be saved: {exc}', 'danger')
 
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     filter_year_group = request.args.get('year_group', '').strip()
     filter_teacher = request.args.get('teacher_id', '').strip()
     filter_class = request.args.get('class_id', '').strip()
@@ -664,7 +665,7 @@ def classes():
 @login_required
 @admin_required
 def class_detail(class_id: int):
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     require_same_school(school_class)
     pupil_filters = build_admin_pupil_filter_state(request.args)
@@ -739,9 +740,9 @@ def _legacy_class_sats_disabled(class_id: int):
     require_same_school(school_class)
     if school_class.year_group != 6 or not school_class.is_active:
         return _redirect_non_year6_sats_access()
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     selected_tab_id_raw = request.args.get('exam_tab_id', '').strip()
-    pupils = school_class.pupils.filter_by(is_active=True, school_id=school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
     columns, rows, overview = build_sats_tracker_rows(pupils, academic_year, 6, exam_tab_id=int(selected_tab_id_raw) if selected_tab_id_raw else None, active_only=True)
     selected_tab = overview.pop('_selected_tab', None)
     tabs = overview.pop('_tabs', get_sats_exam_tabs(6, include_inactive=True))
@@ -771,14 +772,14 @@ def _legacy_class_sats_disabled(class_id: int):
 def class_phonics(class_id: int):
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     require_same_school(school_class)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
     if not is_ks1_year_group(school_class.year_group):
         flash('The phonics tracker is only available for Year 1 and Year 2 classes.', 'warning')
         return redirect(url_for('admin.class_detail', class_id=class_id, academic_year=academic_year))
 
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
     columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
@@ -839,14 +840,14 @@ def class_phonics(class_id: int):
 def class_times_tables(class_id: int):
     school_class = demo_filter_classes(SchoolClass.query).filter(SchoolClass.id == class_id).first_or_404()
     require_same_school(school_class)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
     if not is_times_tables_year_group(school_class.year_group):
         flash('The times tables tracker is only available for Year 4 classes.', 'warning')
         return redirect(url_for('admin.class_detail', class_id=class_id, academic_year=academic_year))
 
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
     columns = ensure_times_tables_columns(school_class.year_group)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
@@ -912,10 +913,10 @@ def foundation_tracker():
 
     selected_class_id_raw = (request.values.get('class_id') or '').strip()
     school_class = next((item for item in class_options if str(item.id) == selected_class_id_raw), class_options[0])
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     half_term = get_foundation_half_term(request.values.get('half_term'))
     filters = build_admin_pupil_filter_state(request.values)
-    pupils_query = school_class.pupils
+    pupils_query = get_class_pupil_query(school_class, academic_year)
     pupils = apply_admin_pupil_filters(pupils_query, filters).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
@@ -976,12 +977,12 @@ def reception_tracker():
         flash('Reception class has not been created yet. Open Users and run Sync defaults or create Reception class.', 'warning')
         return redirect(url_for('admin.classes'))
 
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     tracking_point = get_tracking_point_key(request.values.get('tracking_point'))
     view = (request.values.get('view', 'tracker') or 'tracker').strip().lower()
     if view not in {'tracker', 'overview'}:
         view = 'tracker'
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         tracking_point = get_tracking_point_key(request.form.get('tracking_point'))
@@ -1612,7 +1613,7 @@ def settings_quick_save():
 def interventions():
     from app.models import Intervention
 
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     year_group = request.args.get('year_group', '').strip()
     class_id = request.args.get('class_id', '').strip()
     subject = request.args.get('subject', '').strip()
@@ -1655,7 +1656,7 @@ def sats():
 
 # legacy disabled
 def _legacy_admin_sats_disabled():
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     selected_class_id = request.values.get('class_id', '').strip()
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
     selected_class_id_int = int(selected_class_id) if selected_class_id.isdigit() else None
@@ -1737,7 +1738,7 @@ def _legacy_admin_sats_disabled():
 @login_required
 @admin_required
 def promotion():
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     next_year = build_next_academic_year(academic_year)
     effective_school_id = _selected_school_id_for_admin_actions()
     mapping_rows = get_promotion_mapping_options(effective_school_id) if effective_school_id else []
@@ -1870,7 +1871,7 @@ def imports():
     workbook_preview = session.pop('workbook_import_preview', None)
     ensure_default_academic_years()
     years = AcademicYear.query.order_by(AcademicYear.name.desc()).all()
-    current_year = get_current_academic_year()
+    current_year = get_selected_current_academic_year()
     selected_year_id = request.args.get('academic_year_id') or request.form.get('academic_year_id')
     if selected_year_id is None:
         current_year_record = next((year for year in years if year.name == current_year), None)
@@ -1940,8 +1941,8 @@ def import_full_workbook():
     selected_year_id = (request.form.get('academic_year_id') or '').strip()
     selected_year = AcademicYear.query.filter_by(id=selected_year_id).first() if selected_year_id else None
     selected_academic_year = (selected_year.name if selected_year else '').strip()
-    academic_year = selected_academic_year or get_current_academic_year()
-    current_academic_year = get_current_academic_year()
+    academic_year = selected_academic_year or get_selected_current_academic_year()
+    current_academic_year = get_selected_current_academic_year()
     batch_size = 200
     processed_rows = 0
 
@@ -1985,6 +1986,21 @@ def import_full_workbook():
         PupilClassHistory.pupil_id.in_([pupil.id for pupil in pupil_rows] or [0]),
     ).all()
     history_result_map = {row.pupil_id: row for row in history_rows}
+
+    def _refresh_historical_lookup() -> None:
+        pupil_by_class_and_name.clear()
+        for pupil in pupil_rows:
+            history_row = history_result_map.get(pupil.id)
+            if history_row is not None:
+                class_key = _norm_key(history_row.class_name)
+            elif pupil.school_class is not None:
+                class_key = _norm_key(pupil.school_class.name)
+            else:
+                continue
+            pupil_by_class_and_name[(class_key, _norm_key(f'{pupil.first_name} {pupil.last_name}'))] = pupil
+
+    if academic_year != current_academic_year:
+        _refresh_historical_lookup()
     sats_tabs = get_sats_exam_tabs(6, include_inactive=True) if 'SATs' in wb.sheetnames else []
     sats_tabs_by_name = {_norm(tab.name).lower(): tab for tab in sats_tabs}
     sats_column_maps_by_tab = {
@@ -2037,6 +2053,7 @@ def import_full_workbook():
             pupil_by_lookup[(_norm_key(pupil.first_name), _norm_key(pupil.last_name), school_class.id)] = pupil
             pupil_by_name[(_norm_key(pupil.first_name), _norm_key(pupil.last_name))] = pupil
             pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(f'{pupil.first_name} {pupil.last_name}'))] = pupil
+            pupil_rows.append(pupil)
             created+=1
             _preview_row('Pupils', row_idx, 'new', f'Will create pupil {_norm(row[0])} {_norm(row[1])}.')
         else:
@@ -2060,11 +2077,13 @@ def import_full_workbook():
             history_row.class_name = school_class.name
             history_row.year_group = school_class.year_group
             history_row.teacher_username = school_class.teacher.username if school_class.teacher else None
-        pupil.gender=normalize_gender(_norm(row[4])) or pupil.gender or ''
-        pupil.pupil_premium=_norm(row[5]).lower() in {'1','true','yes','y'}
-        pupil.laps=_norm(row[6]).lower() in {'1','true','yes','y'}
-        pupil.service_child=_norm(row[7]).lower() in {'1','true','yes','y'}
-        pupil.send=_norm(row[8]).lower() in {'1','true','yes','y'}
+        if academic_year == current_academic_year:
+            pupil.gender=normalize_gender(_norm(row[4])) or pupil.gender or ''
+            pupil.pupil_premium=_norm(row[5]).lower() in {'1','true','yes','y'}
+            pupil.laps=_norm(row[6]).lower() in {'1','true','yes','y'}
+            pupil.service_child=_norm(row[7]).lower() in {'1','true','yes','y'}
+            pupil.send=_norm(row[8]).lower() in {'1','true','yes','y'}
+        pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(f'{pupil.first_name} {pupil.last_name}'))] = pupil
         updated+=1
         _flush_batch('Pupils', row_idx)
     for sheet, subject in [('Maths','maths'),('Reading','reading'),('SPaG','spag')]:
@@ -2249,7 +2268,7 @@ def headline_report():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
     tracker_key = (request.args.get('tracker_key', '') or '').strip()
     year_group_raw = request.args.get('year_group', '').strip()
@@ -2309,7 +2328,7 @@ def headline_report():
 @login_required
 @admin_required
 def export_headline_report():
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
     tracker_key = (request.args.get('tracker_key', '') or '').strip()
     year_group_raw = request.args.get('year_group', '').strip()
@@ -2465,7 +2484,7 @@ def export_class_overview():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     csv_text = export_class_overview_csv(academic_year, class_id=int(request.args['class_id']) if request.args.get('class_id') else None)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=class_overview_export.csv'})
 
@@ -2477,7 +2496,7 @@ def export_pupil_overview():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     csv_text = export_pupil_overview_csv(
         academic_year,
         class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
@@ -2494,7 +2513,7 @@ def export_sats():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     selected_class_id = int(request.args['class_id']) if request.args.get('class_id') else None
     if selected_class_id and not _is_active_year6_class(selected_class_id):
         return _redirect_non_year6_sats_access()
@@ -2513,7 +2532,7 @@ def export_reception_tracker():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     tracking_point = request.args.get('tracking_point', RECEPTION_TRACKING_POINTS[0][0]).strip().lower()
     csv_text = export_reception_tracker_csv(academic_year, tracking_point)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=reception_tracker_export.csv'})
@@ -2526,7 +2545,7 @@ def export_sats_tracker():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     exam_tab = request.args.get('exam_tab', '').strip()
     if not exam_tab:
         flash('Choose an exam tab for the SATs tracker export.', 'warning')
@@ -2543,7 +2562,7 @@ def export_sats_tracker():
 @login_required
 @admin_required
 def export_interventions():
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     anon_mode = request.args.get('anon', '0') == '1'
     school_id = _selected_school_id_for_admin_actions()
     if school_id is None:
@@ -2570,7 +2589,7 @@ def export_history():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     csv_text = export_history_csv(academic_year)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=promotion_history_export.csv'})
 
@@ -2586,7 +2605,7 @@ def data_quality():
         selected_term = 'summer'
     selected_term_label = dict(term_options)[selected_term]
 
-    academic_year = request.args.get('academic_year') or get_current_academic_year()
+    academic_year = request.args.get('academic_year') or get_selected_current_academic_year()
     pupil_query = demo_filter_pupils(Pupil.query.filter_by(is_active=True))
     class_query = demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
 

@@ -45,8 +45,9 @@ from app.services import (
     format_progress_delta,
     previous_term,
     progress_theme,
-    get_current_academic_year,
+    get_selected_current_academic_year,
     get_current_term,
+    get_class_pupil_query,
     get_foundation_half_term,
     get_gender_filter_options,
     get_latest_previous_assessment,
@@ -144,14 +145,14 @@ def writing():
 @teacher_required
 def phonics():
     school_class = get_primary_class_for_user(current_user)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
     if not school_class or not is_ks1_year_group(school_class.year_group):
         flash('The phonics tracker is only available for Year 1 and Year 2 classes.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
     columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
@@ -206,14 +207,14 @@ def phonics():
 @teacher_required
 def times_tables():
     school_class = get_primary_class_for_user(current_user)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
     if not school_class or not is_times_tables_year_group(school_class.year_group):
         flash('The times tables tracker is only available for Year 4 classes.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
     columns = ensure_times_tables_columns(school_class.year_group)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
@@ -272,10 +273,10 @@ def foundation():
         flash('No active class is assigned to your account.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     half_term = get_foundation_half_term(request.values.get('half_term'))
     filters = build_admin_pupil_filter_state(request.values)
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         half_term = get_foundation_half_term(request.form.get('half_term'))
@@ -408,7 +409,7 @@ def gap_analysis(subject: str):
 @teacher_required
 def interventions():
     school_class = get_primary_class_for_user(current_user)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     term = request.values.get('term', get_current_term())
     subject = request.values.get('subject', 'maths')
 
@@ -424,7 +425,7 @@ def interventions():
         try:
             if action == 'add_manual':
                 pupil_id = int(request.form.get('pupil_id', '0'))
-                pupil = school_class.pupils.filter_by(id=pupil_id, is_active=True, school_id=school_class.school_id).first()
+                pupil = get_class_pupil_query(school_class, academic_year).filter(Pupil.id == pupil_id, Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).first()
                 if not pupil:
                     raise ValueError('Choose a pupil from your assigned class.')
                 note = request.form.get('note', '').strip() or None
@@ -467,7 +468,7 @@ def interventions():
         .order_by(Intervention.is_active.desc(), Intervention.auto_flagged.desc(), Pupil.last_name, Pupil.first_name)
         .all()
     )
-    pupils = school_class.pupils.filter_by(is_active=True, school_id=school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
     return render_template(
         'teacher/interventions.html',
         school_class=school_class,
@@ -520,7 +521,7 @@ def sats_tracker():
 # legacy disabled
 def _legacy_sats_tracker_disabled():
     school_class = get_year_group_class_for_user(current_user, 6)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
 
     if not school_class:
@@ -528,7 +529,7 @@ def _legacy_sats_tracker_disabled():
         return redirect(url_for('dashboards.teacher_dashboard'))
 
     tracker_mode = get_tracker_mode(6)
-    pupils = school_class.pupils.filter_by(is_active=True, school_id=school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         action = request.form.get('action', 'save_results')
@@ -627,12 +628,12 @@ def reception_tracker():
         flash('The Reception tracker is only available for the Reception teacher.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     tracking_point = get_tracking_point_key(request.values.get('tracking_point'))
     view = (request.values.get('view', 'tracker') or 'tracker').strip().lower()
     if view not in {'tracker', 'overview'}:
         view = 'tracker'
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         tracking_point = get_tracking_point_key(request.form.get('tracking_point'))
@@ -762,7 +763,7 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
 
 def _base_subject_context(subject_key: str) -> dict:
     school_class = get_primary_class_for_user(current_user)
-    current_year = get_current_academic_year()
+    current_year = get_selected_current_academic_year()
     academic_year = request.values.get('academic_year', current_year)
     term = request.values.get('term', get_current_term())
     filters = build_admin_pupil_filter_state(request.values)
@@ -773,7 +774,7 @@ def _base_subject_context(subject_key: str) -> dict:
     )
     pupils = []
     if school_class:
-        pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).all()
+        pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).all()
     return {
         'subject_key': subject_key,
         'page_title': SUBJECT_META[subject_key]['title'],
