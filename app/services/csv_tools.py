@@ -24,7 +24,7 @@ from app.models import (
     WritingResult,
 )
 from app.utils import school_scoped_query
-from .assessments import get_current_academic_year
+from .assessments import get_selected_current_academic_year
 from .setup import get_or_create_academic_year
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting, short_band_label
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
@@ -726,7 +726,7 @@ def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | 
         query = query.filter(Pupil.send.is_(True))
     elif send == 'no':
         query = query.filter(or_(Pupil.send.is_(False), Pupil.send.is_(None)))
-    selected_year = academic_year or get_current_academic_year()
+    selected_year = academic_year or get_selected_current_academic_year()
     for idx, pupil in enumerate(query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
         overview = build_pupil_overview_data(pupil, selected_year)
         gld = summarize_gld_status(overview['eyfs']['reception_rows']) if pupil.school_class.year_group == 0 else ''

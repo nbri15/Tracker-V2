@@ -15,12 +15,12 @@ from app.models import (
     TimesTableScore,
     WritingResult,
 )
-from .assessments import get_current_academic_year
+from .assessments import get_selected_current_academic_year
 
 
 def get_latest_tracker_data(pupil: Pupil, academic_year: str | None = None) -> dict:
     """Return latest standard tracker + writing rows for a pupil and year."""
-    year = academic_year or get_current_academic_year()
+    year = academic_year or get_selected_current_academic_year()
     subject_rows = (
         SubjectResult.query.filter_by(pupil_id=pupil.id, academic_year=year)
         .order_by(SubjectResult.updated_at.desc())
@@ -35,7 +35,7 @@ def get_latest_tracker_data(pupil: Pupil, academic_year: str | None = None) -> d
 
 
 def get_y6_sats_data(pupil: Pupil, academic_year: str | None = None) -> list[SatsColumnResult]:
-    year = academic_year or get_current_academic_year()
+    year = academic_year or get_selected_current_academic_year()
     return (
         SatsColumnResult.query.filter_by(pupil_id=pupil.id, academic_year=year)
         .join(SatsColumnResult.column)
@@ -50,17 +50,17 @@ def get_sats_data(pupil: Pupil, academic_year: str | None = None) -> list[SatsCo
 
 
 def get_phonics_data(pupil: Pupil, academic_year: str | None = None) -> list[PhonicsScore]:
-    year = academic_year or get_current_academic_year()
+    year = academic_year or get_selected_current_academic_year()
     return PhonicsScore.query.filter_by(pupil_id=pupil.id, academic_year=year).all()
 
 
 def get_mtc_data(pupil: Pupil, academic_year: str | None = None) -> list[TimesTableScore]:
-    year = academic_year or get_current_academic_year()
+    year = academic_year or get_selected_current_academic_year()
     return TimesTableScore.query.filter_by(pupil_id=pupil.id, academic_year=year).all()
 
 
 def get_eyfs_data(pupil: Pupil, academic_year: str | None = None) -> dict:
-    year = academic_year or get_current_academic_year()
+    year = academic_year or get_selected_current_academic_year()
     reception_rows = (
         ReceptionTrackerEntry.query.filter_by(pupil_id=pupil.id, academic_year=year)
         .order_by(ReceptionTrackerEntry.tracking_point.desc())
@@ -76,7 +76,7 @@ def get_eyfs_data(pupil: Pupil, academic_year: str | None = None) -> dict:
 
 def build_pupil_overview_data(pupil: Pupil, academic_year: str | None = None) -> dict:
     """Year-specific overview payload used by pages and exports."""
-    year = academic_year or get_current_academic_year()
+    year = academic_year or get_selected_current_academic_year()
     year_group = pupil.school_class.year_group if pupil.school_class else None
     payload = {
         'academic_year': year,

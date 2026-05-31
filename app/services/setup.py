@@ -35,24 +35,31 @@ def get_or_create_academic_year(name: str, *, mark_current: bool = False) -> Aca
 
 
 def ensure_default_academic_years() -> list[AcademicYear]:
-    """Seed the default academic years only when the table is empty."""
-
-    if AcademicYear.query.count() > 0:
-        return []
+    """Ensure each baseline academic year exists without school scoping."""
 
     created: list[AcademicYear] = []
+    existing_by_name = {year.name: year for year in AcademicYear.query.all()}
+    has_current = any(year.is_current for year in existing_by_name.values())
+
     for year_name in DEFAULT_ACADEMIC_YEARS:
-        existing = AcademicYear.query.filter_by(name=year_name).first()
+        existing = existing_by_name.get(year_name)
         if existing is not None:
-            created.append(existing)
             continue
         record = AcademicYear(
             name=year_name,
-            is_current=year_name == DEFAULT_CURRENT_ACADEMIC_YEAR,
+            is_current=(not has_current and year_name == DEFAULT_CURRENT_ACADEMIC_YEAR),
             is_archived=False,
         )
+        if record.is_current:
+            has_current = True
         db.session.add(record)
         created.append(record)
+
+    if not has_current:
+        current = existing_by_name.get(DEFAULT_CURRENT_ACADEMIC_YEAR)
+        if current is not None:
+            current.is_current = True
+            db.session.add(current)
 
     try:
         db.session.commit()

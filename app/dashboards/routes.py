@@ -15,8 +15,9 @@ from app.services import (
     build_dashboard_summary,
     build_subject_overview_cards,
     calculate_progress,
-    get_current_academic_year,
+    get_selected_current_academic_year,
     get_dashboard_stats,
+    get_class_pupil_query,
     get_gender_filter_options,
     get_tracker_mode,
     get_tracker_mode_label,
@@ -62,8 +63,8 @@ def teacher_dashboard():
         term = "Summer"
 
     school_class = get_primary_class_for_user(current_user)
-    pupil_count = school_class.pupils.filter_by(is_active=True).count() if school_class else 0
-    academic_year = get_current_academic_year()
+    academic_year = get_selected_current_academic_year()
+    pupil_count = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).count() if school_class else 0
     summary_rows = get_dashboard_stats(school_class.id if school_class else None, academic_year)
     active_interventions = (
         Intervention.query.join(Intervention.pupil)
@@ -106,7 +107,7 @@ def teacher_dashboard():
 def admin_dashboard():
     if current_user.is_executive_admin and current_school_id() is None:
         return redirect(url_for('executive.schools'))
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     term = (request.args.get("term") or "Summer").strip()
     if term not in ("Autumn", "Spring", "Summer", "All"):
         term = "Summer"
@@ -201,7 +202,7 @@ def sats_simple():
     school_id = current_school_id()
     if school_id is None:
         return redirect(url_for('executive.schools'))
-    academic_year = request.args.get('academic_year', get_current_academic_year())
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     term = (request.args.get('term', 'all') or 'all').strip().lower()
     if term not in {'all', 'autumn', 'spring', 'summer'}:
         term = 'all'
@@ -280,7 +281,7 @@ def sats_simple_quick_save():
     )
     if not pupil or pupil.school_id != school_id:
         return {'ok':False,'error':'Forbidden'},403
-    academic_year=str(data.get('academic_year') or get_current_academic_year())
+    academic_year=str(data.get('academic_year') or get_selected_current_academic_year())
     rec=SatsResult.query.filter_by(school_id=school_id,pupil_id=pupil_id,academic_year=academic_year,exam_number=exam_number).first()
     if not rec:
         rec=SatsResult(school_id=school_id,pupil_id=pupil_id,academic_year=academic_year,exam_number=exam_number,subject='maths',assessment_point=exam_number,is_most_recent=False)
@@ -321,7 +322,7 @@ def sats_simple_add_exam():
     school_id = current_school_id()
     if school_id is None:
         return {'ok': False, 'error': 'Select a school before editing SATs'}, 403
-    academic_year = str((request.get_json(silent=True) or {}).get('academic_year') or get_current_academic_year())
+    academic_year = str((request.get_json(silent=True) or {}).get('academic_year') or get_selected_current_academic_year())
     tabs = _ensure_simple_tabs_and_settings(academic_year, school_id)
     next_exam = max([tab.exam_number for tab in tabs], default=0) + 1
     db.session.add(SimpleSatsExamTab(school_id=school_id, academic_year=academic_year, exam_number=next_exam, name=f'Exam {next_exam}', display_order=next_exam, is_active=True))
@@ -338,7 +339,7 @@ def sats_simple_save_settings():
     school_id = current_school_id()
     if school_id is None:
         return {'ok': False, 'error': 'Select a school before editing SATs'}, 403
-    academic_year = str(data.get('academic_year') or get_current_academic_year())
+    academic_year = str(data.get('academic_year') or get_selected_current_academic_year())
     exam_number = int(data.get('exam_number') or data.get('record_id') or 0)
     if exam_number < 1:
         return {'ok': False, 'error': 'Invalid exam'}, 400
