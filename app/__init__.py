@@ -32,6 +32,7 @@ def create_app(config_name: str | None = None) -> Flask:
     register_shell_context(app)
     register_cli_commands(app)
     bootstrap_runtime_schema(app)
+    bootstrap_academic_years(app)
     bootstrap_gender_values(app)
     bootstrap_admin_from_env(app)
     bootstrap_demo_data(app)
@@ -284,6 +285,22 @@ def bootstrap_runtime_schema(app: Flask) -> None:
                             column_name,
                             exc_info=True,
                         )
+
+
+def bootstrap_academic_years(app: Flask) -> None:
+    """Ensure baseline academic-year records exist at startup."""
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if not inspector.has_table('academic_years'):
+            return
+        try:
+            from .services.setup import ensure_default_academic_years
+
+            ensure_default_academic_years()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('Academic year bootstrap failed.', exc_info=True)
 
 def bootstrap_demo_data(app: Flask) -> None:
     """Seed demo data at startup only when explicit demo mode is enabled."""

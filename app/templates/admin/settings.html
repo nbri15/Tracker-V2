@@ -99,6 +99,12 @@
           </div>
         </form>
         <div class="mt-3 small text-muted">Teachers should now use the subject pages for normal editing. This table remains available as an admin-only fallback.</div>
+        <hr>
+        <form method="post" class="d-flex flex-wrap align-items-center gap-2">
+          <input type="hidden" name="action" value="generate-academic-years">
+          <button type="submit" class="btn btn-outline-primary btn-sm">Generate academic years</button>
+          <span class="small text-muted">Adds the next missing academic years, such as 2027/28 and 2028/29, without duplicates.</span>
+        </form>
       </div>
     </div>
   </div>

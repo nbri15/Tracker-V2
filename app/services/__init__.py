@@ -67,6 +67,11 @@ from .assessments import (
     update_assessment_setting,
     validate_setting_payload,
 )
+from .setup import (
+    ensure_default_academic_years,
+    generate_next_missing_academic_years,
+    get_or_create_academic_year,
+)
 from .admin_ops import (
     DEFAULT_ADMIN,
     DEFAULT_TEACHERS,
