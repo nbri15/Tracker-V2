@@ -79,6 +79,8 @@ from app.services import (
     build_next_academic_year,
     build_intervention_filters,
     ensure_academic_year,
+    ensure_default_academic_years,
+    generate_next_missing_academic_years,
     ensure_default_logins_and_classes,
     export_class_overview_csv,
     export_history_csv,
@@ -1437,6 +1439,13 @@ def settings():
     if request.method == 'POST':
         action = request.form.get('action', 'create')
         try:
+            if action == 'generate-academic-years':
+                created_years = generate_next_missing_academic_years()
+                if created_years:
+                    flash(f"Generated academic years: {', '.join(year.name for year in created_years)}.", 'success')
+                else:
+                    flash('Academic years are already up to date.', 'info')
+                return redirect(url_for('admin.settings'))
             if action == 'create':
                 payload = validate_setting_payload(_parse_setting_form())
                 setting = get_or_create_assessment_setting(payload['year_group'], payload['subject'], payload['term'])
@@ -1859,6 +1868,7 @@ def imports():
         'pupils': demo_filter_pupils(Pupil.query).count(),
     }
     workbook_preview = session.pop('workbook_import_preview', None)
+    ensure_default_academic_years()
     years = AcademicYear.query.order_by(AcademicYear.name.desc()).all()
     current_year = get_current_academic_year()
     selected_year_id = request.args.get('academic_year_id') or request.form.get('academic_year_id')

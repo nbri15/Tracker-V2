@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.utils import school_scoped_query
 from .assessments import get_current_academic_year
+from .setup import get_or_create_academic_year
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting, short_band_label
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
 from .pupil_overview import build_pupil_overview_data, summarize_gld_status
@@ -426,6 +427,7 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                 first_name = _require_value(row, 'first_name', label='first_name')
                 last_name = _require_value(row, 'last_name', label='last_name')
                 academic_year = _require_value(row, 'academic_year', label='academic_year')
+                get_or_create_academic_year(academic_year)
 
                 pupil = Pupil.query.filter_by(first_name=first_name, last_name=last_name, class_id=school_class.id).first()
                 progress = RowProgress()
@@ -560,6 +562,7 @@ def import_reception_tracker(rows: list[dict]) -> CsvImportSummary:
                 raise CsvImportError(f'{pupil.full_name} is not in Reception.')
             processed_pupil_ids.add(pupil.id)
             academic_year = _require_value(row, 'academic_year', label='academic_year')
+            get_or_create_academic_year(academic_year)
             tracking_point = _require_value(row, 'tracking_point', label='tracking_point').lower()
             if tracking_point not in valid_tracking_points:
                 raise CsvImportError(f'tracking_point must be one of {", ".join(sorted(valid_tracking_points))}.')
@@ -618,6 +621,7 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
                 raise CsvImportError(f'{pupil.full_name} is not in Year 6.')
             processed_pupil_ids.add(pupil.id)
             academic_year = _require_value(row, 'academic_year', label='academic_year')
+            get_or_create_academic_year(academic_year)
             exam_number = int(_require_value(row, 'exam_number', label='exam_number'))
             per_row_changes = 0
             rec = SatsResult.query.filter_by(
