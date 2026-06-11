@@ -29,8 +29,8 @@
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-body py-3">
-    <form method="get" class="row g-2 align-items-end compact-filter-row responsive-filter-grid">
+  <div class="card-body tracker-filter-card">
+    <form method="get" class="tracker-filter-grid compact-filter-row">
       <input type="hidden" name="sort" value="{{ sort_state.column }}">
       <input type="hidden" name="direction" value="{{ sort_state.direction }}">
       <div class="col-sm-6 col-lg-2"><label class="form-label">Academic year</label><select name="academic_year" class="form-select form-select-sm">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
@@ -40,7 +40,7 @@
       <div class="col-sm-4 col-lg-1"><label class="form-label">LAPS</label><select name="laps" class="form-select form-select-sm"><option value="all" {% if filters.laps == 'all' %}selected{% endif %}>All</option><option value="yes" {% if filters.laps == 'yes' %}selected{% endif %}>Yes</option><option value="no" {% if filters.laps == 'no' %}selected{% endif %}>No</option></select></div>
       <div class="col-sm-4 col-lg-1"><label class="form-label">Service</label><select name="service_child" class="form-select form-select-sm"><option value="all" {% if filters.service_child == 'all' %}selected{% endif %}>All</option><option value="yes" {% if filters.service_child == 'yes' %}selected{% endif %}>Yes</option><option value="no" {% if filters.service_child == 'no' %}selected{% endif %}>No</option></select></div>
       <div class="col-sm-4 col-lg-1"><label class="form-label">SEND</label><select name="send" class="form-select form-select-sm"><option value="all" {% if filters.send == 'all' %}selected{% endif %}>All</option><option value="yes" {% if filters.send == 'yes' %}selected{% endif %}>Yes</option><option value="no" {% if filters.send == 'no' %}selected{% endif %}>No</option></select></div>
-      <div class="col-lg-3 d-flex gap-2"><button class="btn btn-primary btn-sm flex-grow-1">Apply</button><a class="btn btn-outline-secondary btn-sm touch-button" href="{{ url_for('teacher.phonics') }}">Clear</a></div>
+      <div class="tracker-filter-actions"><button class="btn btn-primary btn-sm flex-grow-1">Apply</button><a class="btn btn-outline-secondary btn-sm touch-button" href="{{ url_for('teacher.phonics') }}">Clear</a></div>
     </form>
   </div>
 </div>

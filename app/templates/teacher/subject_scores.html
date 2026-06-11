@@ -35,8 +35,8 @@
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-body py-3">
-    <form method="get" class="row g-2 align-items-end compact-filter-row responsive-filter-grid">
+  <div class="card-body tracker-filter-card">
+    <form method="get" class="tracker-filter-grid compact-filter-row">
       <div class="col-sm-6 col-lg-2">
         <label class="form-label">Academic year</label>
         <select name="academic_year" class="form-select form-select-sm">
@@ -92,7 +92,7 @@
       </div>
       <input type="hidden" name="sort" value="{{ sort_state.column }}">
       <input type="hidden" name="direction" value="{{ sort_state.direction }}">
-      <div class="col-lg-2 d-flex gap-2">
+      <div class="tracker-filter-actions">
         <button class="btn btn-primary btn-sm flex-grow-1">Apply</button>
         <a class="btn btn-outline-secondary btn-sm touch-button" href="{{ url_for('teacher.' ~ subject_key) }}">Clear</a>
       </div>
