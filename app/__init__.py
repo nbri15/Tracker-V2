@@ -1,6 +1,7 @@
 """Application factory for the assessment tracker."""
 
 import os
+from pathlib import Path
 
 import click
 from flask import Flask, redirect, render_template, request, url_for
@@ -349,16 +350,20 @@ def bootstrap_gender_values(app: Flask) -> None:
 
 
 def bootstrap_maths_fundamentals(app: Flask) -> None:
-    """Ensure the standalone Maths Fundamentals starter ladder exists when tables are available."""
+    """Ensure the standalone Maths Fundamentals ladder exists when tables are available."""
 
-    from .services.maths_fundamentals import ensure_default_ladder
+    from .services.maths_fundamentals import ensure_default_ladder, import_ladder_from_workbook
 
     with app.app_context():
         inspector = inspect(db.engine)
         if not inspector.has_table('maths_fundamental_strands'):
             return
         try:
-            ensure_default_ladder()
+            workbook_path = Path(app.root_path) / 'data' / 'Maths_Fundamentals_Ladders_Teaching_and_Questions.xlsx'
+            if workbook_path.exists():
+                import_ladder_from_workbook(str(workbook_path))
+            else:
+                ensure_default_ladder()
         except Exception:
             db.session.rollback()
             app.logger.warning('Maths Fundamentals bootstrap failed.', exc_info=True)

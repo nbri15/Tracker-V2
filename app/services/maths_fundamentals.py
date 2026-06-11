@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from base64 import b64encode
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
 import json
 import random
@@ -10,7 +12,6 @@ import re
 from statistics import mean
 from typing import Any
 
-from openpyxl import load_workbook
 from sqlalchemy import func
 
 from app.extensions import db
@@ -38,6 +39,8 @@ DEFAULT_STRANDS = [
     'Fractions & Decimals',
 ]
 
+WORKBOOK_STRAND_SHEETS = set(DEFAULT_STRANDS)
+
 SHORT_STRAND_NAMES = {
     'Addition & Subtraction': 'Add/Sub',
     'Fractions & Decimals': 'Fractions',
@@ -47,11 +50,11 @@ COLUMN_ALIASES = {
     'strand': {'strand', 'strands'},
     'level': {'level', 'ladder level'},
     'band': {'band', 'stage'},
-    'skill_text': {'skill', 'skill text', 'objective', 'learning objective', 'statement'},
-    'teaching_prompt': {'teaching idea', 'teaching prompt', 'teaching', 'teacher prompt'},
-    'question_prompt': {'assessment question', 'question', 'question prompt', 'questions'},
+    'skill_text': {'skill', 'skill text', 'objective', 'learning objective', 'statement', 'fundamental'},
+    'teaching_prompt': {'teaching idea', 'teaching prompt', 'teaching', 'teacher prompt', 'potential teaching / intervention'},
+    'question_prompt': {'assessment question', 'question', 'question prompt', 'questions', 'question & app prompt ideas'},
     'question_type': {'question type', 'type'},
-    'evidence': {'evidence'},
+    'evidence': {'evidence', 'suggested evidence'},
     'notes': {'notes', 'note'},
     'template_text': {'template', 'question template', 'template text'},
     'generator_type': {'generator type', 'generator'},
@@ -59,6 +62,20 @@ COLUMN_ALIASES = {
     'answer_type': {'answer type', 'answer'},
     'difficulty': {'difficulty'},
 }
+
+
+def qr_code_data_uri(value: str) -> str:
+    """Return a base64 PNG data URI for a QR code URL."""
+
+    import qrcode
+
+    qr = qrcode.QRCode(version=None, box_size=6, border=2)
+    qr.add_data(value)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color='black', back_color='white')
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+    return 'data:image/png;base64,' + b64encode(buffer.getvalue()).decode('ascii')
 
 
 def strand_short_name(strand: MathsFundamentalStrand) -> str:
@@ -166,13 +183,17 @@ def header_map(headers: list[Any]) -> dict[str, int]:
 
 
 def import_ladder_from_workbook(path: str) -> dict[str, int]:
-    """Import strands, skills and question templates from the spreadsheet source of truth."""
+    """Import strands, skills and templates from the workbook without touching pupil data."""
+
+    from openpyxl import load_workbook
 
     workbook = load_workbook(path, data_only=True)
     imported = {'strands': 0, 'skills': 0, 'templates': 0}
-    strand_order = MathsFundamentalStrand.query.count()
 
-    for worksheet in workbook.worksheets:
+    for strand_position, worksheet in enumerate(workbook.worksheets, start=1):
+        default_strand = worksheet.title.strip()
+        if default_strand not in WORKBOOK_STRAND_SHEETS:
+            continue
         rows = list(worksheet.iter_rows(values_only=True))
         if not rows:
             continue
@@ -180,59 +201,121 @@ def import_ladder_from_workbook(path: str) -> dict[str, int]:
         mapping = {}
         for row_index, row in enumerate(rows[:10]):
             candidate = header_map(list(row))
-            if 'level' in candidate and ('skill_text' in candidate or 'question_prompt' in candidate):
+            if 'level' in candidate and 'skill_text' in candidate:
                 headers = row_index
                 mapping = candidate
                 break
         if headers is None:
             continue
-        default_strand = worksheet.title.strip()
+
+        strand = MathsFundamentalStrand.query.filter(func.lower(MathsFundamentalStrand.name) == default_strand.lower()).first()
+        if not strand:
+            strand = MathsFundamentalStrand(name=default_strand)
+            imported['strands'] += 1
+        strand.display_order = strand_position
+        strand.is_active = True
+        db.session.add(strand)
+        db.session.flush()
+
+        imported_skill_ids = set()
         for display_order, row in enumerate(rows[headers + 1:], start=1):
             if not any(cell is not None and str(cell).strip() for cell in row):
-                continue
-            strand_name = str(row[mapping['strand']]).strip() if 'strand' in mapping and row[mapping['strand']] else default_strand
-            if not strand_name:
                 continue
             level_raw = row[mapping['level']]
             try:
                 level = int(float(str(level_raw).strip()))
             except (TypeError, ValueError):
                 continue
-            strand = MathsFundamentalStrand.query.filter(func.lower(MathsFundamentalStrand.name) == strand_name.lower()).first()
-            if not strand:
-                strand_order += 1
-                strand = MathsFundamentalStrand(name=strand_name, display_order=strand_order, is_active=True)
-                db.session.add(strand)
-                db.session.flush()
-                imported['strands'] += 1
-            skill_text = _cell(row, mapping, 'skill_text') or _cell(row, mapping, 'question_prompt') or f'{strand_name} Level {level}'
+
+            skill_text = _cell(row, mapping, 'skill_text')
+            if not skill_text:
+                continue
             skill = MathsFundamentalSkill.query.filter_by(strand_id=strand.id, level=level, display_order=display_order).first()
             if not skill:
                 skill = MathsFundamentalSkill(strand_id=strand.id, level=level, display_order=display_order, skill_text=skill_text)
                 imported['skills'] += 1
-            skill.band = _cell(row, mapping, 'band') or skill.band
+            skill.band = _cell(row, mapping, 'band')
             skill.skill_text = skill_text
             skill.teaching_prompt = _cell(row, mapping, 'teaching_prompt')
             skill.question_prompt = _cell(row, mapping, 'question_prompt')
-            skill.question_type = _cell(row, mapping, 'question_type') or 'template'
+            skill.question_type = _cell(row, mapping, 'question_type')
             skill.evidence = _cell(row, mapping, 'evidence')
             skill.notes = _cell(row, mapping, 'notes')
+            skill.display_order = display_order
             db.session.add(skill)
             db.session.flush()
-            template_text = _cell(row, mapping, 'template_text') or skill.question_prompt or 'What is {a} + {b}?'
-            template = skill.templates.first()
+            imported_skill_ids.add(skill.id)
+
+            template = skill.templates.order_by(MathsQuestionTemplate.id).first()
             if not template:
                 template = MathsQuestionTemplate(skill_id=skill.id)
                 imported['templates'] += 1
-            template.generator_type = _cell(row, mapping, 'generator_type') or 'template'
-            template.template_text = template_text
-            template.generator_config_json = _cell(row, mapping, 'generator_config_json') or json.dumps({'a': [1, 12], 'b': [1, 12]})
-            template.answer_type = _cell(row, mapping, 'answer_type') or 'number'
+            template.generator_type = _cell(row, mapping, 'generator_type') or infer_generator_type(default_strand, skill.skill_text, skill.question_prompt)
+            template.template_text = _cell(row, mapping, 'template_text') or skill.question_prompt or skill.skill_text
+            template.generator_config_json = _cell(row, mapping, 'generator_config_json') or json.dumps(default_generator_config(default_strand, skill.level, template.generator_type))
+            template.answer_type = _cell(row, mapping, 'answer_type') or default_answer_type(template.generator_type)
             template.difficulty = _cell(row, mapping, 'difficulty') or 'standard'
             template.is_active = True
             db.session.add(template)
+
+        stale_skills = MathsFundamentalSkill.query.filter(
+            MathsFundamentalSkill.strand_id == strand.id,
+            ~MathsFundamentalSkill.id.in_(imported_skill_ids),
+            MathsFundamentalSkill.level < 900,
+        ).all() if imported_skill_ids else []
+        for stale_skill in stale_skills:
+            stale_skill.level = 900 + stale_skill.level
+            stale_skill.display_order = 900 + stale_skill.display_order
+            for stale_template in stale_skill.templates.all():
+                stale_template.is_active = False
+                db.session.add(stale_template)
+            db.session.add(stale_skill)
     db.session.commit()
     return imported
+
+
+def infer_generator_type(strand_name: str, skill_text: str | None, question_prompt: str | None = None) -> str:
+    """Map workbook skill wording to a conservative question generator."""
+
+    skill_prompt_text = f"{skill_text or ''} {question_prompt or ''}".lower()
+    text = f"{strand_name} {skill_prompt_text}".lower()
+    if any(word in text for word in ('subitise', 'subitize', 'dot', 'five-frame', 'five frame', 'ten-frame', 'ten frame')):
+        return 'subitising'
+    if 'number bond' in text or 'bonds' in text:
+        return 'number_bonds'
+    if 'division' in text or 'divide' in text or 'sharing' in text or 'grouping' in text or '÷' in text:
+        return 'division'
+    if 'multiplication' in text or 'times table' in text or 'times tables' in text or 'multiply' in text or '×' in text:
+        return 'multiplication'
+    if 'subtraction' in skill_prompt_text or 'subtract' in skill_prompt_text or 'minus' in skill_prompt_text:
+        return 'subtraction'
+    if 'addition' in skill_prompt_text or 'add ' in skill_prompt_text or '+' in skill_prompt_text or strand_name == 'Addition & Subtraction':
+        return 'addition'
+    if 'count' in text or 'one more' in text or 'one less' in text:
+        return 'counting'
+    return 'template'
+
+
+def default_answer_type(generator_type: str) -> str:
+    return 'number' if generator_type in {'subitising', 'counting', 'number_bonds', 'addition', 'subtraction', 'multiplication', 'division'} else 'text'
+
+
+def default_generator_config(strand_name: str, level: int, generator_type: str) -> dict[str, Any]:
+    if generator_type == 'subitising':
+        return {'n': [1, 5 if level <= 1 else 10]}
+    if generator_type == 'counting':
+        limit = 20 if level <= 5 else 100
+        return {'n': [1, limit], 'limit': limit}
+    if generator_type == 'number_bonds':
+        target = 5 if level <= 1 else (10 if level <= 3 else 20)
+        return {'target': target}
+    if generator_type in {'multiplication', 'division'}:
+        factor = min(12, max(2, level + 1))
+        return {'a': [1, 12], 'b': [2, factor]}
+    if generator_type in {'addition', 'subtraction'}:
+        upper = min(100, max(10, level * 10))
+        return {'a': [1, upper], 'b': [1, upper]}
+    return {}
 
 
 def _cell(row: tuple[Any, ...], mapping: dict[str, int], field: str) -> str | None:
@@ -246,20 +329,18 @@ def _cell(row: tuple[Any, ...], mapping: dict[str, int], field: str) -> str | No
 def generate_question(skill: MathsFundamentalSkill) -> MathsFundamentalQuestion:
     template = skill.templates.filter_by(is_active=True).order_by(MathsQuestionTemplate.difficulty, MathsQuestionTemplate.id).first()
     if not template:
+        generator_type = infer_generator_type(skill.strand.name, skill.skill_text, skill.question_prompt)
         template = MathsQuestionTemplate(
             skill_id=skill.id,
-            generator_type='template',
-            template_text=skill.question_prompt or 'What is {a} + {b}?',
-            generator_config_json=json.dumps({'a': [1, 12], 'b': [1, 12]}),
-            answer_type='text',
+            generator_type=generator_type,
+            template_text=skill.question_prompt or skill.skill_text,
+            generator_config_json=json.dumps(default_generator_config(skill.strand.name, skill.level, generator_type)),
+            answer_type=default_answer_type(generator_type),
         )
         db.session.add(template)
         db.session.flush()
-    variables = _generate_variables(template.generator_config_json)
-    question_text = template.template_text
-    for name, value in variables.items():
-        question_text = question_text.replace('{' + name + '}', str(value))
-    correct_answer = _safe_answer(template.template_text, variables)
+
+    question_text, correct_answer = render_generated_question(skill, template)
     teacher_mark_required = correct_answer is None
     return MathsFundamentalQuestion(
         skill_id=skill.id,
@@ -268,6 +349,75 @@ def generate_question(skill: MathsFundamentalSkill) -> MathsFundamentalQuestion:
         teacher_mark_required=teacher_mark_required,
         level=skill.level,
     )
+
+
+def render_generated_question(skill: MathsFundamentalSkill, template: MathsQuestionTemplate) -> tuple[str, int | float | None]:
+    """Render a question from workbook prompts using strand-safe generator rules."""
+
+    generator_type = template.generator_type or infer_generator_type(skill.strand.name, skill.skill_text, skill.question_prompt)
+    config = _load_generator_config(template.generator_config_json)
+    prompt = choose_prompt(template.template_text or skill.question_prompt or skill.skill_text)
+
+    if generator_type == 'subitising':
+        low, high = _bounds(config.get('n'), 1, 5 if skill.level <= 1 else 10)
+        n = random.randint(low, high)
+        return f"How many dots do you see? {'● ' * n}".strip(), n
+    if generator_type == 'counting':
+        limit = int(config.get('limit') or (20 if skill.level <= 5 else 100))
+        n = random.randint(2, max(3, limit - 1))
+        if 'back' in skill.skill_text.lower() or 'before' in prompt.lower() or 'one less' in skill.skill_text.lower():
+            return f"What number comes before {n}?", n - 1
+        if 'one more' in skill.skill_text.lower():
+            return f"What is one more than {n}?", n + 1
+        return f"What number comes after {n}?", n + 1
+    if generator_type == 'number_bonds':
+        target = int(config.get('target') or (5 if skill.level <= 1 else 10))
+        a = random.randint(0, target)
+        return f"What goes with {a} to make {target}?", target - a
+    if generator_type == 'addition':
+        variables = _generate_variables(template.generator_config_json)
+        a, b = variables.get('a', 1), variables.get('b', 1)
+        return f"What is {a} + {b}?", a + b
+    if generator_type == 'subtraction':
+        variables = _generate_variables(template.generator_config_json)
+        a, b = max(variables.get('a', 1), variables.get('b', 1)), min(variables.get('a', 1), variables.get('b', 1))
+        return f"What is {a} - {b}?", a - b
+    if generator_type == 'multiplication':
+        variables = _generate_variables(template.generator_config_json)
+        a, b = variables.get('a', 1), variables.get('b', 1)
+        return f"What is {a} × {b}?", a * b
+    if generator_type == 'division':
+        variables = _generate_variables(template.generator_config_json)
+        divisor = max(1, variables.get('b', 1))
+        quotient = max(1, variables.get('a', 1))
+        dividend = divisor * quotient
+        return f"What is {dividend} ÷ {divisor}?", quotient
+
+    variables = _generate_variables(template.generator_config_json)
+    question_text = prompt
+    for name, value in variables.items():
+        question_text = question_text.replace('{' + name + '}', str(value))
+    correct_answer = _safe_answer(question_text, variables)
+    return question_text, correct_answer
+
+
+def choose_prompt(prompt_text: str) -> str:
+    prompts = [part.strip() for part in re.split(r';|\n', prompt_text or '') if part.strip()]
+    return random.choice(prompts) if prompts else 'Show what you know about this skill.'
+
+
+def _load_generator_config(config_text: str | None) -> dict[str, Any]:
+    try:
+        config = json.loads(config_text or '{}')
+    except json.JSONDecodeError:
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def _bounds(value: Any, default_low: int, default_high: int) -> tuple[int, int]:
+    if isinstance(value, list) and len(value) >= 2:
+        return int(value[0]), int(value[1])
+    return default_low, default_high
 
 
 def _generate_variables(config_text: str | None) -> dict[str, int]:
@@ -463,6 +613,7 @@ def attempt_status_rows(session: MathsFundamentalsSession) -> list[dict[str, Any
             'attempt': attempt,
             'status': 'Completed' if attempt and attempt.status == 'completed' else ('In Progress' if attempt else 'Waiting'),
             'current_question': current_question.question_text if current_question else '—',
+            'current_skill': current_question.skill.skill_text if current_question and current_question.skill else '—',
             'current_level': attempt.current_level if attempt else session.starting_level,
             'last_activity': attempt.last_activity_at if attempt else None,
         })

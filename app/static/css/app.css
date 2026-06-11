@@ -1772,3 +1772,76 @@ label,
   .mf-table td { min-width: 6rem; }
   .child-assessment-card .card-body { padding: 2rem !important; }
 }
+
+.mf-qr-card {
+  min-width: 9rem;
+  text-align: center;
+}
+
+.mf-qr-img {
+  display: block;
+  width: 8rem;
+  height: 8rem;
+  margin: 0.35rem auto;
+  image-rendering: pixelated;
+}
+
+.mf-qr-print-grid {
+  display: none;
+}
+
+.print-title {
+  display: none;
+}
+
+@media print {
+  .sidebar,
+  .navbar,
+  nav,
+  .no-print,
+  .btn,
+  aside,
+  header,
+  footer {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .print-title {
+    display: block;
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+
+  .mf-qr-print-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  .mf-qr-print-card {
+    break-inside: avoid;
+    border: 1px solid #333;
+    padding: 0.75rem;
+    text-align: center;
+  }
+
+  .mf-qr-print-card h3 {
+    font-size: 1rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .mf-qr-print-card img {
+    width: 2in;
+    height: 2in;
+  }
+}
+
+@media print {
+  .mf-qr-print-card.mf-print-hidden {
+    display: none !important;
+  }
+}

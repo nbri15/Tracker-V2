@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from app.extensions import db
@@ -18,10 +19,13 @@ from app.services.maths_fundamentals import (
     class_and_admin_summary,
     close_session,
     filtered_school_pupils,
+    get_or_create_qr_token,
     get_or_start_attempt,
     intervention_candidates,
+    import_ladder_from_workbook,
     level_colour_class,
     next_question_for_attempt,
+    qr_code_data_uri,
     start_session,
     strand_short_name,
     submit_answer,
@@ -39,6 +43,13 @@ def mf_level_class(level):
 @maths_fundamentals_bp.app_template_global()
 def mf_strand_short(strand):
     return strand_short_name(strand)
+
+
+
+
+@maths_fundamentals_bp.app_template_global()
+def mf_qr_code_data_uri(value):
+    return qr_code_data_uri(value)
 
 
 @maths_fundamentals_bp.route('/teacher', methods=['GET', 'POST'])
@@ -111,13 +122,23 @@ def pupil_strand_detail(pupil_id: int, strand_id: int):
     academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     result = next((r for r in pupil.maths_fundamental_results if r.strand_id == strand_id and r.academic_year == academic_year), None)
     attempts = MathsFundamentalAttempt.query.filter_by(pupil_id=pupil.id, strand_id=strand_id, academic_year=academic_year).order_by(MathsFundamentalAttempt.started_at.desc()).all()
-    return render_template('maths_fundamentals/pupil_detail.html', pupil=pupil, result=result, attempts=attempts, strand_id=strand_id, academic_year=academic_year)
+    return render_template('maths_fundamentals/pupil_detail.html', pupil=pupil, result=result, attempts=attempts, strand_id=strand_id, academic_year=academic_year, qr_token=get_or_create_qr_token(pupil))
 
 
-@maths_fundamentals_bp.route('/admin')
+@maths_fundamentals_bp.route('/admin', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def admin_dashboard():
+    if request.method == 'POST' and request.form.get('action') == 'reimport_ladder':
+        workbook_path = Path(current_app.root_path) / 'data' / 'Maths_Fundamentals_Ladders_Teaching_and_Questions.xlsx'
+        summary = import_ladder_from_workbook(str(workbook_path))
+        flash(
+            f"Reimported Maths Fundamentals ladder: {summary['strands']} new strands, "
+            f"{summary['skills']} new skills, {summary['templates']} new templates. Pupil results were not changed.",
+            'success',
+        )
+        return redirect(url_for('maths_fundamentals.admin_dashboard'))
+
     school_id = current_school_id()
     academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     filters = build_admin_pupil_filter_state(request.args)
