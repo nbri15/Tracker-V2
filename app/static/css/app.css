@@ -1548,6 +1548,110 @@ select.has-ghost-value {
   .public-header-inner { flex-wrap: wrap; justify-content: center; }
 }
 
+
+/* Tracker filter toolbar */
+.tracker-filter-card {
+  padding: 1rem;
+  overflow-wrap: normal;
+}
+
+.tracker-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 240px));
+  gap: 1rem;
+  align-items: end;
+}
+
+.tracker-filter-grid > [class*="col"] {
+  width: auto;
+  max-width: none;
+  flex: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.tracker-filter-field label,
+.tracker-filter-grid label,
+label,
+.form-label,
+.filter-label,
+.toolbar label {
+  word-break: normal;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.tracker-filter-field label,
+.tracker-filter-grid .form-label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.tracker-filter-field select,
+.tracker-filter-field input,
+.tracker-filter-grid select,
+.tracker-filter-grid input[type="text"],
+.tracker-filter-grid input[type="search"] {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.tracker-filter-grid select {
+  min-width: 150px;
+}
+
+.tracker-filter-grid input[type="text"],
+.tracker-filter-grid input[type="search"],
+.tracker-filter-grid .compact-input {
+  min-width: 180px;
+}
+
+.tracker-filter-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: end;
+  justify-content: flex-start;
+  width: auto;
+  max-width: none;
+}
+
+.tracker-filter-actions .btn {
+  flex: 0 0 auto;
+}
+
+.tracker-filter-actions .flex-grow-1 {
+  flex-grow: 0 !important;
+}
+
+@media (min-width: 1200px) {
+  .tracker-filter-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1199px) {
+  .tracker-filter-grid {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 699px) {
+  .tracker-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tracker-filter-grid select,
+  .tracker-filter-grid input[type="text"],
+  .tracker-filter-grid input[type="search"],
+  .tracker-filter-grid .compact-input,
+  .tracker-filter-actions,
+  .tracker-filter-actions .btn {
+    width: 100%;
+  }
+}
+
 /* Standardised responsive components */
 .card {
   overflow-wrap: anywhere;

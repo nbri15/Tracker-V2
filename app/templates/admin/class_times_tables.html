@@ -33,8 +33,8 @@
 
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Filters</strong></div>
-  <div class="card-body">
-    <form method="get" class="form-grid compact-filter-row">
+  <div class="card-body tracker-filter-card">
+    <form method="get" class="tracker-filter-grid compact-filter-row">
       <input type="hidden" name="sort" value="{{ sort_state.column }}">
       <input type="hidden" name="direction" value="{{ sort_state.direction }}">
       <div class="col-md-2"><label class="form-label">Academic year</label><select name="academic_year" class="form-select form-select-sm">{% for option in academic_year_options %}<option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
@@ -44,7 +44,7 @@
       <div class="col-md-1"><label class="form-label">LAPS</label><select name="laps" class="form-select form-select-sm">{% for value, label in boolean_filter_choices.items() %}<option value="{{ value }}" {% if filters.laps == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
       <div class="col-md-1"><label class="form-label">Service</label><select name="service_child" class="form-select form-select-sm">{% for value, label in boolean_filter_choices.items() %}<option value="{{ value }}" {% if filters.service_child == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
       <div class="col-md-2"><label class="form-label">Search pupil</label><input type="text" class="form-control form-control-sm" name="search" value="{{ filters.search }}" placeholder="Name"></div>
-      <div class="col-12 d-flex justify-content-end gap-2"><button class="btn btn-primary btn-sm">Apply</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_times_tables', class_id=school_class.id, academic_year=academic_year) }}">Clear</a></div>
+      <div class="tracker-filter-actions"><button class="btn btn-primary btn-sm">Apply</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_times_tables', class_id=school_class.id, academic_year=academic_year) }}">Clear</a></div>
     </form>
   </div>
 </div>

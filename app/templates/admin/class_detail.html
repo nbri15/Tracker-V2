@@ -112,8 +112,8 @@
 
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Filters</strong></div>
-  <div class="card-body">
-    <form method="get" class="form-grid compact-filter-row">
+  <div class="card-body tracker-filter-card">
+    <form method="get" class="tracker-filter-grid compact-filter-row">
       {{ filter_hidden_fields() }}
       <div class="col-md-2">
         <label class="form-label">Pupil status</label>
@@ -180,7 +180,7 @@
       {% endif %}
       <input type="hidden" name="sort" value="{{ sort_state.column }}">
       <input type="hidden" name="direction" value="{{ sort_state.direction }}">
-      <div class="col-12 d-flex justify-content-end gap-2">
+      <div class="tracker-filter-actions">
         <button class="btn btn-primary btn-sm">Apply filters</button>
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject) }}">Clear</a>
       </div>
