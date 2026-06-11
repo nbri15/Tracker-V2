@@ -1744,3 +1744,31 @@ label,
     min-width: 820px;
   }
 }
+
+/* Standalone Maths Fundamentals module */
+.mf-table th,
+.mf-table td {
+  min-width: 7rem;
+  text-align: center;
+}
+.mf-table .pupil-name-col {
+  min-width: 13rem;
+  text-align: left;
+}
+.mf-empty { background: #f8f9fa; color: #6c757d; }
+.mf-red { background: #f8d7da !important; color: #842029; font-weight: 700; }
+.mf-amber { background: #fff3cd !important; color: #664d03; font-weight: 700; }
+.mf-light-green { background: #d1e7dd !important; color: #0f5132; font-weight: 700; }
+.mf-dark-green { background: #198754 !important; color: #fff; font-weight: 700; }
+.child-assessment-card {
+  border-radius: 1.5rem;
+}
+.child-assessment-card .form-control-lg {
+  font-size: 2rem;
+  min-height: 4rem;
+}
+@media (max-width: 991.98px) {
+  .mf-table th,
+  .mf-table td { min-width: 6rem; }
+  .child-assessment-card .card-body { padding: 2rem !important; }
+}

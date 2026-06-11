@@ -15,6 +15,16 @@ from .assessment import (
 from .audit import AuditLog
 from .history import AcademicYear, PupilClassHistory
 from .intervention import Intervention
+from .maths_fundamentals import (
+    MathsFundamentalAttempt,
+    MathsFundamentalQuestion,
+    MathsFundamentalResult,
+    MathsFundamentalSkill,
+    MathsFundamentalStrand,
+    MathsFundamentalsSession,
+    MathsQuestionTemplate,
+    PupilQrToken,
+)
 from .pupil import Pupil
 from .reception import ReceptionTrackerEntry
 from .sats import SimpleSatsExamTab, SimpleSatsSetting, SatsColumnResult, SatsColumnSetting, SatsExamSetting, SatsExamTab, SatsResult, SatsWritingResult, TrackerModeSetting
@@ -31,6 +41,14 @@ __all__ = [
     'GapScore',
     'GapTemplate',
     'Intervention',
+    'MathsFundamentalAttempt',
+    'MathsFundamentalQuestion',
+    'MathsFundamentalResult',
+    'MathsFundamentalSkill',
+    'MathsFundamentalStrand',
+    'MathsFundamentalsSession',
+    'MathsQuestionTemplate',
+    'PupilQrToken',
     'PhonicsScore',
     'PhonicsTestColumn',
     'Pupil',
