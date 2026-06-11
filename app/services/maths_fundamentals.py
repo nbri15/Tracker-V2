@@ -14,6 +14,12 @@ from typing import Any
 
 from sqlalchemy import func
 
+QUESTIONS_PER_LEVEL = 10
+PASS_MARK = 8
+MAX_LEVEL = 15
+VISUAL_MARKER_RE = re.compile(r'\s*\[\[mf_visual:(dot_pattern|five_frame|ten_frame):(\d+)\]\]')
+VARIANT_MARKER_RE = re.compile(r'\s*\[\[mf_variant:\d+\]\]')
+
 from app.extensions import db
 from app.models import (
     MathsFundamentalAttempt,
@@ -326,7 +332,7 @@ def _cell(row: tuple[Any, ...], mapping: dict[str, int], field: str) -> str | No
     return value or None
 
 
-def generate_question(skill: MathsFundamentalSkill) -> MathsFundamentalQuestion:
+def generate_question(skill: MathsFundamentalSkill, pupil_id: int | None = None) -> MathsFundamentalQuestion:
     template = skill.templates.filter_by(is_active=True).order_by(MathsQuestionTemplate.difficulty, MathsQuestionTemplate.id).first()
     if not template:
         generator_type = infer_generator_type(skill.strand.name, skill.skill_text, skill.question_prompt)
@@ -358,13 +364,26 @@ def render_generated_question(skill: MathsFundamentalSkill, template: MathsQuest
     config = _load_generator_config(template.generator_config_json)
     prompt = choose_prompt(template.template_text or skill.question_prompt or skill.skill_text)
 
+    if skill.strand.name == 'Number Sense' and generator_type == 'template':
+        generator_type = 'subitising'
+
     if generator_type == 'subitising':
-        low, high = _bounds(config.get('n'), 1, 5 if skill.level <= 1 else 10)
-        n = random.randint(low, high)
-        return f"How many dots do you see? {'● ' * n}".strip(), n
+        low, high = _bounds(config.get('n'), 1, 10)
+        high = max(high, QUESTIONS_PER_LEVEL)
+        n = random.randint(max(1, low), min(10, high))
+        visual_type = 'five_frame' if n <= 5 else 'ten_frame'
+        if skill.strand.name == 'Number Sense' and skill.level >= 4:
+            visual_type = random.choice(['dot_pattern', visual_type])
+        return f"How many dots do you see? {_visual_marker(visual_type, n)}", n
     if generator_type == 'counting':
         limit = int(config.get('limit') or (20 if skill.level <= 5 else 100))
-        n = random.randint(2, max(3, limit - 1))
+        count_low = 1 if skill.strand.name == 'Number Sense' else 2
+        n = random.randint(count_low, max(count_low, min(limit - 1, 10 if skill.strand.name == 'Number Sense' else limit - 1)))
+        if skill.strand.name == 'Number Sense':
+            visual_type = 'five_frame' if n <= 5 else 'ten_frame'
+            if 'back' in skill.skill_text.lower() or 'before' in prompt.lower() or 'one less' in skill.skill_text.lower():
+                return f"Look at the frame. What is one less? {_visual_marker(visual_type, n)}", n - 1
+            return f"Look at the frame. What is one more? {_visual_marker(visual_type, n)}", n + 1
         if 'back' in skill.skill_text.lower() or 'before' in prompt.lower() or 'one less' in skill.skill_text.lower():
             return f"What number comes before {n}?", n - 1
         if 'one more' in skill.skill_text.lower():
@@ -373,6 +392,9 @@ def render_generated_question(skill: MathsFundamentalSkill, template: MathsQuest
     if generator_type == 'number_bonds':
         target = int(config.get('target') or (5 if skill.level <= 1 else 10))
         a = random.randint(0, target)
+        if skill.strand.name == 'Number Sense' and target in {5, 10}:
+            visual_type = 'five_frame' if target == 5 else 'ten_frame'
+            return f"How many more dots fill the frame? {_visual_marker(visual_type, a)}", target - a
         return f"What goes with {a} to make {target}?", target - a
     if generator_type == 'addition':
         variables = _generate_variables(template.generator_config_json)
@@ -400,6 +422,55 @@ def render_generated_question(skill: MathsFundamentalSkill, template: MathsQuest
     correct_answer = _safe_answer(question_text, variables)
     return question_text, correct_answer
 
+
+
+def _visual_marker(visual_type: str, value: int) -> str:
+    return f'[[mf_visual:{visual_type}:{max(0, min(10, int(value)))}]]'
+
+
+def question_display_text(question: MathsFundamentalQuestion | None) -> str:
+    if not question:
+        return ''
+    return VARIANT_MARKER_RE.sub('', VISUAL_MARKER_RE.sub('', question.question_text or '')).strip()
+
+
+def question_visual_model(question: MathsFundamentalQuestion | None) -> dict[str, Any] | None:
+    if not question or not question.question_text:
+        return None
+    match = VISUAL_MARKER_RE.search(question.question_text)
+    if not match:
+        return None
+    visual_type, raw_value = match.groups()
+    value = max(0, min(10, int(raw_value)))
+    cells = [index < value for index in range(10 if visual_type == 'ten_frame' else 5)]
+    if visual_type == 'dot_pattern':
+        cells = [index < value for index in range(value)]
+    return {'type': visual_type, 'value': value, 'cells': cells}
+
+
+def level_progress(attempt: MathsFundamentalAttempt) -> dict[str, Any]:
+    total = QUESTIONS_PER_LEVEL
+    answered = MathsFundamentalQuestion.query.filter_by(attempt_id=attempt.id, level=attempt.current_level).filter(MathsFundamentalQuestion.pupil_answer.isnot(None)).count()
+    return {'answered': min(answered, total), 'total': total, 'remaining': max(0, total - answered)}
+
+
+def attempt_completion_summary(attempt: MathsFundamentalAttempt) -> dict[str, Any]:
+    secure_level = attempt.final_level if attempt.final_level is not None else max(0, attempt.current_level - 1)
+    result = MathsFundamentalResult.query.filter_by(
+        school_id=attempt.school_id,
+        pupil_id=attempt.pupil_id,
+        academic_year=attempt.academic_year,
+        strand_id=attempt.strand_id,
+    ).first()
+    if result:
+        secure_level = max(int(result.current_level or 0), int(secure_level or 0))
+    next_level = min(MAX_LEVEL, secure_level + 1)
+    next_skill = MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=next_level).order_by(MathsFundamentalSkill.display_order, MathsFundamentalSkill.id).first()
+    return {
+        'secure_level': secure_level,
+        'next_level': next_level if next_skill else None,
+        'teaching_focus': (next_skill.teaching_prompt or next_skill.skill_text) if next_skill else 'Maintain and deepen secure learning.',
+    }
 
 def choose_prompt(prompt_text: str) -> str:
     prompts = [part.strip() for part in re.split(r';|\n', prompt_text or '') if part.strip()]
@@ -466,7 +537,7 @@ def start_session(*, school_id: int, teacher_id: int, class_id: int | None, stra
         strand_id=strand_id,
         academic_year=academic_year,
         starting_level=max(1, min(15, starting_level)),
-        questions_per_level=max(1, min(10, questions_per_level)),
+        questions_per_level=QUESTIONS_PER_LEVEL,
         group_name=group_name,
         expires_at=datetime.now(timezone.utc) + timedelta(hours=3),
     )
@@ -494,7 +565,11 @@ def active_session_for_pupil(pupil: Pupil) -> MathsFundamentalsSession | None:
 
 def get_or_start_attempt(session: MathsFundamentalsSession, pupil: Pupil) -> MathsFundamentalAttempt:
     attempt = MathsFundamentalAttempt.query.filter_by(session_id=session.id, pupil_id=pupil.id).order_by(MathsFundamentalAttempt.started_at.desc()).first()
-    if attempt and attempt.status != 'completed':
+    if attempt and attempt.status == 'in_progress':
+        if attempt.questions_per_level != QUESTIONS_PER_LEVEL:
+            attempt.questions_per_level = QUESTIONS_PER_LEVEL
+            db.session.add(attempt)
+            db.session.commit()
         return attempt
     attempt = MathsFundamentalAttempt(
         school_id=session.school_id,
@@ -503,7 +578,7 @@ def get_or_start_attempt(session: MathsFundamentalsSession, pupil: Pupil) -> Mat
         academic_year=session.academic_year,
         session_id=session.id,
         current_level=session.starting_level,
-        questions_per_level=session.questions_per_level,
+        questions_per_level=QUESTIONS_PER_LEVEL,
         last_activity_at=datetime.now(timezone.utc),
     )
     db.session.add(attempt)
@@ -517,14 +592,16 @@ def next_question_for_attempt(attempt: MathsFundamentalAttempt) -> MathsFundamen
         return unanswered
     if attempt.status == 'completed':
         return None
+    if attempt.questions_per_level != QUESTIONS_PER_LEVEL:
+        attempt.questions_per_level = QUESTIONS_PER_LEVEL
     answered_level = MathsFundamentalQuestion.query.filter_by(attempt_id=attempt.id, level=attempt.current_level).filter(MathsFundamentalQuestion.pupil_answer.isnot(None)).count()
-    if answered_level >= attempt.questions_per_level:
+    if answered_level >= QUESTIONS_PER_LEVEL:
         return None
     skill = MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=attempt.current_level).order_by(MathsFundamentalSkill.display_order, MathsFundamentalSkill.id).first()
     if not skill:
         complete_attempt(attempt, max(0, attempt.current_level - 1))
         return None
-    question = generate_question(skill)
+    question = generate_unique_question(skill, attempt)
     question.attempt_id = attempt.id
     db.session.add(question)
     attempt.last_activity_at = datetime.now(timezone.utc)
@@ -532,6 +609,23 @@ def next_question_for_attempt(attempt: MathsFundamentalAttempt) -> MathsFundamen
     db.session.commit()
     return question
 
+
+
+def generate_unique_question(skill: MathsFundamentalSkill, attempt: MathsFundamentalAttempt) -> MathsFundamentalQuestion:
+    previous_texts = {
+        VARIANT_MARKER_RE.sub('', row.question_text or '').strip()
+        for row in MathsFundamentalQuestion.query.join(MathsFundamentalAttempt).filter(
+            MathsFundamentalAttempt.pupil_id == attempt.pupil_id,
+        ).all()
+    }
+    question = generate_question(skill, pupil_id=attempt.pupil_id)
+    for _ in range(12):
+        if VARIANT_MARKER_RE.sub('', question.question_text or '').strip() not in previous_texts:
+            return question
+        question = generate_question(skill, pupil_id=attempt.pupil_id)
+    suffix = random.randint(1000, 9999)
+    question.question_text = f'{question.question_text} [[mf_variant:{suffix}]]'
+    return question
 
 def submit_answer(question: MathsFundamentalQuestion, answer: str) -> MathsFundamentalAttempt:
     question.pupil_answer = (answer or '').strip()
@@ -560,14 +654,15 @@ def normalize_answer(value: str | None) -> str:
 
 
 def evaluate_attempt_progress(attempt: MathsFundamentalAttempt) -> None:
+    if attempt.questions_per_level != QUESTIONS_PER_LEVEL:
+        attempt.questions_per_level = QUESTIONS_PER_LEVEL
     questions = MathsFundamentalQuestion.query.filter_by(attempt_id=attempt.id, level=attempt.current_level).filter(MathsFundamentalQuestion.pupil_answer.isnot(None)).all()
-    if len(questions) < attempt.questions_per_level or any(q.is_correct is None for q in questions):
+    if len(questions) < QUESTIONS_PER_LEVEL or any(q.is_correct is None for q in questions):
         return
     correct = sum(1 for q in questions if q.is_correct)
-    pass_mark = max(1, (attempt.questions_per_level * 2 + 2) // 3)
-    if correct >= pass_mark:
+    if correct >= PASS_MARK:
         next_level = attempt.current_level + 1
-        if next_level > 15 or not MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=next_level).first():
+        if next_level > MAX_LEVEL or not MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=next_level).first():
             complete_attempt(attempt, attempt.current_level)
         else:
             attempt.current_level = next_level
@@ -581,8 +676,6 @@ def complete_attempt(attempt: MathsFundamentalAttempt, final_level: int) -> None
     attempt.completed_at = datetime.now(timezone.utc)
     attempt.final_level = final_level
     attempt.last_activity_at = datetime.now(timezone.utc)
-    skill = MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=max(1, final_level)).order_by(MathsFundamentalSkill.display_order).first()
-    next_skill = MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=min(15, final_level + 1)).order_by(MathsFundamentalSkill.display_order).first()
     result = MathsFundamentalResult.query.filter_by(
         school_id=attempt.school_id,
         pupil_id=attempt.pupil_id,
@@ -591,7 +684,10 @@ def complete_attempt(attempt: MathsFundamentalAttempt, final_level: int) -> None
     ).first()
     if not result:
         result = MathsFundamentalResult(school_id=attempt.school_id, pupil_id=attempt.pupil_id, academic_year=attempt.academic_year, strand_id=attempt.strand_id)
-    result.current_level = final_level
+    awarded_level = max(int(result.current_level or 0), int(final_level or 0))
+    skill = MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=max(1, awarded_level)).order_by(MathsFundamentalSkill.display_order).first()
+    next_skill = MathsFundamentalSkill.query.filter_by(strand_id=attempt.strand_id, level=min(MAX_LEVEL, awarded_level + 1)).order_by(MathsFundamentalSkill.display_order).first()
+    result.current_level = awarded_level
     result.current_skill_id = skill.id if skill else None
     result.last_assessed = attempt.completed_at
     result.next_step = (next_skill.teaching_prompt or next_skill.skill_text) if next_skill else 'Maintain and deepen secure learning.'
@@ -601,7 +697,9 @@ def complete_attempt(attempt: MathsFundamentalAttempt, final_level: int) -> None
 
 def attempt_status_rows(session: MathsFundamentalsSession) -> list[dict[str, Any]]:
     pupils = Pupil.query.filter_by(class_id=session.class_id, school_id=session.school_id, is_active=True).order_by(Pupil.last_name, Pupil.first_name).all() if session.class_id else []
-    attempts = {attempt.pupil_id: attempt for attempt in session.attempts}
+    attempts = {}
+    for attempt in sorted(session.attempts, key=lambda row: row.id or 0):
+        attempts[attempt.pupil_id] = attempt
     rows = []
     for pupil in pupils:
         attempt = attempts.get(pupil.id)
@@ -611,8 +709,8 @@ def attempt_status_rows(session: MathsFundamentalsSession) -> list[dict[str, Any
         rows.append({
             'pupil': pupil,
             'attempt': attempt,
-            'status': 'Completed' if attempt and attempt.status == 'completed' else ('In Progress' if attempt else 'Waiting'),
-            'current_question': current_question.question_text if current_question else '—',
+            'status': 'Completed' if attempt and attempt.status == 'completed' else ('In Progress' if attempt and attempt.status == 'in_progress' else ('Restarted' if attempt else 'Waiting')),
+            'current_question': question_display_text(current_question) if current_question else '—',
             'current_skill': current_question.skill.skill_text if current_question and current_question.skill else '—',
             'current_level': attempt.current_level if attempt else session.starting_level,
             'last_activity': attempt.last_activity_at if attempt else None,

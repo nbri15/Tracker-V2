@@ -1,27 +1,26 @@
 {% extends 'base.html' %}
-{% block title %}Maths Fundamentals<script>
-function mfPrintSingleQr(index) {
-  document.querySelectorAll('.mf-qr-print-card').forEach((card) => {
-    card.classList.toggle('mf-print-hidden', card.dataset.qrIndex !== String(index));
-  });
-  window.print();
-}
-window.addEventListener('afterprint', () => {
-  document.querySelectorAll('.mf-qr-print-card').forEach((card) => card.classList.remove('mf-print-hidden'));
-});
-</script>
-{% endblock %}
+{% block title %}Maths Fundamentals{% endblock %}
 {% set page_heading = 'Maths Fundamentals' %}
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4 no-print">
   <div><h3 class="h5 mb-1">{{ school_class.name }}</h3><p class="text-muted mb-0">Standalone ladder assessment, QR sessions and next teaching steps.</p></div>
-  <form method="post" class="card shadow-sm"><div class="card-body d-flex flex-wrap align-items-end gap-2">
+  <form method="post" class="card shadow-sm mf-start-card"><div class="card-body">
     <input type="hidden" name="action" value="start_session"><input type="hidden" name="academic_year" value="{{ academic_year }}">
-    <div><label class="form-label small">Strand</label><select name="strand_id" class="form-select form-select-sm">{% for strand in strands %}<option value="{{ strand.id }}">{{ strand.name }}</option>{% endfor %}</select></div>
-    <div><label class="form-label small">Starting level</label><input type="number" min="1" max="15" name="starting_level" value="1" class="form-control form-control-sm"></div>
-    <div><label class="form-label small">Questions/level</label><input type="number" min="1" max="10" name="questions_per_level" value="3" class="form-control form-control-sm"></div>
-    <div><label class="form-label small">Group</label><input name="group_name" class="form-control form-control-sm" placeholder="Optional"></div>
-    <button class="btn btn-primary btn-sm">Start Assessment</button>
+    <div class="d-flex flex-wrap align-items-end gap-2">
+      <div><label class="form-label small">Strand</label><select name="strand_id" class="form-select form-select-sm">{% for strand in strands %}<option value="{{ strand.id }}">{{ strand.name }}</option>{% endfor %}</select></div>
+      <div><label class="form-label small">Starting level</label><input type="number" min="1" max="15" name="starting_level" value="1" class="form-control form-control-sm"></div>
+      <div><label class="form-label small">Group</label><input name="group_name" class="form-control form-control-sm" placeholder="Optional"></div>
+      <button class="btn btn-primary btn-sm">Start Assessment</button>
+    </div>
+    <div class="mf-assessment-rules mt-3" aria-label="Assessment rules">
+      <strong>Assessment rules</strong>
+      <ul class="mb-0 ps-3 small">
+        <li>Every level has 10 questions.</li>
+        <li>8–10 correct means the level is secure and pupils move up.</li>
+        <li>0–7 correct means assessment stops and the highest secure level is awarded.</li>
+        <li>Saved results stay in the existing format and previous attempts are kept.</li>
+      </ul>
+    </div>
   </div></form>
 </div>
 {% if open_sessions %}<div class="alert alert-info d-flex flex-wrap gap-2 align-items-center no-print"><strong>Open sessions:</strong>{% for session in open_sessions %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('maths_fundamentals.live_session', session_id=session.id) }}">{{ session.strand.name }} live view</a>{% endfor %}</div>{% endif %}

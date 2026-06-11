@@ -1845,3 +1845,145 @@ label,
     display: none !important;
   }
 }
+
+.mf-start-card {
+  max-width: 44rem;
+}
+
+.mf-assessment-rules {
+  background: #eef6ff;
+  border: 1px solid #cfe2ff;
+  border-radius: 0.9rem;
+  color: #17324d;
+  padding: 0.85rem 1rem;
+}
+
+.mf-child-page {
+  min-height: calc(100vh - 11rem);
+  align-items: center;
+}
+
+.child-assessment-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border: 0;
+}
+
+.mf-celebration {
+  font-size: clamp(3rem, 8vw, 5rem);
+  line-height: 1;
+}
+
+.mf-progress-wrap {
+  min-width: min(100%, 22rem);
+}
+
+.mf-progress-box {
+  display: inline-block;
+  width: clamp(1.25rem, 4vw, 2rem);
+  height: clamp(1.25rem, 4vw, 2rem);
+  margin: 0.12rem;
+  border: 3px solid #8bb7e0;
+  border-radius: 0.45rem;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.85);
+  vertical-align: middle;
+}
+
+.mf-progress-box.is-filled {
+  background: #3dbb7d;
+  border-color: #21895a;
+}
+
+.mf-visual-question {
+  display: grid;
+  gap: 0.8rem;
+  justify-content: center;
+  margin: 1rem auto 1.6rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  width: fit-content;
+  max-width: 100%;
+  background: #fff7db;
+  border: 4px solid #f2bd3d;
+  border-radius: 1.4rem;
+}
+
+.mf-visual-five_frame {
+  grid-template-columns: repeat(5, clamp(3rem, 11vw, 5.2rem));
+}
+
+.mf-visual-ten_frame {
+  grid-template-columns: repeat(5, clamp(3rem, 11vw, 5.2rem));
+}
+
+.mf-visual-dot_pattern {
+  grid-template-columns: repeat(5, clamp(2.6rem, 9vw, 4.5rem));
+  background: #f0fff8;
+  border-color: #55c893;
+}
+
+.mf-dot-cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-height: clamp(3rem, 11vw, 5.2rem);
+  background: rgba(255,255,255,0.8);
+  border: 3px solid rgba(23, 50, 77, 0.18);
+  border-radius: 0.9rem;
+}
+
+.mf-visual-dot_pattern .mf-dot-cell {
+  border-color: transparent;
+  background: transparent;
+}
+
+.mf-dot-cell span {
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.mf-dot-cell.is-filled span {
+  background: #273f8f;
+  box-shadow: 0 0.35rem 0 rgba(39, 63, 143, 0.16);
+}
+
+.mf-answer-form {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.mf-submit-button {
+  min-height: 3.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.mf-finish-tile {
+  height: 100%;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #f3f7ff;
+  border: 1px solid #d8e5ff;
+}
+
+.mf-finish-tile span {
+  display: block;
+  color: #5f6f82;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.mf-finish-tile strong {
+  display: block;
+  color: #17324d;
+  font-size: 1.1rem;
+}
+
+@media (max-width: 767.98px) {
+  .mf-visual-five_frame,
+  .mf-visual-ten_frame,
+  .mf-visual-dot_pattern {
+    gap: 0.45rem;
+  }
+}
