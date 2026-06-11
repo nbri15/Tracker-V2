@@ -34,6 +34,7 @@ def create_app(config_name: str | None = None) -> Flask:
     bootstrap_runtime_schema(app)
     bootstrap_academic_years(app)
     bootstrap_gender_values(app)
+    bootstrap_maths_fundamentals(app)
     bootstrap_admin_from_env(app)
     bootstrap_demo_data(app)
 
@@ -58,6 +59,7 @@ def register_blueprints(app: Flask) -> None:
     from .pupils import pupils_bp
     from .executive import executive_bp
     from .legal import legal_bp
+    from .maths_fundamentals import maths_fundamentals_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
@@ -66,6 +68,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(admin_bp)
     app.register_blueprint(executive_bp)
     app.register_blueprint(legal_bp)
+    app.register_blueprint(maths_fundamentals_bp)
 
 
 @login_manager.user_loader
@@ -181,6 +184,19 @@ def register_cli_commands(app: Flask) -> None:
         db.session.add(user)
         db.session.commit()
         click.echo(f"Created admin user '{user.username}'.")
+
+    @app.cli.command('import-maths-fundamentals-ladder')
+    @click.argument('path')
+    def import_maths_fundamentals_ladder_command(path: str) -> None:
+        """Import the standalone Maths Fundamentals ladder spreadsheet."""
+
+        from .services.maths_fundamentals import import_ladder_from_workbook
+
+        summary = import_ladder_from_workbook(path)
+        click.echo(
+            f"Imported Maths Fundamentals ladder: {summary['strands']} strands, "
+            f"{summary['skills']} skills, {summary['templates']} templates."
+        )
 
 
 def bootstrap_admin_from_env(app: Flask) -> None:
@@ -330,3 +346,19 @@ def bootstrap_gender_values(app: Flask) -> None:
         except Exception:
             db.session.rollback()
             app.logger.warning('Gender normalization bootstrap failed.', exc_info=True)
+
+
+def bootstrap_maths_fundamentals(app: Flask) -> None:
+    """Ensure the standalone Maths Fundamentals starter ladder exists when tables are available."""
+
+    from .services.maths_fundamentals import ensure_default_ladder
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if not inspector.has_table('maths_fundamental_strands'):
+            return
+        try:
+            ensure_default_ladder()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('Maths Fundamentals bootstrap failed.', exc_info=True)

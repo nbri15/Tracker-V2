@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals Interventions{% endblock %}
+{% set page_heading = 'Maths Fundamentals Intervention Candidates' %}
+{% block content %}
+<div class="card shadow-sm"><div class="card-header bg-white"><strong>{{ academic_year }}</strong></div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Pupil</th><th>Strand</th><th>Current Level</th><th>Suggested Teaching</th><th>Reason</th></tr></thead><tbody>{% for candidate in candidates %}<tr><td>{{ candidate.pupil.full_name }}</td><td>{{ candidate.strand.name }}</td><td>Level {{ candidate.current_level }}</td><td>{{ candidate.suggested_teaching }}</td><td>{{ candidate.reason }}</td></tr>{% else %}<tr><td colspan="5" class="text-center text-muted py-4">No Maths Fundamentals intervention candidates.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}
