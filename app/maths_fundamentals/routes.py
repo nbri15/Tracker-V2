@@ -14,6 +14,7 @@ from app.services import apply_admin_pupil_filters, build_academic_year_options,
 from app.services.maths_fundamentals import (
     active_session_for_pupil,
     active_strands,
+    attempt_completion_summary,
     attempt_status_rows,
     build_teacher_rows,
     class_and_admin_summary,
@@ -24,8 +25,11 @@ from app.services.maths_fundamentals import (
     intervention_candidates,
     import_ladder_from_workbook,
     level_colour_class,
+    level_progress,
     next_question_for_attempt,
     qr_code_data_uri,
+    question_display_text,
+    question_visual_model,
     start_session,
     strand_short_name,
     submit_answer,
@@ -73,7 +77,7 @@ def teacher_dashboard():
                 strand_id=strand_id,
                 academic_year=academic_year,
                 starting_level=int(request.form.get('starting_level') or 1),
-                questions_per_level=int(request.form.get('questions_per_level') or 3),
+                questions_per_level=10,
                 group_name=request.form.get('group_name'),
             )
             flash('Maths Fundamentals assessment session started. Pupils can now use their QR code.', 'success')
@@ -197,9 +201,13 @@ def live_session(session_id: int):
             flash('Session closed.', 'success')
         elif action == 'restart':
             for attempt in session.attempts:
-                db.session.delete(attempt)
+                if attempt.status == 'in_progress':
+                    attempt.status = 'abandoned'
+                    attempt.completed_at = datetime.now(timezone.utc)
+                    attempt.last_activity_at = datetime.now(timezone.utc)
+                    db.session.add(attempt)
             db.session.commit()
-            flash('Session attempts restarted.', 'success')
+            flash('Session restarted without deleting existing attempts.', 'success')
         elif action == 'pause':
             session.is_open = False
             session.closed_at = datetime.now(timezone.utc)
@@ -230,4 +238,14 @@ def pupil_qr(token: str):
         if attempt.status == 'completed':
             return redirect(url_for('maths_fundamentals.pupil_qr', token=token))
     question = next_question_for_attempt(attempt)
-    return render_template('maths_fundamentals/pupil_assessment.html', pupil=pupil, session=session, attempt=attempt, question=question)
+    return render_template(
+        'maths_fundamentals/pupil_assessment.html',
+        pupil=pupil,
+        session=session,
+        attempt=attempt,
+        question=question,
+        progress=level_progress(attempt),
+        question_text=question_display_text(question),
+        question_visual=question_visual_model(question),
+        completion_summary=attempt_completion_summary(attempt) if attempt.status == 'completed' else None,
+    )

@@ -2,5 +2,48 @@
 {% block title %}Maths Fundamentals Assessment{% endblock %}
 {% set page_heading = 'Maths Fundamentals' %}
 {% block content %}
-<div class="row justify-content-center"><div class="col-lg-8"><div class="card shadow-lg child-assessment-card"><div class="card-body text-center p-5">{% if attempt.status == 'completed' %}<h2 class="display-6 mb-3">All done, {{ pupil.first_name }}!</h2><p class="lead">Your secure level has been saved.</p>{% elif question %}<p class="text-muted">{{ session.strand.name }} · Level {{ attempt.current_level }}</p><div class="small text-muted mb-3" data-skill="{{ question.skill.skill_text }}">Skill: {{ question.skill.skill_text }}</div><h2 class="display-5 mb-4">{{ question.question_text }}</h2><form method="post"><input type="hidden" name="question_id" value="{{ question.id }}"><input name="answer" autocomplete="off" autofocus class="form-control form-control-lg text-center mb-4" placeholder="Type your answer"><button class="btn btn-primary btn-lg px-5">Submit</button></form>{% else %}<h2>Please wait</h2><p class="lead">Your teacher will review your assessment.</p>{% endif %}</div></div></div></div>
+<div class="mf-child-page row justify-content-center">
+  <div class="col-12 col-xl-9">
+    <div class="card shadow-lg child-assessment-card">
+      <div class="card-body text-center p-4 p-md-5">
+        {% if attempt.status == 'completed' %}
+          <div class="mf-celebration" aria-hidden="true">⭐</div>
+          <h2 class="display-6 mb-3">All done, {{ pupil.first_name }}!</h2>
+          <p class="lead">Your secure level has been saved.</p>
+          {% if completion_summary %}
+            <div class="row g-3 mt-4 text-start">
+              <div class="col-md-4"><div class="mf-finish-tile"><span>Secure level</span><strong>Level {{ completion_summary.secure_level }}</strong></div></div>
+              <div class="col-md-4"><div class="mf-finish-tile"><span>Next level</span><strong>{{ 'Level ' ~ completion_summary.next_level if completion_summary.next_level else 'Keep practising' }}</strong></div></div>
+              <div class="col-md-4"><div class="mf-finish-tile"><span>Teaching focus</span><strong>{{ completion_summary.teaching_focus }}</strong></div></div>
+            </div>
+          {% endif %}
+        {% elif question %}
+          <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 mb-4">
+            <div class="text-md-start"><p class="text-muted mb-1">{{ session.strand.name }}</p><h2 class="h3 mb-0">Level {{ attempt.current_level }}</h2></div>
+            <div class="mf-progress-wrap" aria-label="{{ progress.answered }} of {{ progress.total }} questions answered">
+              {% for box in range(progress.total) %}<span class="mf-progress-box {% if box < progress.answered %}is-filled{% endif %}" aria-hidden="true"></span>{% endfor %}
+              <div class="small text-muted mt-2">{{ progress.answered }} / {{ progress.total }} answered</div>
+            </div>
+          </div>
+          <div class="small text-muted mb-3" data-skill="{{ question.skill.skill_text }}">Skill: {{ question.skill.skill_text }}</div>
+          {% if question_visual %}
+            <div class="mf-visual-question mf-visual-{{ question_visual.type }}" role="img" aria-label="Dot pattern for the question">
+              {% for filled in question_visual.cells %}<span class="mf-dot-cell {% if filled %}is-filled{% endif %}"><span></span></span>{% endfor %}
+            </div>
+          {% endif %}
+          <h2 class="display-6 mb-4">{{ question_text }}</h2>
+          <form method="post" class="mf-answer-form">
+            <input type="hidden" name="question_id" value="{{ question.id }}">
+            <label class="visually-hidden" for="answer">Your answer</label>
+            <input id="answer" name="answer" inputmode="numeric" autocomplete="off" autofocus class="form-control form-control-lg text-center mb-4" placeholder="Type your answer">
+            <button class="btn btn-primary btn-lg px-5 mf-submit-button">Submit answer</button>
+          </form>
+        {% else %}
+          <h2>Please wait</h2>
+          <p class="lead">Your teacher will review your assessment.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
