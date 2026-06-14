@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals Session{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3"><div><h1>{{ session.strand.name }}</h1><p class="text-muted">{{ session.school_class.name }} · Start level {{ session.start_level }} · {% if session.is_active %}Active{% else %}Stopped{% endif %}</p><p>Pupil login link: <a href="{{ url_for('fundamentals.pupil_login', _external=False) }}">/fundamentals/pupil</a></p></div>{% if session.is_active %}<form method="post" action="{{ url_for('fundamentals.stop_session', session_id=session.id) }}"><button class="btn btn-outline-danger">Stop session</button></form>{% endif %}</div>
+<table class="table table-striped"><thead><tr><th>Pupil</th><th>Status</th><th>Current</th><th>Secure level</th><th>Intervention level</th></tr></thead><tbody>{% for pupil in pupils %}{% set attempt=attempts.get(pupil.id) %}<tr><td>{{ pupil.full_name }}</td><td>{% if not attempt %}Not started{% elif attempt.is_complete %}Complete{% else %}In progress{% endif %}</td><td>{{ attempt.current_level if attempt else '—' }}</td><td>{{ attempt.secure_level if attempt and attempt.secure_level else '—' }}</td><td>{{ attempt.intervention_level if attempt and attempt.intervention_level else '—' }}</td></tr>{% endfor %}</tbody></table>
+{% endblock %}

@@ -16,6 +16,7 @@
     {% else %}
       <a class="nav-link text-white {% if request.endpoint in ['dashboards.teacher_dashboard', 'dashboards.admin_dashboard'] %}active{% endif %}" href="{{ url_for('dashboards.index') }}">Dashboard</a>
       <a class="nav-link text-white {% if request.endpoint in ['pupils.directory', 'pupils.profile'] %}active{% endif %}" href="{{ url_for('pupils.directory') }}">Pupils</a>
+      <a class="nav-link text-white {% if request.endpoint and request.endpoint.startswith('fundamentals.') %}active{% endif %}" href="{{ url_for('fundamentals.home') }}">Maths Fundamentals</a>
 
       {% if current_user.is_teacher %}
         {% set assigned_class = current_user.classes.filter_by(is_active=True, is_demo=current_user.is_demo).order_by('year_group', 'name').first() %}

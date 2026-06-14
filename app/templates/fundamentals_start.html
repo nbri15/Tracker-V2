@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Start Maths Fundamentals{% endblock %}
+{% block content %}
+<h1>Start Maths Fundamentals session</h1>
+<form method="post" class="card card-body col-lg-6">
+  <label class="form-label">Class</label><select class="form-select mb-3" name="class_id" required>{% for class in classes %}<option value="{{ class.id }}" {% if selected_class and selected_class.id==class.id %}selected{% endif %}>{{ class.name }} (Year {{ class.year_group }})</option>{% endfor %}</select>
+  <label class="form-label">Strand</label><select class="form-select mb-3" name="strand_id" required>{% for strand in strands %}<option value="{{ strand.id }}">{{ strand.name }}</option>{% endfor %}</select>
+  <label class="form-label">Start level</label><input class="form-control mb-3" type="number" min="1" name="start_level" value="{{ default_level or 1 }}">
+  <button class="btn btn-primary" type="submit">Start session</button>
+</form>
+{% endblock %}
