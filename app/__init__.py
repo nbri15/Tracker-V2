@@ -32,6 +32,7 @@ def create_app(config_name: str | None = None) -> Flask:
     register_shell_context(app)
     register_cli_commands(app)
     bootstrap_runtime_schema(app)
+    bootstrap_fundamentals(app)
     bootstrap_academic_years(app)
     bootstrap_gender_values(app)
     bootstrap_admin_from_env(app)
@@ -58,6 +59,7 @@ def register_blueprints(app: Flask) -> None:
     from .pupils import pupils_bp
     from .executive import executive_bp
     from .legal import legal_bp
+    from .fundamentals import fundamentals_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
@@ -66,6 +68,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(admin_bp)
     app.register_blueprint(executive_bp)
     app.register_blueprint(legal_bp)
+    app.register_blueprint(fundamentals_bp)
 
 
 @login_manager.user_loader
@@ -285,6 +288,43 @@ def bootstrap_runtime_schema(app: Flask) -> None:
                             column_name,
                             exc_info=True,
                         )
+
+
+def ensure_fundamentals_tables() -> None:
+    """Create Maths Fundamentals tables if they do not already exist."""
+
+    from .models import (
+        FundamentalLevel,
+        FundamentalPupilAttempt,
+        FundamentalQuestion,
+        FundamentalResponse,
+        FundamentalSession,
+        FundamentalStrand,
+    )
+
+    for model in (
+        FundamentalStrand,
+        FundamentalLevel,
+        FundamentalQuestion,
+        FundamentalSession,
+        FundamentalPupilAttempt,
+        FundamentalResponse,
+    ):
+        model.__table__.create(bind=db.engine, checkfirst=True)
+
+
+def bootstrap_fundamentals(app: Flask) -> None:
+    """Safely create and seed Maths Fundamentals at startup."""
+
+    with app.app_context():
+        try:
+            ensure_fundamentals_tables()
+            from .fundamentals.seed import seed_fundamentals
+
+            seed_fundamentals()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('Maths Fundamentals bootstrap failed.', exc_info=True)
 
 
 def bootstrap_academic_years(app: Flask) -> None:

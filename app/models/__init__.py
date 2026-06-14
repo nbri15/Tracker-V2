@@ -13,6 +13,14 @@ from .assessment import (
     TimesTableTestColumn,
 )
 from .audit import AuditLog
+from .fundamentals import (
+    FundamentalLevel,
+    FundamentalPupilAttempt,
+    FundamentalQuestion,
+    FundamentalResponse,
+    FundamentalSession,
+    FundamentalStrand,
+)
 from .history import AcademicYear, PupilClassHistory
 from .intervention import Intervention
 from .pupil import Pupil
@@ -27,6 +35,12 @@ __all__ = [
     'AuditLog',
     'AssessmentSetting',
     'FoundationResult',
+    'FundamentalLevel',
+    'FundamentalPupilAttempt',
+    'FundamentalQuestion',
+    'FundamentalResponse',
+    'FundamentalSession',
+    'FundamentalStrand',
     'GapQuestion',
     'GapScore',
     'GapTemplate',
