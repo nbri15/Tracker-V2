@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import random
 from datetime import datetime, timezone
+from io import BytesIO
 
-from flask import abort, flash, redirect, render_template, request, url_for
+import qrcode
+
+from flask import abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 
@@ -158,6 +161,18 @@ def session_detail(session_id: int):
         attempts=attempts_by_pupil,
         answered_counts=answered_counts,
     )
+
+
+@fundamentals_bp.route('/qr/<int:session_id>')
+@login_required
+def fundamentals_qr(session_id: int):
+    _get_session_or_404(session_id)
+    join_url = request.host_url.rstrip('/') + '/fundamentals/join'
+    image = qrcode.make(join_url)
+    image_io = BytesIO()
+    image.save(image_io, 'PNG')
+    image_io.seek(0)
+    return send_file(image_io, mimetype='image/png')
 
 
 @fundamentals_bp.route('/scores')

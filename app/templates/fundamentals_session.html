@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Maths Fundamentals Session{% endblock %}
 {% block content %}
-{% set pupil_join_path = url_for('fundamentals.join', school_id=session.school_class.school_id) %}
+{% set pupil_join_path = url_for('fundamentals.join') %}
 {% set pupil_join_url = request.host_url.rstrip('/') ~ pupil_join_path %}
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
@@ -17,6 +17,10 @@
         <h2 class="h4 mb-1">Open pupil assessment</h2>
         <p class="mb-2 text-muted">Open this link on pupil iPads</p>
         <a class="fs-5 fw-semibold" href="{{ pupil_join_path }}">{{ pupil_join_url }}</a>
+      </div>
+      <div class="text-center">
+        <img class="img-fluid border rounded p-2 bg-white" style="max-width: 180px;" src="{{ url_for('fundamentals.fundamentals_qr', session_id=session.id) }}" alt="Pupil join QR code">
+        <p class="mt-2 mb-0 fw-semibold">Scan this QR code on pupil iPads</p>
       </div>
       <a class="btn btn-primary btn-lg px-4" href="{{ pupil_join_path }}">Open pupil assessment</a>
     </div>
