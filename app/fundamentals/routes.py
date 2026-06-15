@@ -22,7 +22,19 @@ from app.models import (
 from app.utils import current_school_id
 from . import fundamentals_bp
 
-SEQUENCE_QUESTION_TYPES = {'sequence', 'counting', 'count_forward', 'count_backward', 'steps', 'step_counting'}
+SEQUENCE_QUESTION_TYPES = {
+    'sequence',
+    'counting',
+    'count_forward',
+    'count_backward',
+    'steps',
+    'step_counting',
+    'sequence_next',
+    'sequence_previous',
+    'sequence_next_boundary',
+    'sequence_next_100_boundary',
+    'equal_steps',
+}
 
 
 def _active_classes_for_user():
@@ -228,9 +240,14 @@ def pupil_question(attempt_id: int):
     if not remaining:
         return redirect(url_for('fundamentals.pupil_question', attempt_id=attempt.id))
     question = random.choice(remaining)
-    progress = len(answered_ids) + 1
-    formatted_question = format_fundamental_question_text(question)
-    return render_template('fundamentals_pupil_question.html', attempt=attempt, question=question, progress=progress, question_text=formatted_question)
+    answered_this_level = len(answered_ids)
+    return render_template(
+        'fundamentals_pupil_question.html',
+        attempt=attempt,
+        question=question,
+        current_level_obj=level,
+        answered_this_level=answered_this_level,
+    )
 
 
 @fundamentals_bp.route('/attempt/<int:attempt_id>')
