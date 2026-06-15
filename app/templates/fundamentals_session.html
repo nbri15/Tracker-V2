@@ -22,5 +22,29 @@
     </div>
   </div>
 </div>
-<table class="table table-striped"><thead><tr><th>Pupil</th><th>Status</th><th>Current</th><th>Secure level</th><th>Intervention level</th></tr></thead><tbody>{% for pupil in pupils %}{% set attempt=attempts.get(pupil.id) %}<tr><td>{{ pupil.full_name }}</td><td>{% if not attempt %}Not started{% elif attempt.is_complete %}Complete{% else %}In progress{% endif %}</td><td>{{ attempt.current_level if attempt else '—' }}</td><td>{{ attempt.secure_level if attempt and attempt.secure_level else '—' }}</td><td>{{ attempt.intervention_level if attempt and attempt.intervention_level else '—' }}</td></tr>{% endfor %}</tbody></table>
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h4">Pupil results</h2>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead><tr><th>Pupil</th><th>Status</th><th>Current level</th><th>Secure level</th><th>Intervention level</th><th>Answered questions</th><th>Completed at</th><th>Details</th></tr></thead>
+        <tbody>
+          {% for pupil in pupils %}
+            {% set attempt=attempts.get(pupil.id) %}
+            <tr>
+              <td>{{ pupil.full_name }}</td>
+              <td>{% if not attempt %}<span class="badge text-bg-secondary">Not started</span>{% elif attempt.is_complete %}<span class="badge text-bg-success">Complete</span>{% else %}<span class="badge text-bg-primary">In progress</span>{% endif %}</td>
+              <td>{{ attempt.current_level if attempt else '—' }}</td>
+              <td>{{ attempt.secure_level if attempt and attempt.secure_level else '—' }}</td>
+              <td>{{ attempt.intervention_level if attempt and attempt.intervention_level else '—' }}</td>
+              <td>{{ answered_counts.get(attempt.id, 0) if attempt else 0 }}</td>
+              <td>{{ attempt.completed_at.strftime('%d %b %Y %H:%M') if attempt and attempt.completed_at else '—' }}</td>
+              <td>{% if attempt %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('fundamentals.attempt_detail', attempt_id=attempt.id) }}">View responses</a>{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 {% endblock %}

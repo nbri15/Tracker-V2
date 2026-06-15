@@ -22,7 +22,7 @@ from app.models import (
 from app.utils import current_school_id
 from . import fundamentals_bp
 
-SEQUENCE_QUESTION_TYPES = {'sequence', 'counting', 'count_forward', 'count_backward', 'steps'}
+SEQUENCE_QUESTION_TYPES = {'sequence', 'counting', 'count_forward', 'count_backward', 'steps', 'step_counting'}
 
 
 def _active_classes_for_user():
@@ -53,9 +53,9 @@ def _active_session_for_class(class_id: int):
         .order_by(FundamentalSession.created_at.desc()).first())
 
 
-def format_fundamental_question(question: FundamentalQuestion) -> str:
-    text = question.question_text or ''
-    question_type = (question.question_type or '').strip().casefold()
+def format_fundamental_question_text(question: FundamentalQuestion) -> str:
+    text = (question.question_text or '').strip()
+    question_type = (question.question_type or '').strip().lower()
     if question_type not in SEQUENCE_QUESTION_TYPES or ',' in text:
         return text
     return ', '.join(text.split())
@@ -123,8 +123,19 @@ def start():
 def session_detail(session_id: int):
     session = _get_session_or_404(session_id)
     pupils = session.school_class.pupils.filter_by(is_active=True, is_archived=False).order_by(Pupil.last_name, Pupil.first_name).all()
-    attempts = {a.pupil_id: a for a in FundamentalPupilAttempt.query.filter_by(session_id=session.id).all()}
-    return render_template('fundamentals_session.html', session=session, pupils=pupils, attempts=attempts)
+    attempts = FundamentalPupilAttempt.query.filter_by(session_id=session.id).all()
+    attempts_by_pupil = {attempt.pupil_id: attempt for attempt in attempts}
+    answered_counts = {
+        attempt.id: FundamentalResponse.query.filter_by(attempt_id=attempt.id).count()
+        for attempt in attempts
+    }
+    return render_template(
+        'fundamentals_session.html',
+        session=session,
+        pupils=pupils,
+        attempts=attempts_by_pupil,
+        answered_counts=answered_counts,
+    )
 
 
 @fundamentals_bp.route('/session/<int:session_id>/stop', methods=['POST'])
@@ -218,7 +229,35 @@ def pupil_question(attempt_id: int):
         return redirect(url_for('fundamentals.pupil_question', attempt_id=attempt.id))
     question = random.choice(remaining)
     progress = len(answered_ids) + 1
-    return render_template('fundamentals_pupil_question.html', attempt=attempt, question=question, progress=progress, formatted_question=format_fundamental_question(question))
+    formatted_question = format_fundamental_question_text(question)
+    return render_template('fundamentals_pupil_question.html', attempt=attempt, question=question, progress=progress, question_text=formatted_question)
+
+
+@fundamentals_bp.route('/attempt/<int:attempt_id>')
+@login_required
+def attempt_detail(attempt_id: int):
+    attempt = FundamentalPupilAttempt.query.get_or_404(attempt_id)
+    school_class = attempt.session.school_class
+    if current_user.is_executive_admin:
+        pass
+    elif current_user.can_manage_school:
+        if not _can_access_class(school_class):
+            abort(403)
+    elif school_class.teacher_id != current_user.id or school_class.is_demo != current_user.is_demo:
+        abort(403)
+
+    responses = (FundamentalResponse.query
+        .filter_by(attempt_id=attempt.id)
+        .order_by(FundamentalResponse.level_number, FundamentalResponse.created_at, FundamentalResponse.id)
+        .all())
+    response_rows = [
+        {
+            'response': response,
+            'question_text': format_fundamental_question_text(response.question),
+        }
+        for response in responses
+    ]
+    return render_template('fundamentals_attempt_detail.html', attempt=attempt, response_rows=response_rows)
 
 
 @fundamentals_bp.route('/pupil/complete/<int:attempt_id>')
