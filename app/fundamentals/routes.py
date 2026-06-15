@@ -22,20 +22,49 @@ from app.models import (
 from app.utils import current_school_id
 from . import fundamentals_bp
 
+SEQUENCE_QUESTION_TYPES = {'sequence', 'counting', 'count_forward', 'count_backward', 'steps', 'step_counting'}
+
 
 def _active_classes_for_user():
     query = SchoolClass.query.filter_by(is_active=True)
-    if current_user.is_authenticated and current_user.is_teacher:
-        query = query.filter_by(teacher_id=current_user.id, is_demo=current_user.is_demo)
-    elif current_user.is_authenticated and not current_user.is_executive_admin:
-        query = query.filter_by(school_id=current_school_id(), is_demo=current_user.is_demo)
+    if current_user.is_authenticated and not current_user.is_executive_admin:
+        if hasattr(SchoolClass, 'school_id') and hasattr(current_user, 'school_id'):
+            query = query.filter_by(school_id=current_user.school_id)
+        query = query.filter_by(is_demo=current_user.is_demo)
     return query.order_by(SchoolClass.year_group, SchoolClass.name).all()
+
+
+def _classes_with_active_sessions():
+    query = (SchoolClass.query
+        .join(FundamentalSession, FundamentalSession.class_id == SchoolClass.id)
+        .filter(SchoolClass.is_active.is_(True), FundamentalSession.is_active.is_(True)))
+    if hasattr(SchoolClass, 'school_id'):
+        school_id = request.values.get('school_id', type=int)
+        if school_id is None:
+            return []
+        query = query.filter(SchoolClass.school_id == school_id)
+    return query.distinct().order_by(SchoolClass.year_group, SchoolClass.name).all()
+
+
+def _active_session_for_class(class_id: int):
+    return (FundamentalSession.query
+        .join(SchoolClass, FundamentalSession.class_id == SchoolClass.id)
+        .filter(FundamentalSession.class_id == class_id, FundamentalSession.is_active.is_(True), SchoolClass.is_active.is_(True))
+        .order_by(FundamentalSession.created_at.desc()).first())
+
+
+def format_fundamental_question_text(question: FundamentalQuestion) -> str:
+    text = (question.question_text or '').strip()
+    question_type = (question.question_type or '').strip().lower()
+    if question_type not in SEQUENCE_QUESTION_TYPES or ',' in text:
+        return text
+    return ', '.join(text.split())
 
 
 def _can_access_class(school_class: SchoolClass) -> bool:
     if current_user.is_executive_admin:
         return True
-    if current_user.can_manage_school:
+    if hasattr(SchoolClass, 'school_id') and hasattr(current_user, 'school_id'):
         return school_class.school_id == current_school_id() and school_class.is_demo == current_user.is_demo
     return school_class.teacher_id == current_user.id and school_class.is_demo == current_user.is_demo
 
@@ -94,8 +123,19 @@ def start():
 def session_detail(session_id: int):
     session = _get_session_or_404(session_id)
     pupils = session.school_class.pupils.filter_by(is_active=True, is_archived=False).order_by(Pupil.last_name, Pupil.first_name).all()
-    attempts = {a.pupil_id: a for a in FundamentalPupilAttempt.query.filter_by(session_id=session.id).all()}
-    return render_template('fundamentals_session.html', session=session, pupils=pupils, attempts=attempts)
+    attempts = FundamentalPupilAttempt.query.filter_by(session_id=session.id).all()
+    attempts_by_pupil = {attempt.pupil_id: attempt for attempt in attempts}
+    answered_counts = {
+        attempt.id: FundamentalResponse.query.filter_by(attempt_id=attempt.id).count()
+        for attempt in attempts
+    }
+    return render_template(
+        'fundamentals_session.html',
+        session=session,
+        pupils=pupils,
+        attempts=attempts_by_pupil,
+        answered_counts=answered_counts,
+    )
 
 
 @fundamentals_bp.route('/session/<int:session_id>/stop', methods=['POST'])
@@ -110,17 +150,18 @@ def stop_session(session_id: int):
 
 @fundamentals_bp.route('/pupil', methods=['GET', 'POST'])
 def pupil_login():
-    classes = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    classes = _classes_with_active_sessions()
     pupils = []
     selected_class_id = request.values.get('class_id', type=int)
-    if selected_class_id:
+    selected_class = next((school_class for school_class in classes if school_class.id == selected_class_id), None)
+    if selected_class:
         pupils = Pupil.query.filter_by(class_id=selected_class_id, is_active=True, is_archived=False).order_by(Pupil.last_name, Pupil.first_name).all()
     if request.method == 'POST':
-        if request.form.get('password') != 'maths':
-            flash('Please check your class, name and password.', 'danger')
-            return render_template('fundamentals_pupil_login.html', classes=classes, pupils=pupils, selected_class_id=selected_class_id)
         pupil = Pupil.query.get_or_404(request.form.get('pupil_id', type=int))
-        session = FundamentalSession.query.filter_by(class_id=pupil.class_id, is_active=True).order_by(FundamentalSession.created_at.desc()).first()
+        if not selected_class or pupil.class_id != selected_class.id:
+            flash('Please check your class and name.', 'danger')
+            return render_template('fundamentals_pupil_login.html', classes=classes, pupils=pupils, selected_class_id=selected_class_id)
+        session = _active_session_for_class(selected_class.id)
         if not session:
             return render_template('fundamentals_pupil_login.html', classes=classes, pupils=pupils, selected_class_id=selected_class_id, no_session=True)
         attempt = FundamentalPupilAttempt.query.filter_by(session_id=session.id, pupil_id=pupil.id).first()
@@ -134,6 +175,11 @@ def pupil_login():
     return render_template('fundamentals_pupil_login.html', classes=classes, pupils=pupils, selected_class_id=selected_class_id)
 
 
+@fundamentals_bp.route('/join', methods=['GET', 'POST'])
+def join():
+    return pupil_login()
+
+
 def _complete_attempt(attempt: FundamentalPupilAttempt):
     attempt.is_complete = True
     attempt.completed_at = datetime.now(timezone.utc)
@@ -144,6 +190,8 @@ def _complete_attempt(attempt: FundamentalPupilAttempt):
 @fundamentals_bp.route('/pupil/question/<int:attempt_id>', methods=['GET', 'POST'])
 def pupil_question(attempt_id: int):
     attempt = FundamentalPupilAttempt.query.get_or_404(attempt_id)
+    if attempt.pupil.class_id != attempt.session.class_id or not attempt.session.is_active:
+        abort(404)
     if attempt.is_complete:
         return redirect(url_for('fundamentals.pupil_complete', attempt_id=attempt.id))
     level = FundamentalLevel.query.filter_by(strand_id=attempt.session.strand_id, level_number=attempt.current_level).first()
@@ -151,6 +199,8 @@ def pupil_question(attempt_id: int):
         return _complete_attempt(attempt)
     if request.method == 'POST':
         question = FundamentalQuestion.query.get_or_404(request.form.get('question_db_id', type=int))
+        if question.strand_id != attempt.session.strand_id or question.level_number != attempt.current_level:
+            abort(404)
         pupil_answer = (request.form.get('answer') or '').strip()
         is_correct = pupil_answer.casefold() == (question.answer or '').strip().casefold()
         db.session.add(FundamentalResponse(attempt_id=attempt.id, question_id=question.id, level_number=attempt.current_level, pupil_answer=pupil_answer, is_correct=is_correct))
@@ -179,10 +229,40 @@ def pupil_question(attempt_id: int):
         return redirect(url_for('fundamentals.pupil_question', attempt_id=attempt.id))
     question = random.choice(remaining)
     progress = len(answered_ids) + 1
-    return render_template('fundamentals_pupil_question.html', attempt=attempt, question=question, progress=progress)
+    formatted_question = format_fundamental_question_text(question)
+    return render_template('fundamentals_pupil_question.html', attempt=attempt, question=question, progress=progress, question_text=formatted_question)
+
+
+@fundamentals_bp.route('/attempt/<int:attempt_id>')
+@login_required
+def attempt_detail(attempt_id: int):
+    attempt = FundamentalPupilAttempt.query.get_or_404(attempt_id)
+    school_class = attempt.session.school_class
+    if current_user.is_executive_admin:
+        pass
+    elif current_user.can_manage_school:
+        if not _can_access_class(school_class):
+            abort(403)
+    elif school_class.teacher_id != current_user.id or school_class.is_demo != current_user.is_demo:
+        abort(403)
+
+    responses = (FundamentalResponse.query
+        .filter_by(attempt_id=attempt.id)
+        .order_by(FundamentalResponse.level_number, FundamentalResponse.created_at, FundamentalResponse.id)
+        .all())
+    response_rows = [
+        {
+            'response': response,
+            'question_text': format_fundamental_question_text(response.question),
+        }
+        for response in responses
+    ]
+    return render_template('fundamentals_attempt_detail.html', attempt=attempt, response_rows=response_rows)
 
 
 @fundamentals_bp.route('/pupil/complete/<int:attempt_id>')
 def pupil_complete(attempt_id: int):
     attempt = FundamentalPupilAttempt.query.get_or_404(attempt_id)
+    if attempt.pupil.class_id != attempt.session.class_id:
+        abort(404)
     return render_template('fundamentals_pupil_complete.html', attempt=attempt)
