@@ -44,9 +44,10 @@ def seed_fundamentals() -> None:
         if not question:
             question = FundamentalQuestion(strand_id=strand.id, question_id=question_code)
             db.session.add(question)
+        seeded_question_text = _get(row, 'Question', 'question_text')
         question.level_number = int(_get(row, 'Level', 'level_number'))
         question.question_type = _get(row, 'QuestionType', 'question_type')
-        question.question_text = _get(row, 'Question', 'question_text')
+        question.question_text = seeded_question_text
         question.answer = str(_get(row, 'Answer', 'answer'))
 
     db.session.commit()
