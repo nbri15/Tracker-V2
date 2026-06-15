@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import (
@@ -39,10 +40,19 @@ SEQUENCE_QUESTION_TYPES = {
 
 def _active_classes_for_user():
     query = SchoolClass.query.filter_by(is_active=True)
-    if current_user.is_authenticated and not current_user.is_executive_admin:
-        if hasattr(SchoolClass, 'school_id') and hasattr(current_user, 'school_id'):
-            query = query.filter_by(school_id=current_user.school_id)
-        query = query.filter_by(is_demo=current_user.is_demo)
+    if current_user.is_authenticated:
+        if current_user.is_executive_admin:
+            school_id = current_school_id()
+            if school_id is not None:
+                query = query.filter(SchoolClass.school_id == school_id)
+        elif current_user.can_manage_school:
+            if hasattr(SchoolClass, 'school_id') and hasattr(current_user, 'school_id'):
+                query = query.filter_by(school_id=current_user.school_id)
+            query = query.filter_by(is_demo=current_user.is_demo)
+        else:
+            query = query.filter_by(teacher_id=current_user.id, is_demo=current_user.is_demo)
+            if hasattr(SchoolClass, 'school_id') and hasattr(current_user, 'school_id'):
+                query = query.filter_by(school_id=current_user.school_id)
     return query.order_by(SchoolClass.year_group, SchoolClass.name).all()
 
 
@@ -76,7 +86,7 @@ def format_fundamental_question_text(question: FundamentalQuestion) -> str:
 def _can_access_class(school_class: SchoolClass) -> bool:
     if current_user.is_executive_admin:
         return True
-    if hasattr(SchoolClass, 'school_id') and hasattr(current_user, 'school_id'):
+    if current_user.can_manage_school and hasattr(SchoolClass, 'school_id') and hasattr(current_user, 'school_id'):
         return school_class.school_id == current_school_id() and school_class.is_demo == current_user.is_demo
     return school_class.teacher_id == current_user.id and school_class.is_demo == current_user.is_demo
 
@@ -147,6 +157,64 @@ def session_detail(session_id: int):
         pupils=pupils,
         attempts=attempts_by_pupil,
         answered_counts=answered_counts,
+    )
+
+
+@fundamentals_bp.route('/scores')
+@login_required
+def scores():
+    classes = _active_classes_for_user()
+    class_ids = [school_class.id for school_class in classes]
+    strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
+
+    selected_class_id = request.args.get('class_id', type=int)
+    selected_strand_id = request.args.get('strand_id', type=int)
+    selected_status = (request.args.get('status') or 'all').strip().lower()
+    pupil_search = (request.args.get('q') or '').strip()
+
+    query = (FundamentalPupilAttempt.query
+        .join(FundamentalSession, FundamentalPupilAttempt.session_id == FundamentalSession.id)
+        .join(SchoolClass, FundamentalSession.class_id == SchoolClass.id)
+        .join(Pupil, FundamentalPupilAttempt.pupil_id == Pupil.id)
+        .join(FundamentalStrand, FundamentalSession.strand_id == FundamentalStrand.id)
+        .filter(SchoolClass.is_active.is_(True)))
+
+    if not class_ids:
+        query = query.filter(False)
+    else:
+        query = query.filter(FundamentalSession.class_id.in_(class_ids))
+
+    if selected_class_id:
+        if selected_class_id not in class_ids:
+            abort(403)
+        query = query.filter(FundamentalSession.class_id == selected_class_id)
+
+    if selected_strand_id:
+        query = query.filter(FundamentalSession.strand_id == selected_strand_id)
+
+    if selected_status == 'complete':
+        query = query.filter(FundamentalPupilAttempt.is_complete.is_(True))
+    elif selected_status == 'in_progress':
+        query = query.filter(FundamentalPupilAttempt.is_complete.is_(False))
+    elif selected_status != 'all':
+        selected_status = 'all'
+
+    if pupil_search:
+        search_term = f'%{pupil_search}%'
+        full_name = Pupil.first_name + ' ' + Pupil.last_name
+        query = query.filter(or_(Pupil.first_name.ilike(search_term), Pupil.last_name.ilike(search_term), full_name.ilike(search_term)))
+
+    attempts = query.order_by(FundamentalPupilAttempt.created_at.desc(), FundamentalPupilAttempt.id.desc()).all()
+
+    return render_template(
+        'fundamentals_scores.html',
+        attempts=attempts,
+        classes=classes,
+        strands=strands,
+        selected_class_id=selected_class_id,
+        selected_strand_id=selected_strand_id,
+        selected_status=selected_status,
+        pupil_search=pupil_search,
     )
 
 
