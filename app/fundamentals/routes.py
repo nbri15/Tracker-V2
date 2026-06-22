@@ -27,7 +27,6 @@ from app.utils import current_school_id
 from . import fundamentals_bp
 
 
-
 def suggested_intervention_for_level(skill):
     """Return a short practical teaching suggestion based on skill text."""
     skill_text = (skill or '').casefold()
@@ -97,6 +96,34 @@ def _latest_completed_attempts_for_pupils(class_ids, strand_id):
     for attempt in attempts:
         latest_by_pupil.setdefault(attempt.pupil_id, attempt)
     return list(latest_by_pupil.values())
+
+
+def _intervention_groups_for_attempts(attempts, strand_id):
+    levels = {
+        level.level_number: level
+        for level in FundamentalLevel.query.filter_by(strand_id=strand_id).all()
+    } if strand_id else {}
+
+    grouped = {}
+    for attempt in attempts:
+        grouped.setdefault(attempt.intervention_level, []).append(attempt)
+
+    groups = []
+    for intervention_level, group_attempts in sorted(grouped.items(), key=lambda item: (item[0] is None, item[0] or 0)):
+        level = levels.get(intervention_level)
+        groups.append({
+            'intervention_level': intervention_level,
+            'level': level,
+            'attempts': sorted(group_attempts, key=lambda attempt: (attempt.pupil.last_name, attempt.pupil.first_name)),
+            'suggested_focus': suggested_intervention_for_level(level.skill if level else ''),
+        })
+    return groups
+
+
+def _selected_filter_labels(classes, strands, selected_class_id, selected_strand_id):
+    selected_class = next((school_class for school_class in classes if school_class.id == selected_class_id), None)
+    selected_strand = next((strand for strand in strands if strand.id == selected_strand_id), None)
+    return selected_class, selected_strand
 
 
 SEQUENCE_QUESTION_TYPES = {
@@ -306,7 +333,6 @@ def scores():
     )
 
 
-
 @fundamentals_bp.route('/levels')
 @login_required
 def levels():
@@ -346,25 +372,8 @@ def interventions():
     classes = _active_classes_for_user()
     strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
     selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
-    levels = {
-        level.level_number: level
-        for level in FundamentalLevel.query.filter_by(strand_id=selected_strand_id).all()
-    } if selected_strand_id else {}
     latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
-
-    grouped = {}
-    for attempt in latest_attempts:
-        grouped.setdefault(attempt.intervention_level, []).append(attempt)
-
-    groups = []
-    for intervention_level, attempts in sorted(grouped.items(), key=lambda item: (item[0] is None, item[0] or 0)):
-        level = levels.get(intervention_level)
-        groups.append({
-            'intervention_level': intervention_level,
-            'level': level,
-            'attempts': sorted(attempts, key=lambda attempt: (attempt.pupil.last_name, attempt.pupil.first_name)),
-            'suggested_focus': suggested_intervention_for_level(level.skill if level else ''),
-        })
+    groups = _intervention_groups_for_attempts(latest_attempts, selected_strand_id)
 
     return render_template(
         'fundamentals_interventions.html',
@@ -372,6 +381,28 @@ def interventions():
         strands=strands,
         groups=groups,
         selected_class_id=selected_class_id,
+        selected_strand_id=selected_strand_id,
+    )
+
+
+@fundamentals_bp.route('/interventions/print')
+@login_required
+def interventions_print():
+    classes = _active_classes_for_user()
+    strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
+    selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
+    selected_class, selected_strand = _selected_filter_labels(classes, strands, selected_class_id, selected_strand_id)
+    latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+    groups = _intervention_groups_for_attempts(latest_attempts, selected_strand_id)
+
+    return render_template(
+        'fundamentals_interventions_print.html',
+        classes=classes,
+        groups=groups,
+        print_date=datetime.now(timezone.utc),
+        selected_class=selected_class,
+        selected_class_id=selected_class_id,
+        selected_strand=selected_strand,
         selected_strand_id=selected_strand_id,
     )
 
