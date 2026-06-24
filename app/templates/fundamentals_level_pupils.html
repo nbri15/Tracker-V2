@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals Level Pupils{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+  <div><h1>Level {{ level_number }} pupils</h1><p class="text-muted mb-0">{{ level.skill if level else '' }}{% if level and level.expected_year %} · Expected {{ level.expected_year }}{% endif %}</p></div>
+  <div class="d-flex gap-2"><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels', class_id=selected_class_id, strand_id=selected_strand_id) }}">Level Overview</a><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions', class_id=selected_class_id, strand_id=selected_strand_id) }}">Intervention Dashboard</a></div>
+</div>
+<div class="card shadow-sm mb-4"><div class="card-body"><form method="get" class="row g-3 align-items-end">
+  {% if current_user.is_executive_admin and selected_school_id %}<input type="hidden" name="school_id" value="{{ selected_school_id }}">{% endif %}
+  <div class="col-md-4"><label class="form-label" for="class_id">Class</label><select class="form-select" id="class_id" name="class_id"><option value="">All classes</option>{% for school_class in classes %}<option value="{{ school_class.id }}" {% if selected_class_id == school_class.id %}selected{% endif %}>{{ school_class.name }}</option>{% endfor %}</select></div>
+  <div class="col-md-4"><label class="form-label" for="strand_id">Strand</label><select class="form-select" id="strand_id" name="strand_id">{% for strand in strands %}<option value="{{ strand.id }}" {% if selected_strand_id == strand.id %}selected{% endif %}>{{ strand.name }}</option>{% endfor %}</select></div>
+  <div class="col-md-2 d-grid"><button class="btn btn-primary" type="submit">Filter</button></div>
+</form></div></div>
+<div class="card shadow-sm"><div class="card-body"><div class="table-responsive"><table class="table table-striped align-middle">
+  <thead><tr><th>Pupil</th><th>Class</th><th>Secure Level</th><th>Intervention Level</th><th>Date completed</th><th>View attempt details</th></tr></thead>
+  <tbody>{% for attempt in attempts %}<tr><td>{{ attempt.pupil.full_name }}</td><td>{{ attempt.session.school_class.name }}</td><td>{{ attempt.secure_level if attempt.secure_level else '—' }}</td><td>{{ attempt.intervention_level if attempt.intervention_level else '—' }}</td><td>{{ attempt.completed_at.strftime('%d %b %Y %H:%M') if attempt.completed_at else '—' }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('fundamentals.attempt_detail', attempt_id=attempt.id) }}">View details</a></td></tr>{% else %}<tr><td colspan="6" class="text-muted">No pupils are currently grouped at this level.</td></tr>{% endfor %}</tbody>
+</table></div></div></div>
+{% endblock %}

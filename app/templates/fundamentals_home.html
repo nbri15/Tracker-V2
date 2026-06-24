@@ -6,7 +6,9 @@
   <div class="d-flex flex-wrap gap-2">
     <div class="btn-group" role="group" aria-label="Maths Fundamentals navigation">
       <a class="btn btn-primary" href="{{ url_for('fundamentals.home') }}">Current Sessions</a>
-      <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores', school_id=selected_school_id) if current_user.is_executive_admin and selected_school_id else url_for('fundamentals.scores') }}">Previous Scores</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores') }}">Previous Scores</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels') }}">Level Overview</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions') }}">Intervention Dashboard</a>
     </div>
     <a class="btn btn-success" href="{{ url_for('fundamentals.start') }}">Start a session</a>
   </div>

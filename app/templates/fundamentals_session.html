@@ -8,7 +8,7 @@
     <h1>{{ session.strand.name }}</h1>
     <p class="text-muted">{{ session.school_class.name }} · Start level {{ session.start_level }} · {% if session.is_active %}Active{% else %}Stopped{% endif %}</p>
   </div>
-  <div class="d-flex gap-2"><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores', class_id=session.class_id, school_id=selected_school_id) if current_user.is_executive_admin and selected_school_id else url_for('fundamentals.scores', class_id=session.class_id) }}">Previous Scores</a>{% if session.is_active %}<form method="post" action="{{ url_for('fundamentals.stop_session', session_id=session.id) }}"><button class="btn btn-outline-danger">Stop session</button></form>{% endif %}</div>
+  <div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores', class_id=session.class_id, school_id=selected_school_id) if current_user.is_executive_admin and selected_school_id else url_for('fundamentals.scores', class_id=session.class_id) }}">Previous Scores</a><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels', class_id=session.class_id, strand_id=session.strand_id) }}">Level Overview</a><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions', class_id=session.class_id, strand_id=session.strand_id) }}">Intervention Dashboard</a>{% if session.is_active %}<form method="post" action="{{ url_for('fundamentals.stop_session', session_id=session.id) }}"><button class="btn btn-outline-danger">Stop session</button></form>{% endif %}</div>
 </div>
 <div class="card border-primary shadow-sm mb-4">
   <div class="card-body">

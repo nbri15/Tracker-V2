@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals Level Overview{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+  <div><h1>Level Overview</h1><p class="text-muted mb-0">See where pupils are secure and where intervention is needed.</p></div>
+  <div class="btn-group" role="group" aria-label="Maths Fundamentals navigation">
+    <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.home') }}">Current Sessions</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores') }}">Previous Scores</a>
+    <a class="btn btn-primary" href="{{ url_for('fundamentals.levels') }}">Level Overview</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions') }}">Intervention Dashboard</a>
+  </div>
+</div>
+<div class="card shadow-sm mb-4"><div class="card-body">
+  <form method="get" class="row g-3 align-items-end">
+    {% if current_user.is_executive_admin and selected_school_id %}<input type="hidden" name="school_id" value="{{ selected_school_id }}">{% endif %}
+    <div class="col-md-4"><label class="form-label" for="class_id">Class</label><select class="form-select" id="class_id" name="class_id"><option value="">All classes</option>{% for school_class in classes %}<option value="{{ school_class.id }}" {% if selected_class_id == school_class.id %}selected{% endif %}>{{ school_class.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label" for="strand_id">Strand</label><select class="form-select" id="strand_id" name="strand_id">{% for strand in strands %}<option value="{{ strand.id }}" {% if selected_strand_id == strand.id %}selected{% endif %}>{{ strand.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-2 d-grid"><button class="btn btn-primary" type="submit">Filter</button></div>
+  </form>
+</div></div>
+<div class="card shadow-sm"><div class="card-body"><div class="table-responsive"><table class="table table-striped align-middle">
+  <thead><tr><th>Level</th><th>Skill</th><th>Expected Year</th><th>Pupils stuck here</th><th>Pupils secure here+</th><th>View pupils</th></tr></thead>
+  <tbody>{% for row in rows %}<tr><td>Level {{ row.level.level_number }}</td><td>{{ row.level.skill }}</td><td>{{ row.level.expected_year or '—' }}</td><td>{{ row.stuck_count }}</td><td>{{ row.secure_count }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('fundamentals.level_pupils', level_number=row.level.level_number, class_id=selected_class_id, strand_id=selected_strand_id) }}">View pupils</a></td></tr>{% else %}<tr><td colspan="6" class="text-muted">No levels found for this strand.</td></tr>{% endfor %}</tbody>
+</table></div></div></div>
+{% endblock %}

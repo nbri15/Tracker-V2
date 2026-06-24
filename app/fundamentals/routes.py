@@ -26,6 +26,106 @@ from app.models import (
 from app.utils import current_school_id
 from . import fundamentals_bp
 
+
+def suggested_intervention_for_level(skill):
+    """Return a short practical teaching suggestion based on skill text."""
+    skill_text = (skill or '').casefold()
+    if 'subitise' in skill_text:
+        return 'Use dot patterns, five frames and quick flash images. Ask pupils to say how they saw the quantity.'
+    if 'count forwards' in skill_text:
+        return 'Practise oral counting sequences, missing number tracks and counting from different starting points.'
+    if 'count backwards' in skill_text:
+        return 'Use number tracks, countdown games and missing number sequences to rehearse backwards counting.'
+    if 'compare' in skill_text:
+        return 'Use number lines and quantity cards to compare bigger, smaller and equal values.'
+    if 'one more' in skill_text or 'one less' in skill_text:
+        return 'Use number tracks, bead strings and quick-fire questions to secure adjacent numbers.'
+    if 'decade' in skill_text:
+        return 'Practise crossing 29/30, 39/40 and similar boundaries using number lines.'
+    if 'hundred' in skill_text:
+        return 'Practise crossing 99/100 and 199/200 using counting sticks and number lines.'
+    if 'steps' in skill_text:
+        return 'Practise counting in equal steps using counting sticks, rhythm and multiplication links.'
+    return 'Revisit this skill using concrete resources, oral rehearsal and short daily practice.'
+
+
+def _default_strand_id(strands):
+    for strand in strands:
+        name = (strand.name or '').casefold()
+        code = (strand.code or '').casefold()
+        if name == 'early number sense' or code in {'early_number_sense', 'ens'}:
+            return strand.id
+    return strands[0].id if strands else None
+
+
+def _selected_fundamentals_filters(classes, strands):
+    selected_class_id = request.args.get('class_id', type=int)
+    selected_strand_id = request.args.get('strand_id', type=int) or _default_strand_id(strands)
+    class_ids = [school_class.id for school_class in classes]
+    if selected_class_id and selected_class_id not in class_ids:
+        abort(403)
+    if selected_strand_id and selected_strand_id not in [strand.id for strand in strands]:
+        abort(404)
+    filtered_class_ids = [selected_class_id] if selected_class_id else class_ids
+    return selected_class_id, selected_strand_id, filtered_class_ids
+
+
+def _latest_completed_attempts_for_pupils(class_ids, strand_id):
+    if not class_ids or not strand_id:
+        return []
+    attempts = (FundamentalPupilAttempt.query
+        .join(FundamentalSession, FundamentalPupilAttempt.session_id == FundamentalSession.id)
+        .join(SchoolClass, FundamentalSession.class_id == SchoolClass.id)
+        .join(Pupil, FundamentalPupilAttempt.pupil_id == Pupil.id)
+        .filter(
+            FundamentalSession.class_id.in_(class_ids),
+            FundamentalSession.strand_id == strand_id,
+            FundamentalPupilAttempt.is_complete.is_(True),
+            FundamentalPupilAttempt.completed_at.isnot(None),
+            SchoolClass.is_active.is_(True),
+            Pupil.is_active.is_(True),
+            Pupil.is_archived.is_(False),
+        )
+        .order_by(
+            FundamentalPupilAttempt.pupil_id,
+            FundamentalPupilAttempt.completed_at.desc(),
+            FundamentalPupilAttempt.id.desc(),
+        )
+        .all())
+    latest_by_pupil = {}
+    for attempt in attempts:
+        latest_by_pupil.setdefault(attempt.pupil_id, attempt)
+    return list(latest_by_pupil.values())
+
+
+def _intervention_groups_for_attempts(attempts, strand_id):
+    levels = {
+        level.level_number: level
+        for level in FundamentalLevel.query.filter_by(strand_id=strand_id).all()
+    } if strand_id else {}
+
+    grouped = {}
+    for attempt in attempts:
+        grouped.setdefault(attempt.intervention_level, []).append(attempt)
+
+    groups = []
+    for intervention_level, group_attempts in sorted(grouped.items(), key=lambda item: (item[0] is None, item[0] or 0)):
+        level = levels.get(intervention_level)
+        groups.append({
+            'intervention_level': intervention_level,
+            'level': level,
+            'attempts': sorted(group_attempts, key=lambda attempt: (attempt.pupil.last_name, attempt.pupil.first_name)),
+            'suggested_focus': suggested_intervention_for_level(level.skill if level else ''),
+        })
+    return groups
+
+
+def _selected_filter_labels(classes, strands, selected_class_id, selected_strand_id):
+    selected_class = next((school_class for school_class in classes if school_class.id == selected_class_id), None)
+    selected_strand = next((strand for strand in strands if strand.id == selected_strand_id), None)
+    return selected_class, selected_strand
+
+
 SEQUENCE_QUESTION_TYPES = {
     'sequence',
     'counting',
@@ -230,6 +330,107 @@ def scores():
         selected_strand_id=selected_strand_id,
         selected_status=selected_status,
         pupil_search=pupil_search,
+    )
+
+
+@fundamentals_bp.route('/levels')
+@login_required
+def levels():
+    classes = _active_classes_for_user()
+    strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
+    selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
+
+    levels = []
+    if selected_strand_id:
+        levels = (FundamentalLevel.query
+            .filter_by(strand_id=selected_strand_id)
+            .order_by(FundamentalLevel.level_number)
+            .all())
+
+    latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+    rows = []
+    for level in levels:
+        rows.append({
+            'level': level,
+            'stuck_count': sum(1 for attempt in latest_attempts if attempt.intervention_level == level.level_number),
+            'secure_count': sum(1 for attempt in latest_attempts if attempt.secure_level is not None and attempt.secure_level >= level.level_number),
+        })
+
+    return render_template(
+        'fundamentals_levels.html',
+        classes=classes,
+        strands=strands,
+        rows=rows,
+        selected_class_id=selected_class_id,
+        selected_strand_id=selected_strand_id,
+    )
+
+
+@fundamentals_bp.route('/interventions')
+@login_required
+def interventions():
+    classes = _active_classes_for_user()
+    strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
+    selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
+    latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+    groups = _intervention_groups_for_attempts(latest_attempts, selected_strand_id)
+
+    return render_template(
+        'fundamentals_interventions.html',
+        classes=classes,
+        strands=strands,
+        groups=groups,
+        selected_class_id=selected_class_id,
+        selected_strand_id=selected_strand_id,
+    )
+
+
+@fundamentals_bp.route('/interventions/print')
+@login_required
+def interventions_print():
+    classes = _active_classes_for_user()
+    strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
+    selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
+    selected_class, selected_strand = _selected_filter_labels(classes, strands, selected_class_id, selected_strand_id)
+    latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+    groups = _intervention_groups_for_attempts(latest_attempts, selected_strand_id)
+
+    return render_template(
+        'fundamentals_interventions_print.html',
+        classes=classes,
+        groups=groups,
+        print_date=datetime.now(timezone.utc),
+        selected_class=selected_class,
+        selected_class_id=selected_class_id,
+        selected_strand=selected_strand,
+        selected_strand_id=selected_strand_id,
+    )
+
+
+@fundamentals_bp.route('/levels/<int:level_number>')
+@login_required
+def level_pupils(level_number: int):
+    classes = _active_classes_for_user()
+    strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
+    selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
+    level = None
+    if selected_strand_id:
+        level = FundamentalLevel.query.filter_by(strand_id=selected_strand_id, level_number=level_number).first_or_404()
+    attempts = [
+        attempt for attempt in _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+        if attempt.intervention_level == level_number
+    ]
+    attempts.sort(key=lambda attempt: (attempt.pupil.last_name, attempt.pupil.first_name))
+
+    return render_template(
+        'fundamentals_level_pupils.html',
+        classes=classes,
+        strands=strands,
+        level=level,
+        level_number=level_number,
+        attempts=attempts,
+        selected_class_id=selected_class_id,
+        selected_strand_id=selected_strand_id,
     )
 
 
