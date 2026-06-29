@@ -232,16 +232,16 @@ def _teacher_options():
 
 FULL_WORKBOOK_SHEETS = {
     'Instructions': ['guidance', 'details'],
-    'Pupils': ['first_name','last_name','full_name','class','gender','pp','laps','service_child','send','join_year_group','join_date'],
-    'Maths': ['class','pupil_name','term','arithmetic','reasoning','notes'],
-    'Reading': ['class','pupil_name','term','paper_1','paper_2','notes'],
-    'SPaG': ['class','pupil_name','term','spelling','grammar','notes'],
-    'Writing': ['class','pupil_name','term','band','notes'],
-    'Phonics': ['class','pupil_name','test_name','score','max_score','date'],
-    'Times Tables': ['class','pupil_name','test_name','score','max_score','date'],
-    'Foundation': ['class','pupil_name','subject','term','assessment','band','notes'],
-    'Reception': ['class','pupil_name','term','area','statement','band','notes'],
-    'SATs': ['class','pupil_name','exam_number','arithmetic','reasoning_1','reasoning_2','maths_scaled_score','reading','reading_scaled_score','spelling','grammar','spag_scaled_score','notes'],
+    'Pupils': ['pupil_id','first_name','last_name','full_name','class','year_group','gender','pp','send','laps','service_child'],
+    'Maths': ['pupil_id','pupil_name','class','year_group','term','arithmetic','reasoning','notes'],
+    'Reading': ['pupil_id','pupil_name','class','year_group','term','paper_1','paper_2','notes'],
+    'SPaG': ['pupil_id','pupil_name','class','year_group','term','spelling','grammar','notes'],
+    'Writing': ['pupil_id','pupil_name','class','year_group','term','band','notes'],
+    'Phonics': ['pupil_id','pupil_name','class','year_group','test_name','score','max_score','date'],
+    'Times Tables': ['pupil_id','pupil_name','class','year_group','test_name','score','max_score','date'],
+    'Foundation': ['pupil_id','pupil_name','class','year_group','subject','term','assessment','band','notes'],
+    'Reception': ['pupil_id','pupil_name','class','year_group','term','area','statement','band','notes'],
+    'SATs': ['pupil_id','pupil_name','class','year_group','assessment_point','exam_1','exam_2','exam_3','exam_4','arithmetic','reasoning_1','reasoning_2','maths_scaled_score','reading_paper','reading_scaled','spelling','grammar','spag_scaled'],
 }
 TEMPLATE_TERMS = ['Autumn', 'Spring', 'Summer']
 FOUNDATION_SUBJECT_KEYS = [subject_key for subject_key, _subject_label in FOUNDATION_SUBJECTS]
@@ -405,6 +405,23 @@ def _style_template_sheet(ws):
         ws.column_dimensions[chr(64 + idx)].width = width
 
 
+def _pupil_year_group(pupil: Pupil) -> int | None:
+    if pupil.school_class is not None:
+        return pupil.school_class.year_group
+    return pupil.join_year_group
+
+
+def _pupil_template_identity(pupil: Pupil) -> tuple[int, str, str, int | None]:
+    class_name = pupil.school_class.name if pupil.school_class else ''
+    year_group = _pupil_year_group(pupil)
+    return pupil.id, pupil.full_name, class_name, year_group
+
+
+def _append_assessment_row(ws, pupil: Pupil, extra_values: list):
+    pupil_id, full_name, class_name, year_group = _pupil_template_identity(pupil)
+    ws.append([pupil_id, full_name, class_name, year_group, *extra_values])
+
+
 def _build_full_template_workbook(selected_class: SchoolClass | None = None):
     wb = Workbook()
     wb.remove(wb.active)
@@ -415,13 +432,12 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
     instructions = wb['Instructions']
     instructions_rows = [
         ('Workbook purpose', 'Use this workbook to import pupil details and assessment data into Class Compass.'),
-        ('Step 1', 'Fill in the Pupils sheet first.'),
-        ('Step 2', 'Pupil names will appear on all assessment sheets automatically.'),
-        ('Step 3', 'Fill in assessment data on the relevant subject tabs.'),
-        ('Step 4', 'Upload the completed workbook in Import & Export Centre.'),
-        ('Important', 'Do not rename sheet tabs.'),
-        ('Important', 'Do not delete required columns.'),
-        ('Important', 'Leave blank if no data.'),
+        ('Step 1', 'Fill in or check the Pupils sheet first; it is the source of truth for pupil details.'),
+        ('Step 2', 'Pupil names, classes, year groups, and hidden pupil IDs are copied into the relevant assessment sheets when the workbook is downloaded.'),
+        ('Step 3', 'Only enter assessment data on the tabs that already contain the relevant pupils for that year group.'),
+        ('Step 4', 'Do not rename sheet tabs or delete required columns; the upload parser uses these sheet and column names.'),
+        ('Step 5', 'Choose the correct academic year on the upload page before importing the completed workbook.'),
+        ('Year group routing', 'Reception appears only on Reception; Years 1-5 appear on Core/Foundation as appropriate; Year 1 appears on Phonics; Year 2 appears on Phonics for retakes; Year 4 appears on Times Tables; Year 6 appears only on SATs.'),
         ('Accepted band labels', 'WT = Working Towards'),
         ('Accepted band labels', 'OT = On Track'),
         ('Accepted band labels', 'EXC = Exceeding'),
@@ -429,28 +445,46 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
     for row in instructions_rows:
         instructions.append(row)
     instructions.column_dimensions['A'].width = 26
-    instructions.column_dimensions['B'].width = 92
+    instructions.column_dimensions['B'].width = 120
 
     pupils = _template_pupils(selected_class)
     for p in pupils:
-        class_name = p.school_class.name if p.school_class else ''
-        wb['Pupils'].append([p.first_name, p.last_name, p.full_name, class_name, p.gender, p.pupil_premium, p.laps, p.service_child, p.send, p.join_year_group, p.join_date])
-        for term in TEMPLATE_TERMS:
-            wb['Maths'].append([class_name, p.full_name, term, '', '', ''])
-            wb['Reading'].append([class_name, p.full_name, term, '', '', ''])
-            wb['SPaG'].append([class_name, p.full_name, term, '', '', ''])
-            wb['Writing'].append([class_name, p.full_name, term, '', ''])
-        wb['Phonics'].append([class_name, p.full_name, '', '', '', ''])
-        wb['Times Tables'].append([class_name, p.full_name, '', '', '', ''])
-        for subject_key in FOUNDATION_SUBJECT_KEYS:
-            wb['Foundation'].append([class_name, p.full_name, subject_key, '', '', '', ''])
-        if p.join_year_group == 0:
-            wb['Reception'].append([class_name, p.full_name, '', '', '', '', ''])
-        if p.join_year_group == 6:
+        pupil_id, full_name, class_name, year_group = _pupil_template_identity(p)
+        wb['Pupils'].append([
+            pupil_id,
+            p.first_name,
+            p.last_name,
+            full_name,
+            class_name,
+            year_group,
+            p.gender,
+            p.pupil_premium,
+            p.send,
+            p.laps,
+            p.service_child,
+        ])
+        if year_group == 0:
+            _append_assessment_row(wb['Reception'], p, ['', '', '', '', ''])
+        if year_group in {1, 2, 3, 4, 5}:
+            for term in TEMPLATE_TERMS:
+                _append_assessment_row(wb['Maths'], p, [term, '', '', ''])
+                _append_assessment_row(wb['Reading'], p, [term, '', '', ''])
+                _append_assessment_row(wb['SPaG'], p, [term, '', '', ''])
+                _append_assessment_row(wb['Writing'], p, [term, '', ''])
+            for subject_key in FOUNDATION_SUBJECT_KEYS:
+                _append_assessment_row(wb['Foundation'], p, [subject_key, '', '', '', ''])
+        if year_group in {1, 2}:
+            _append_assessment_row(wb['Phonics'], p, ['', '', '', ''])
+        if year_group == 4:
+            _append_assessment_row(wb['Times Tables'], p, ['', '', '', ''])
+        if year_group == 6:
             for assessment_point in SATS_ASSESSMENT_POINTS:
-                wb['SATs'].append([class_name, p.full_name, assessment_point, '', '', '', '', '', '', '', '', '', ''])
+                _append_assessment_row(wb['SATs'], p, [assessment_point, '', '', '', '', '', '', '', '', '', '', '', '', ''])
 
-    for ws in wb.worksheets:
+    for sheet_name in FULL_WORKBOOK_SHEETS:
+        ws = wb[sheet_name]
+        if sheet_name != 'Instructions' and ws.max_column >= 1 and _norm(ws.cell(row=1, column=1).value) == 'pupil_id':
+            ws.column_dimensions['A'].hidden = True
         _style_template_sheet(ws)
     return wb
 
@@ -1962,6 +1996,36 @@ def import_full_workbook():
         for p in pupil_rows
         if p.school_class
     }
+    pupil_by_id = {p.id: p for p in pupil_rows}
+
+    def _headers_for(sheet_name: str) -> dict[str, int]:
+        if sheet_name not in wb.sheetnames:
+            return {}
+        return {_norm_key(cell.value): idx for idx, cell in enumerate(wb[sheet_name][1]) if _norm(cell.value)}
+
+    sheet_headers = {sheet_name: _headers_for(sheet_name) for sheet_name in wb.sheetnames}
+
+    def _value(row, headers: dict[str, int], *names: str, default_index: int | None = None):
+        for name in names:
+            idx = headers.get(_norm_key(name))
+            if idx is not None and idx < len(row):
+                return row[idx]
+        if default_index is not None and default_index < len(row):
+            return row[default_index]
+        return None
+
+    def _pupil_from_assessment_row(row, headers: dict[str, int], default_class_index: int = 0, default_name_index: int = 1):
+        pupil_id_raw = _value(row, headers, 'pupil_id')
+        try:
+            pupil_id = int(pupil_id_raw) if pupil_id_raw not in (None, '') else None
+        except (TypeError, ValueError):
+            pupil_id = None
+        if pupil_id is not None and pupil_id in pupil_by_id:
+            return pupil_by_id[pupil_id]
+        class_name = _value(row, headers, 'class', default_index=default_class_index)
+        pupil_name = _value(row, headers, 'pupil_name', 'full_name', default_index=default_name_index)
+        return pupil_by_class_and_name.get((_norm_key(class_name), _norm_key(pupil_name)))
+
     subject_results = SubjectResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
     subject_result_map = {(r.pupil_id, r.term, r.subject): r for r in subject_results}
     writing_results = WritingResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
@@ -2025,41 +2089,61 @@ def import_full_workbook():
 
     def _preview_row(sheet_name: str, row_number: int, status: str, detail: str, fix: str = ''):
         preview_table.append({'sheet': sheet_name, 'row_number': row_number, 'status': status, 'detail': detail, 'fix': fix})
+    pupil_headers = sheet_headers.get('Pupils', {})
     for row_idx, row in enumerate(wb['Pupils'].iter_rows(min_row=2, values_only=True), start=2) if 'Pupils' in wb.sheetnames else []:
-        if not _norm(row[0]) or not _norm(row[1]) or not _norm(row[3]):
-            _preview_row('Pupils', row_idx, 'skipped', 'Missing first name, last name, or class.', 'Complete required columns A, B, and D.')
+        pupil_id_raw = _value(row, pupil_headers, 'pupil_id')
+        first_name = _norm(_value(row, pupil_headers, 'first_name', default_index=0))
+        last_name = _norm(_value(row, pupil_headers, 'last_name', default_index=1))
+        full_name = _norm(_value(row, pupil_headers, 'full_name', default_index=2))
+        if (not first_name or not last_name) and full_name:
+            first_name, last_name = _split_name(full_name)
+        class_name = _norm(_value(row, pupil_headers, 'class', default_index=3))
+        gender_value = _value(row, pupil_headers, 'gender', default_index=4)
+        pp_value = _value(row, pupil_headers, 'pp', default_index=5)
+        laps_value = _value(row, pupil_headers, 'laps', default_index=6)
+        service_value = _value(row, pupil_headers, 'service_child', 'service', default_index=7)
+        send_value = _value(row, pupil_headers, 'send', default_index=8)
+        year_group_value = _value(row, pupil_headers, 'year_group', 'join_year_group', default_index=9)
+        if not first_name or not last_name or not class_name:
+            _preview_row('Pupils', row_idx, 'skipped', 'Missing first name, last name, or class.', 'Complete first name, last name, and class columns.')
             continue
-        row_key = (_norm_key(row[0]), _norm_key(row[1]), _norm_key(row[3]))
+        row_key = (_norm_key(first_name), _norm_key(last_name), _norm_key(class_name))
         if row_key in seen_pupil_rows:
-            preview_errors.append(f'Pupils row {row_idx}: duplicate row for {_norm(row[0])} {_norm(row[1])} in {_norm(row[3])}')
+            preview_errors.append(f'Pupils row {row_idx}: duplicate row for {first_name} {last_name} in {class_name}')
             _preview_row('Pupils', row_idx, 'warning', 'Duplicate row detected.', 'Remove duplicate rows so each pupil appears once.')
             continue
         seen_pupil_rows.add(row_key)
-        gender_raw = _norm_key(row[4])
+        gender_raw = _norm_key(gender_value)
         if gender_raw not in valid_genders:
-            preview_errors.append(f'Pupils row {row_idx}: invalid gender "{_norm(row[4])}"')
-            _preview_row('Pupils', row_idx, 'warning', f'Invalid gender "{_norm(row[4])}".', 'Use Male/Female or M/F.')
+            preview_errors.append(f'Pupils row {row_idx}: invalid gender "{_norm(gender_value)}"')
+            _preview_row('Pupils', row_idx, 'warning', f'Invalid gender "{_norm(gender_value)}".', 'Use Male/Female or M/F.')
             continue
-        school_class = class_by_name.get(_norm_key(row[3]))
+        school_class = class_by_name.get(_norm_key(class_name))
         if not school_class:
-            preview_errors.append(f'Pupils row {row_idx}: class not found {_norm(row[3])}')
-            _preview_row('Pupils', row_idx, 'warning', f'Class "{_norm(row[3])}" does not exist.', 'Create the class first or fix the class name.')
+            preview_errors.append(f'Pupils row {row_idx}: class not found {class_name}')
+            _preview_row('Pupils', row_idx, 'warning', f'Class "{class_name}" does not exist.', 'Create the class first or fix the class name.')
             continue
-        pupil = pupil_by_name.get((_norm_key(row[0]), _norm_key(row[1])))
+        try:
+            pupil_id = int(pupil_id_raw) if pupil_id_raw not in (None, '') else None
+        except (TypeError, ValueError):
+            pupil_id = None
+        pupil = pupil_by_id.get(pupil_id) if pupil_id is not None else None
         if not pupil:
-            pupil=Pupil(first_name=_norm(row[0]), last_name=_norm(row[1]), class_id=school_class.id, gender=normalize_gender(_norm(row[4])) or '', school_id=school_id, is_demo=current_user.is_demo)
+            pupil = pupil_by_lookup.get((_norm_key(first_name), _norm_key(last_name), school_class.id)) or pupil_by_name.get((_norm_key(first_name), _norm_key(last_name)))
+        if not pupil:
+            pupil=Pupil(first_name=first_name, last_name=last_name, class_id=school_class.id, gender=normalize_gender(_norm(gender_value)) or '', school_id=school_id, is_demo=current_user.is_demo)
             db.session.add(pupil)
             db.session.flush()
+            pupil_by_id[pupil.id] = pupil
             pupil_by_lookup[(_norm_key(pupil.first_name), _norm_key(pupil.last_name), school_class.id)] = pupil
             pupil_by_name[(_norm_key(pupil.first_name), _norm_key(pupil.last_name))] = pupil
-            pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(f'{pupil.first_name} {pupil.last_name}'))] = pupil
             pupil_rows.append(pupil)
             created+=1
-            _preview_row('Pupils', row_idx, 'new', f'Will create pupil {_norm(row[0])} {_norm(row[1])}.')
+            _preview_row('Pupils', row_idx, 'new', f'Will create pupil {first_name} {last_name}.')
         else:
             if academic_year == current_academic_year and pupil.class_id != school_class.id:
                 pupil.class_id = school_class.id
-            _preview_row('Pupils', row_idx, 'updated', f'Will update pupil {_norm(row[0])} {_norm(row[1])}.')
+            _preview_row('Pupils', row_idx, 'updated', f'Will update pupil {first_name} {last_name}.')
 
         history_row = history_result_map.get(pupil.id)
         if not history_row:
@@ -2078,23 +2162,29 @@ def import_full_workbook():
             history_row.year_group = school_class.year_group
             history_row.teacher_username = school_class.teacher.username if school_class.teacher else None
         if academic_year == current_academic_year:
-            pupil.gender=normalize_gender(_norm(row[4])) or pupil.gender or ''
-            pupil.pupil_premium=_norm(row[5]).lower() in {'1','true','yes','y'}
-            pupil.laps=_norm(row[6]).lower() in {'1','true','yes','y'}
-            pupil.service_child=_norm(row[7]).lower() in {'1','true','yes','y'}
-            pupil.send=_norm(row[8]).lower() in {'1','true','yes','y'}
+            pupil.gender=normalize_gender(_norm(gender_value)) or pupil.gender or ''
+            pupil.pupil_premium=_norm(pp_value).lower() in {'1','true','yes','y'}
+            pupil.laps=_norm(laps_value).lower() in {'1','true','yes','y'}
+            pupil.service_child=_norm(service_value).lower() in {'1','true','yes','y'}
+            pupil.send=_norm(send_value).lower() in {'1','true','yes','y'}
+            try:
+                pupil.join_year_group = int(year_group_value) if year_group_value not in (None, '') else pupil.join_year_group
+            except (TypeError, ValueError):
+                pass
         pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(f'{pupil.first_name} {pupil.last_name}'))] = pupil
         updated+=1
         _flush_batch('Pupils', row_idx)
     for sheet, subject in [('Maths','maths'),('Reading','reading'),('SPaG','spag')]:
         if sheet not in wb.sheetnames: continue
         for row_idx, row in enumerate(wb[sheet].iter_rows(min_row=2, values_only=True), start=2):
-            pupil = pupil_by_class_and_name.get((_norm_key(row[0]), _norm_key(row[1])))
+            headers = sheet_headers.get(sheet, {})
+            pupil = _pupil_from_assessment_row(row, headers)
+            pupil_name = _value(row, headers, 'pupil_name', 'full_name', default_index=1)
             if not pupil:
-                preview_errors.append(f'{sheet} row {row_idx}: pupil not matched {_norm(row[1])}')
-                _preview_row(sheet, row_idx, 'warning', f'Pupil "{_norm(row[1])}" not found.', 'Check class and pupil name match exactly.')
+                preview_errors.append(f'{sheet} row {row_idx}: pupil not matched {_norm(pupil_name)}')
+                _preview_row(sheet, row_idx, 'warning', f'Pupil "{_norm(pupil_name)}" not found.', 'Check pupil ID, class, and pupil name match.')
                 continue
-            term=_norm(row[2]).lower()
+            term=_norm(_value(row, headers, 'term', default_index=2)).lower()
             if term not in {'autumn','spring','summer'}:
                 preview_errors.append(f'{sheet} row {row_idx}: invalid term {term}')
                 _preview_row(sheet, row_idx, 'warning', f'Invalid term "{_norm(row[2])}".', 'Use Autumn, Spring, or Summer.')
@@ -2105,34 +2195,38 @@ def import_full_workbook():
                 db.session.add(r)
                 subject_result_map[(pupil.id, term, subject)] = r
             try:
-                r.paper_1_score=int(row[3]) if row[3] not in (None,'') else None
-                r.paper_2_score=int(row[4]) if row[4] not in (None,'') else None
+                paper_1_raw = _value(row, headers, 'arithmetic', 'paper_1', 'spelling', default_index=3)
+                paper_2_raw = _value(row, headers, 'reasoning', 'paper_2', 'grammar', default_index=4)
+                r.paper_1_score=int(paper_1_raw) if paper_1_raw not in (None,'') else None
+                r.paper_2_score=int(paper_2_raw) if paper_2_raw not in (None,'') else None
             except (TypeError, ValueError):
                 preview_errors.append(f'{sheet} row {row_idx}: invalid score value.')
                 _preview_row(sheet, row_idx, 'warning', 'Invalid score format.', 'Use numeric values only.')
                 continue
             r.combined_score=(r.paper_1_score or 0)+(r.paper_2_score or 0) if r.paper_1_score is not None and r.paper_2_score is not None else None
-            r.notes=_norm(row[5])
-            _preview_row(sheet, row_idx, 'updated', f'Will import {sheet} data for {_norm(row[1])}.')
+            r.notes=_norm(_value(row, headers, 'notes', default_index=5))
+            _preview_row(sheet, row_idx, 'updated', f'Will import {sheet} data for {_norm(pupil_name)}.')
             _flush_batch(sheet, row_idx)
     if 'Phonics' in wb.sheetnames:
+        headers = sheet_headers.get('Phonics', {})
         for row_idx, row in enumerate(wb['Phonics'].iter_rows(min_row=2, values_only=True), start=2):
-            pupil = pupil_by_class_and_name.get((_norm_key(row[0]), _norm_key(row[1])))
+            pupil = _pupil_from_assessment_row(row, headers)
+            pupil_name = _value(row, headers, 'pupil_name', 'full_name', default_index=1)
             if not pupil:
-                preview_errors.append(f'Phonics row {row_idx}: pupil not matched {_norm(row[1])}')
+                preview_errors.append(f'Phonics row {row_idx}: pupil not matched {_norm(pupil_name)}')
                 continue
-            test_name = _norm(row[2])
+            test_name = _norm(_value(row, headers, 'test_name', default_index=2))
             if not test_name:
-                preview_errors.append(f'Phonics: missing test_name for {_norm(row[1])}')
+                preview_errors.append(f'Phonics: missing test_name for {_norm(pupil_name)}')
                 continue
-            score_raw = row[3]
+            score_raw = _value(row, headers, 'score', default_index=3)
             if score_raw in (None, ''):
-                preview_errors.append(f'Phonics: missing score for {_norm(row[1])} ({test_name})')
+                preview_errors.append(f'Phonics: missing score for {_norm(pupil_name)} ({test_name})')
                 continue
             try:
                 score_value = int(score_raw)
             except (TypeError, ValueError):
-                preview_errors.append(f'Phonics: invalid score "{_norm(score_raw)}" for {_norm(row[1])} ({test_name})')
+                preview_errors.append(f'Phonics: invalid score "{_norm(score_raw)}" for {_norm(pupil_name)} ({test_name})')
                 continue
             col_key = (pupil.school_class.year_group, _norm_key(test_name))
             column = phonics_column_map.get(col_key)
@@ -2160,20 +2254,23 @@ def import_full_workbook():
                 db.session.add(result)
                 phonics_result_map[(pupil.id, column.id)] = result
             result.score = score_value
-            _preview_row('Phonics', row_idx, 'updated', f'Will save score for {_norm(row[1])} ({column.name}).')
+            _preview_row('Phonics', row_idx, 'updated', f'Will save score for {_norm(pupil_name)} ({column.name}).')
             _flush_batch('Phonics', row_idx)
     if 'SATs' in wb.sheetnames:
+        headers = sheet_headers.get('SATs', {})
         for row in wb['SATs'].iter_rows(min_row=2, values_only=True):
-            pupil = pupil_by_class_and_name.get((_norm_key(row[0]), _norm_key(row[1])))
+            pupil = _pupil_from_assessment_row(row, headers)
+            pupil_name = _value(row, headers, 'pupil_name', 'full_name', default_index=1)
             if not pupil:
-                preview_errors.append(f'SATs: pupil not matched {_norm(row[1])}')
+                preview_errors.append(f'SATs: pupil not matched {_norm(pupil_name)}')
                 continue
-            if pupil.join_year_group != 6:
-                preview_errors.append(f'SATs: skipped non-Year 6 pupil {_norm(row[1])}')
+            pupil_year_group = pupil.school_class.year_group if pupil.school_class else pupil.join_year_group
+            if pupil_year_group != 6:
+                preview_errors.append(f'SATs: skipped non-Year 6 pupil {_norm(pupil_name)}')
                 continue
-            assessment_point = _norm(row[2])
+            assessment_point = _norm(_value(row, headers, 'assessment_point', 'exam_number', default_index=2))
             if assessment_point not in SATS_ASSESSMENT_POINTS:
-                preview_errors.append(f'SATs: invalid assessment_point "{assessment_point}" for {_norm(row[1])}')
+                preview_errors.append(f'SATs: invalid assessment_point "{assessment_point}" for {_norm(pupil_name)}')
                 continue
             tab = sats_tabs_by_name.get(assessment_point.lower())
             if not tab:
@@ -2181,8 +2278,18 @@ def import_full_workbook():
                 continue
             column_map = sats_column_maps_by_tab.get(tab.id, {})
             imported_values = []
-            for idx, csv_key in enumerate(SATS_FIXED_COLUMNS.keys(), start=3):
-                raw_value = row[idx]
+            sats_import_aliases = {
+                'reading_raw': ('reading_raw', 'reading_paper', 'reading'),
+                'reading_scaled': ('reading_scaled', 'reading_scaled_score'),
+                'maths_arithmetic_raw': ('maths_arithmetic_raw', 'arithmetic'),
+                'maths_reasoning_raw': ('maths_reasoning_raw', 'reasoning_1', 'reasoning'),
+                'maths_scaled': ('maths_scaled', 'maths_scaled_score'),
+                'spag_grammar_raw': ('spag_grammar_raw', 'grammar'),
+                'spag_spelling_raw': ('spag_spelling_raw', 'spelling'),
+                'spag_scaled': ('spag_scaled', 'spag_scaled_score'),
+            }
+            for csv_key in SATS_FIXED_COLUMNS.keys():
+                raw_value = _value(row, headers, *sats_import_aliases.get(csv_key, (csv_key,)))
                 if raw_value in (None, ''):
                     continue
                 column = column_map.get(csv_key)
@@ -2192,7 +2299,7 @@ def import_full_workbook():
                 try:
                     score_value = int(raw_value)
                 except (TypeError, ValueError):
-                    preview_errors.append(f'SATs: invalid value for {csv_key} on {_norm(row[1])}')
+                    preview_errors.append(f'SATs: invalid value for {csv_key} on {_norm(pupil_name)}')
                     continue
                 result = sats_column_result_map.get((pupil.id, column.id))
                 action = 'will update existing row' if result else 'will create new row'
@@ -2202,11 +2309,12 @@ def import_full_workbook():
                 result.raw_score = score_value
                 db.session.add(result)
                 imported_values.append(f'{csv_key}={score_value}')
-                preview_errors.append(f'SATs: {_norm(row[1])} {assessment_point} {csv_key} -> {action}')
+                preview_errors.append(f'SATs: {_norm(pupil_name)} {assessment_point} {csv_key} -> {action}')
 
-            band_value = _normalize_writing_band(row[11])
-            if _norm(row[11]) and not band_value:
-                preview_errors.append(f'SATs: invalid writing_band "{_norm(row[11])}" for {_norm(row[1])}')
+            writing_band_raw = _value(row, headers, 'writing_band') if 'writing_band' in headers else None
+            band_value = _normalize_writing_band(writing_band_raw)
+            if _norm(writing_band_raw) and not band_value:
+                preview_errors.append(f'SATs: invalid writing_band "{_norm(writing_band_raw)}" for {_norm(pupil_name)}')
             elif band_value:
                 ap_index = SATS_ASSESSMENT_POINTS.index(assessment_point) + 1
                 writing_row = sats_writing_result_map.get((pupil.id, ap_index))
@@ -2215,11 +2323,11 @@ def import_full_workbook():
                     writing_row = SatsWritingResult(school_id=school_id, pupil_id=pupil.id, academic_year=academic_year, assessment_point=ap_index)
                     sats_writing_result_map[(pupil.id, ap_index)] = writing_row
                 writing_row.band = band_value
-                writing_row.notes = _norm(row[12])
+                writing_row.notes = _norm(_value(row, headers, 'notes'))
                 db.session.add(writing_row)
-                preview_errors.append(f'SATs: {_norm(row[1])} {assessment_point} writing_band={_norm(row[11])} -> {action}')
+                preview_errors.append(f'SATs: {_norm(pupil_name)} {assessment_point} writing_band={_norm(writing_band_raw)} -> {action}')
             if imported_values:
-                preview_errors.append(f'SATs: values to import {_norm(row[1])} {assessment_point}: {", ".join(imported_values)}')
+                preview_errors.append(f'SATs: values to import {_norm(pupil_name)} {assessment_point}: {", ".join(imported_values)}')
     if request.form.get('confirm_save')!='1':
         db.session.rollback()
         session['workbook_import_preview'] = {
