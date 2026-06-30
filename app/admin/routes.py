@@ -387,10 +387,7 @@ def _workbook_effective_school_id() -> int | None:
     return current_school_id() if current_user.is_executive_admin else current_user.school_id
 
 
-def _template_pupils(selected_class: SchoolClass | None):
-    effective_school_id = _workbook_effective_school_id()
-    if effective_school_id is None:
-        return []
+def get_active_school_pupils(effective_school_id: int, selected_class: SchoolClass | None = None):
     pupil_query = (
         demo_filter_pupils(Pupil.query)
         .outerjoin(SchoolClass, Pupil.class_id == SchoolClass.id)
@@ -406,6 +403,42 @@ def _template_pupils(selected_class: SchoolClass | None):
     if selected_class:
         pupil_query = pupil_query.filter(Pupil.class_id == selected_class.id)
     return pupil_query.order_by(Pupil.last_name, Pupil.first_name).all()
+
+
+def _log_workbook_pupil_source(effective_school_id: int, pupils: list[Pupil]) -> None:
+    total_pupils = Pupil.query.count()
+    total_school_pupils = Pupil.query.filter(Pupil.school_id == effective_school_id).count()
+    active_school_query = Pupil.query.filter(Pupil.school_id == effective_school_id)
+    if hasattr(Pupil, 'is_archived'):
+        active_school_query = active_school_query.filter(Pupil.is_archived.is_(False))
+    if hasattr(Pupil, 'is_active'):
+        active_school_query = active_school_query.filter(Pupil.is_active.is_(True))
+    total_active_pupils = active_school_query.count()
+
+    current_app.logger.info("Effective school: %s", effective_school_id)
+    current_app.logger.info("Total pupils in database = %s", total_pupils)
+    current_app.logger.info("Total pupils for school = %s", total_school_pupils)
+    current_app.logger.info("Total active pupils = %s", total_active_pupils)
+    current_app.logger.info("Loaded pupils:")
+    for pupil in pupils:
+        current_app.logger.info(
+            "id=%s name=%s school=%s class=%s archived=%s",
+            pupil.id,
+            _pupil_display_name(pupil),
+            pupil.school_id,
+            pupil.class_id,
+            getattr(pupil, "is_archived", None),
+        )
+    current_app.logger.info("Workbook pupil count = %s", len(pupils))
+
+
+def _template_pupils(selected_class: SchoolClass | None):
+    effective_school_id = _workbook_effective_school_id()
+    if effective_school_id is None:
+        return []
+    pupils = get_active_school_pupils(effective_school_id, selected_class)
+    _log_workbook_pupil_source(effective_school_id, pupils)
+    return pupils
 
 def _style_template_sheet(ws, header_row: int = 3):
     ws.freeze_panes = f'A{header_row + 1}'
@@ -494,7 +527,8 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
     instructions.column_dimensions['A'].width = 26
     instructions.column_dimensions['B'].width = 120
 
-    pupils = _template_pupils(selected_class)
+    pupils = list(_template_pupils(selected_class))
+    total_rows_written = 0
     current_app.logger.info("Workbook sheets: %s", wb.sheetnames)
 
     pupils_ws = wb['Pupils']
@@ -511,6 +545,7 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
             p.laps,
             p.service_child,
         ])
+        total_rows_written += 1
     pupils_ws['A1'] = f'Pupils loaded: {len(pupils)}'
     pupils_ws['B1'] = f'Pupils loaded: {len(pupils)}'
     pupils_ws.column_dimensions['A'].hidden = True
@@ -530,11 +565,13 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
     for sheet_name, extra_values_factory in extra_values_by_sheet.items():
         sheet_pupils = filter_pupils_for_sheet(pupils, sheet_name)
         rows = write_pupil_rows(wb[sheet_name], sheet_pupils, extra_values_factory=extra_values_factory)
+        total_rows_written += len(rows)
         pupil_count = len(sheet_pupils)
         wb[sheet_name]['A1'] = f'Pupils loaded: {pupil_count}'
         wb[sheet_name]['B1'] = f'Pupils loaded: {pupil_count}'
         current_app.logger.info("Writing %s pupils to %s", pupil_count, sheet_name)
         current_app.logger.debug("Writing %s workbook rows to %s", len(rows), sheet_name)
+    current_app.logger.info("Total rows written = %s", total_rows_written)
 
     for sheet_name in FULL_WORKBOOK_SHEETS:
         ws = wb[sheet_name]
