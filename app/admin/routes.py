@@ -37,6 +37,7 @@ from app.models import (
     SchoolClass,
     SubjectResult,
     TimesTableScore,
+    TimesTableTestColumn,
     User,
     WritingResult,
 )
@@ -232,16 +233,16 @@ def _teacher_options():
 
 FULL_WORKBOOK_SHEETS = {
     'Instructions': ['Guidance', 'Details'],
-    'Pupils': ['pupil_id','Pupil','Class','Year Group','Gender','PP','SEND','LAPS','Service'],
-    'Maths': ['pupil_id','Pupil','Class','Year Group','Term','Arithmetic','Reasoning','Notes'],
-    'Reading': ['pupil_id','Pupil','Class','Year Group','Term','Paper 1','Paper 2','Notes'],
-    'SPaG': ['pupil_id','Pupil','Class','Year Group','Term','Spelling','Grammar','Notes'],
-    'Writing': ['pupil_id','Pupil','Class','Year Group','Term','Band','Notes'],
-    'Foundation': ['pupil_id','Pupil','Class','Year Group','Subject','Term','Assessment','Band','Notes'],
-    'Reception': ['pupil_id','Pupil','Class','Year Group','Term','Area','Statement','Band','Notes'],
-    'Phonics': ['pupil_id','Pupil','Class','Year Group','Test Name','Score','Max Score','Date'],
-    'Times Tables': ['pupil_id','Pupil','Class','Year Group','Test Name','Score','Max Score','Date'],
-    'SATs': ['pupil_id','Pupil','Class','Year Group','Assessment Point','Exam 1','Exam 2','Exam 3','Exam 4','Arithmetic','Reasoning 1','Reasoning 2','Maths Scaled Score','Reading Paper','Reading Scaled','Spelling','Grammar','SPaG Scaled'],
+    'Pupils': ['Pupil','Class','Year Group','Gender','PP','SEND','LAPS','Service'],
+    'Maths': ['Pupil','Class','Year Group','Term','Arithmetic','Reasoning','Notes'],
+    'Reading': ['Pupil','Class','Year Group','Term','Paper 1','Paper 2','Notes'],
+    'SPaG': ['Pupil','Class','Year Group','Term','Spelling','Grammar','Notes'],
+    'Writing': ['Pupil','Class','Year Group','Term','Band','Notes'],
+    'Foundation': ['Pupil','Class','Year Group','Subject','Term','Assessment','Band','Notes'],
+    'Reception': ['Pupil','Class','Year Group','Term','Area','Statement','Band','Notes'],
+    'Phonics': ['Pupil','Class','Year Group','Test Name','Score','Max Score','Date'],
+    'Times Tables': ['Pupil','Class','Year Group','Test Name','Score','Max Score','Date'],
+    'SATs': ['Pupil','Class','Year Group','Assessment Point','Exam 1','Exam 2','Exam 3','Exam 4','Arithmetic','Reasoning 1','Reasoning 2','Maths Scaled Score','Reading Paper','Reading Scaled','Spelling','Grammar','SPaG Scaled'],
 }
 TEMPLATE_TERMS = ['Autumn', 'Spring', 'Summer']
 FOUNDATION_SUBJECT_KEYS = [subject_key for subject_key, _subject_label in FOUNDATION_SUBJECTS]
@@ -263,6 +264,18 @@ def _norm(v):
 
 def _norm_key(v):
     return '_'.join(_norm(v).lower().split())
+
+def _is_example_pupil_name(value) -> bool:
+    return _norm(value).lower().startswith('example')
+
+def _parse_year_group(value) -> int | None:
+    normalized = _norm(value).lower().replace('year', '').strip()
+    if normalized in {'r', 'rec', 'reception'}:
+        return 0
+    try:
+        return int(normalized)
+    except (TypeError, ValueError):
+        return None
 
 def _split_name(full_name):
     parts = _norm(full_name).split()
@@ -436,10 +449,9 @@ def filter_pupils_for_sheet(pupils, sheet_name):
 
 
 def _append_template_header(ws, columns):
-    ws['A1'] = 'Pupils loaded: 0'
+    ws['A1'] = 'Blank full-school import template'
     ws.append([])
     ws.append(columns)
-    ws.column_dimensions['A'].hidden = True
 
 
 def write_pupil_rows(ws, pupils, extra_values_factory=None):
@@ -477,12 +489,19 @@ def _build_full_template_workbook(effective_school_id: int):
     instructions = wb.create_sheet(title='Instructions')
     _append_template_header(instructions, FULL_WORKBOOK_SHEETS['Instructions'])
     instructions_rows = [
-        ('Workbook purpose', 'Use this workbook to import pupil details and assessment data into Class Compass.'),
+        ('Workbook purpose', 'This is a blank template for adding pupils and assessment data to Class Compass.'),
+        ('How to use', 'Enter each pupil once on the Pupils sheet. When uploaded, the app will create/update pupils and read assessment data from the relevant tabs.'),
         ('Do not rename sheets', 'The upload parser uses these exact worksheet names.'),
-        ('Do not edit hidden pupil_id columns', 'Hidden pupil IDs are used first to match pupils safely and prevent duplicates.'),
-        ('Pupil list source', 'This workbook is generated directly from the selected school database pupils.'),
         ('Academic year', 'Choose the correct academic year on the upload page before importing the completed workbook.'),
-        ('Year group routing', 'Reception only appears on Reception; Years 1-5 appear on Maths, Reading, SPaG, Writing, and Foundation; Years 1-2 appear on Phonics; Year 4 appears on Times Tables; Year 6 appears only on SATs.'),
+        ('Assessment tabs', 'Copy/paste the pupil list from the Pupils sheet into any relevant assessment tabs, then complete the assessment columns.'),
+        ('Example rows', 'Rows where Pupil starts with "Example" are examples only and are ignored during upload.'),
+        ('Reception', 'Use Reception sheet only.'),
+        ('Year 1', 'Use Maths, Reading, SPaG, Writing, Foundation, Phonics.'),
+        ('Year 2', 'Use Maths, Reading, SPaG, Writing, Foundation, Phonics.'),
+        ('Year 3', 'Use Maths, Reading, SPaG, Writing, Foundation.'),
+        ('Year 4', 'Use Maths, Reading, SPaG, Writing, Foundation, Times Tables.'),
+        ('Year 5', 'Use Maths, Reading, SPaG, Writing, Foundation.'),
+        ('Year 6', 'Use SATs only.'),
     ]
     for row in instructions_rows:
         instructions.append(row)
@@ -494,47 +513,31 @@ def _build_full_template_workbook(effective_school_id: int):
             continue
         _append_template_header(wb.create_sheet(title=sheet_name), columns)
 
-    pupils = get_import_template_pupils(effective_school_id)
     rows_written_by_sheet = {}
 
     pupils_ws = wb['Pupils']
-    for pupil in pupils:
-        pupil_id, pupil_name, class_name, year_group = _pupil_template_identity(pupil)
-        pupils_ws.append([
-            pupil_id,
-            pupil_name,
-            class_name,
-            year_group,
-            pupil.gender,
-            pupil.pupil_premium,
-            pupil.send,
-            pupil.laps,
-            pupil.service_child,
-        ])
-    pupils_ws['A1'] = f'Pupils loaded: {len(pupils)}'
-    rows_written_by_sheet['Pupils'] = len(pupils)
+    pupils_ws.append(['Example Pupil', 'Year 4', 'Year 4', 'Male', 'No', 'No', 'No', 'No'])
+    rows_written_by_sheet['Pupils'] = 1
 
-    extra_values_by_sheet = {
-        'Reception': lambda _p: [['', '', '', '', '']],
-        'Maths': lambda _p: [[term, '', '', ''] for term in TEMPLATE_TERMS],
-        'Reading': lambda _p: [[term, '', '', ''] for term in TEMPLATE_TERMS],
-        'SPaG': lambda _p: [[term, '', '', ''] for term in TEMPLATE_TERMS],
-        'Writing': lambda _p: [[term, '', ''] for term in TEMPLATE_TERMS],
-        'Foundation': lambda _p: [[subject_key, '', '', '', ''] for subject_key in FOUNDATION_SUBJECT_KEYS],
-        'Phonics': lambda _p: [['', '', '', '']],
-        'Times Tables': lambda _p: [['', '', '', '']],
-        'SATs': lambda _p: [[assessment_point, '', '', '', '', '', '', '', '', '', '', '', '', ''] for assessment_point in SATS_ASSESSMENT_POINTS],
+    example_rows_by_sheet = {
+        'Reception': ['Example Pupil', 'Reception', 'Reception', 'Autumn', 'Example Area', 'Example Statement', 'Example Band', 'Example notes'],
+        'Maths': ['Example Pupil', 'Year 4', 'Year 4', 'Autumn', '', '', 'Example notes'],
+        'Reading': ['Example Pupil', 'Year 4', 'Year 4', 'Autumn', '', '', 'Example notes'],
+        'SPaG': ['Example Pupil', 'Year 4', 'Year 4', 'Autumn', '', '', 'Example notes'],
+        'Writing': ['Example Pupil', 'Year 4', 'Year 4', 'Autumn', 'Expected', 'Example notes'],
+        'Foundation': ['Example Pupil', 'Year 4', 'Year 4', 'history', 'Autumn', 'Example assessment', 'Expected', 'Example notes'],
+        'Phonics': ['Example Pupil', 'Year 1', 'Year 1', 'Autumn Check', '', '40', ''],
+        'Times Tables': ['Example Pupil', 'Year 4', 'Year 4', 'MTC Practice', '', '25', ''],
+        'SATs': ['Example Pupil', 'Year 6', 'Year 6', 'Autumn 1', '', '', '', '', '', '', '', '', '', '', '', '', ''],
     }
-    for sheet_name, extra_values_factory in extra_values_by_sheet.items():
-        sheet_pupils = filter_pupils_for_sheet(pupils, sheet_name)
-        rows = write_pupil_rows(wb[sheet_name], sheet_pupils, extra_values_factory=extra_values_factory)
-        wb[sheet_name]['A1'] = f'Pupils loaded: {len(sheet_pupils)}'
-        rows_written_by_sheet[sheet_name] = len(rows)
+    for sheet_name, example_row in example_rows_by_sheet.items():
+        wb[sheet_name].append(example_row)
+        rows_written_by_sheet[sheet_name] = 1
 
     for sheet_name in FULL_WORKBOOK_SHEETS:
         _style_template_sheet(wb[sheet_name], header_row=3)
 
-    _log_full_workbook_export(effective_school_id, pupils, rows_written_by_sheet)
+    current_app.logger.info('Blank full-school import workbook template exported: current_user.id=%s current_user.school_id=%s effective_school_id=%s rows_written_per_sheet=%s', current_user.id, current_user.school_id, effective_school_id, rows_written_by_sheet)
     return wb
 
 
@@ -2079,7 +2082,7 @@ def import_full_workbook():
             return row[default_index]
         return None
 
-    def _pupil_from_assessment_row(row, headers: dict[str, int], default_class_index: int = 0, default_name_index: int = 1):
+    def _pupil_from_assessment_row(row, headers: dict[str, int], default_class_index: int = 1, default_name_index: int = 0):
         pupil_id_raw = _value(row, headers, 'pupil_id')
         try:
             pupil_id = int(pupil_id_raw) if pupil_id_raw not in (None, '') else None
@@ -2144,6 +2147,13 @@ def import_full_workbook():
         phonics_column_map[(column.year_group, _norm_key(column.name))] = column
         phonics_display_order_by_year[column.year_group] = max(phonics_display_order_by_year.get(column.year_group, 0), column.display_order or 0)
 
+    times_table_columns = TimesTableTestColumn.query.filter_by(school_id=school_id).all()
+    times_table_column_map: dict[tuple[int, str], TimesTableTestColumn] = {}
+    times_table_display_order_by_year: dict[int, int] = {}
+    for column in times_table_columns:
+        times_table_column_map[(column.year_group, _norm_key(column.name))] = column
+        times_table_display_order_by_year[column.year_group] = max(times_table_display_order_by_year.get(column.year_group, 0), column.display_order or 0)
+
     def _flush_batch(sheet_name: str, row_idx: int) -> None:
         nonlocal processed_rows
         processed_rows += 1
@@ -2157,14 +2167,16 @@ def import_full_workbook():
     pupil_headers = sheet_headers.get('Pupils', {})
     for row_idx, row in enumerate(wb['Pupils'].iter_rows(min_row=_data_start_row('Pupils'), values_only=True), start=_data_start_row('Pupils')) if 'Pupils' in wb.sheetnames else []:
         pupil_id_raw = _value(row, pupil_headers, 'pupil_id')
-        pupil_name = _norm(_value(row, pupil_headers, 'pupil', 'pupil_name', 'full_name', default_index=1))
-        class_name = _norm(_value(row, pupil_headers, 'class', default_index=2))
-        year_group_value = _value(row, pupil_headers, 'year_group', 'join_year_group', default_index=3)
-        gender_value = _value(row, pupil_headers, 'gender', default_index=4)
-        pp_value = _value(row, pupil_headers, 'pp', default_index=5)
-        send_value = _value(row, pupil_headers, 'send', default_index=6)
-        laps_value = _value(row, pupil_headers, 'laps', default_index=7)
-        service_value = _value(row, pupil_headers, 'service_child', 'service', default_index=8)
+        pupil_name = _norm(_value(row, pupil_headers, 'pupil', 'pupil_name', 'full_name', default_index=0))
+        class_name = _norm(_value(row, pupil_headers, 'class', default_index=1))
+        year_group_value = _value(row, pupil_headers, 'year_group', 'join_year_group', default_index=2)
+        gender_value = _value(row, pupil_headers, 'gender', default_index=3)
+        pp_value = _value(row, pupil_headers, 'pp', default_index=4)
+        send_value = _value(row, pupil_headers, 'send', default_index=5)
+        laps_value = _value(row, pupil_headers, 'laps', default_index=6)
+        service_value = _value(row, pupil_headers, 'service_child', 'service', default_index=7)
+        if _is_example_pupil_name(pupil_name):
+            continue
         if not pupil_name or not class_name:
             _preview_row('Pupils', row_idx, 'skipped', 'Missing pupil name or class.', 'Complete the Pupil and Class columns.')
             continue
@@ -2233,7 +2245,7 @@ def import_full_workbook():
             pupil.service_child = _norm(service_value).lower() in {'1', 'true', 'yes', 'y'}
             pupil.send = _norm(send_value).lower() in {'1', 'true', 'yes', 'y'}
             try:
-                pupil.join_year_group = int(year_group_value) if year_group_value not in (None, '') else pupil.join_year_group
+                pupil.join_year_group = _parse_year_group(year_group_value) if year_group_value not in (None, '') else pupil.join_year_group
             except (TypeError, ValueError):
                 pass
         pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(_pupil_display_name(pupil)))] = pupil
@@ -2244,15 +2256,17 @@ def import_full_workbook():
         for row_idx, row in enumerate(wb[sheet].iter_rows(min_row=_data_start_row(sheet), values_only=True), start=_data_start_row(sheet)):
             headers = sheet_headers.get(sheet, {})
             pupil = _pupil_from_assessment_row(row, headers)
-            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=1)
+            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=0)
+            if _is_example_pupil_name(pupil_name) or not any(_norm(cell) for cell in row):
+                continue
             if not pupil:
                 preview_errors.append(f'{sheet} row {row_idx}: pupil not matched {_norm(pupil_name)}')
                 _preview_row(sheet, row_idx, 'warning', f'Pupil "{_norm(pupil_name)}" not found.', 'Check pupil ID, class, and pupil name match.')
                 continue
-            term=_norm(_value(row, headers, 'term', default_index=2)).lower()
+            term=_norm(_value(row, headers, 'term', default_index=3)).lower()
             if term not in {'autumn','spring','summer'}:
                 preview_errors.append(f'{sheet} row {row_idx}: invalid term {term}')
-                _preview_row(sheet, row_idx, 'warning', f'Invalid term "{_norm(row[2])}".', 'Use Autumn, Spring, or Summer.')
+                _preview_row(sheet, row_idx, 'warning', f'Invalid term "{_norm(_value(row, headers, 'term', default_index=3))}".', 'Use Autumn, Spring, or Summer.')
                 continue
             r = subject_result_map.get((pupil.id, term, subject))
             if not r:
@@ -2260,8 +2274,8 @@ def import_full_workbook():
                 db.session.add(r)
                 subject_result_map[(pupil.id, term, subject)] = r
             try:
-                paper_1_raw = _value(row, headers, 'arithmetic', 'paper_1', 'spelling', default_index=3)
-                paper_2_raw = _value(row, headers, 'reasoning', 'paper_2', 'grammar', default_index=4)
+                paper_1_raw = _value(row, headers, 'arithmetic', 'paper_1', 'spelling', default_index=4)
+                paper_2_raw = _value(row, headers, 'reasoning', 'paper_2', 'grammar', default_index=5)
                 r.paper_1_score=int(paper_1_raw) if paper_1_raw not in (None,'') else None
                 r.paper_2_score=int(paper_2_raw) if paper_2_raw not in (None,'') else None
             except (TypeError, ValueError):
@@ -2269,22 +2283,24 @@ def import_full_workbook():
                 _preview_row(sheet, row_idx, 'warning', 'Invalid score format.', 'Use numeric values only.')
                 continue
             r.combined_score=(r.paper_1_score or 0)+(r.paper_2_score or 0) if r.paper_1_score is not None and r.paper_2_score is not None else None
-            r.notes=_norm(_value(row, headers, 'notes', default_index=5))
+            r.notes=_norm(_value(row, headers, 'notes', default_index=6))
             _preview_row(sheet, row_idx, 'updated', f'Will import {sheet} data for {_norm(pupil_name)}.')
             _flush_batch(sheet, row_idx)
     if 'Phonics' in wb.sheetnames:
         headers = sheet_headers.get('Phonics', {})
         for row_idx, row in enumerate(wb['Phonics'].iter_rows(min_row=_data_start_row('Phonics'), values_only=True), start=_data_start_row('Phonics')):
             pupil = _pupil_from_assessment_row(row, headers)
-            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=1)
+            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=0)
+            if _is_example_pupil_name(pupil_name) or not any(_norm(cell) for cell in row):
+                continue
             if not pupil:
                 preview_errors.append(f'Phonics row {row_idx}: pupil not matched {_norm(pupil_name)}')
                 continue
-            test_name = _norm(_value(row, headers, 'test_name', default_index=2))
+            test_name = _norm(_value(row, headers, 'test_name', default_index=3))
             if not test_name:
                 preview_errors.append(f'Phonics: missing test_name for {_norm(pupil_name)}')
                 continue
-            score_raw = _value(row, headers, 'score', default_index=3)
+            score_raw = _value(row, headers, 'score', default_index=4)
             if score_raw in (None, ''):
                 preview_errors.append(f'Phonics: missing score for {_norm(pupil_name)} ({test_name})')
                 continue
@@ -2321,11 +2337,60 @@ def import_full_workbook():
             result.score = score_value
             _preview_row('Phonics', row_idx, 'updated', f'Will save score for {_norm(pupil_name)} ({column.name}).')
             _flush_batch('Phonics', row_idx)
+    if 'Times Tables' in wb.sheetnames:
+        headers = sheet_headers.get('Times Tables', {})
+        for row_idx, row in enumerate(wb['Times Tables'].iter_rows(min_row=_data_start_row('Times Tables'), values_only=True), start=_data_start_row('Times Tables')):
+            pupil = _pupil_from_assessment_row(row, headers)
+            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=0)
+            if _is_example_pupil_name(pupil_name) or not any(_norm(cell) for cell in row):
+                continue
+            if not pupil:
+                preview_errors.append(f'Times Tables row {row_idx}: pupil not matched {_norm(pupil_name)}')
+                continue
+            test_name = _norm(_value(row, headers, 'test_name', default_index=3))
+            if not test_name:
+                preview_errors.append(f'Times Tables: missing test_name for {_norm(pupil_name)}')
+                continue
+            score_raw = _value(row, headers, 'score', default_index=4)
+            if score_raw in (None, ''):
+                preview_errors.append(f'Times Tables: missing score for {_norm(pupil_name)} ({test_name})')
+                continue
+            try:
+                score_value = int(score_raw)
+            except (TypeError, ValueError):
+                preview_errors.append(f'Times Tables: invalid score "{_norm(score_raw)}" for {_norm(pupil_name)} ({test_name})')
+                continue
+            year_group = pupil.school_class.year_group if pupil.school_class else pupil.join_year_group
+            col_key = (year_group, _norm_key(test_name))
+            column = times_table_column_map.get(col_key)
+            if not column:
+                next_order = times_table_display_order_by_year.get(year_group, 0) + 1
+                times_table_display_order_by_year[year_group] = next_order
+                column = TimesTableTestColumn(school_id=school_id, year_group=year_group, name=_norm(test_name), display_order=next_order, is_active=True)
+                db.session.add(column)
+                db.session.flush()
+                times_table_column_map[col_key] = column
+                preview_errors.append(f'Times Tables: new test column will be created ({column.name}, Year {column.year_group})')
+            result = times_table_result_map.get((pupil.id, column.id))
+            if not result:
+                result = TimesTableScore(
+                    school_id=school_id,
+                    pupil_id=pupil.id,
+                    academic_year=academic_year,
+                    times_table_test_column_id=column.id,
+                )
+                db.session.add(result)
+                times_table_result_map[(pupil.id, column.id)] = result
+            result.score = score_value
+            _preview_row('Times Tables', row_idx, 'updated', f'Will save score for {_norm(pupil_name)} ({column.name}).')
+            _flush_batch('Times Tables', row_idx)
     if 'SATs' in wb.sheetnames:
         headers = sheet_headers.get('SATs', {})
         for row in wb['SATs'].iter_rows(min_row=_data_start_row('SATs'), values_only=True):
             pupil = _pupil_from_assessment_row(row, headers)
-            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=1)
+            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=0)
+            if _is_example_pupil_name(pupil_name) or not any(_norm(cell) for cell in row):
+                continue
             if not pupil:
                 preview_errors.append(f'SATs: pupil not matched {_norm(pupil_name)}')
                 continue
@@ -2333,7 +2398,7 @@ def import_full_workbook():
             if pupil_year_group != 6:
                 preview_errors.append(f'SATs: skipped non-Year 6 pupil {_norm(pupil_name)}')
                 continue
-            assessment_point = _norm(_value(row, headers, 'assessment_point', 'exam_number', default_index=2))
+            assessment_point = _norm(_value(row, headers, 'assessment_point', 'exam_number', default_index=3))
             if assessment_point not in SATS_ASSESSMENT_POINTS:
                 preview_errors.append(f'SATs: invalid assessment_point "{assessment_point}" for {_norm(pupil_name)}')
                 continue
