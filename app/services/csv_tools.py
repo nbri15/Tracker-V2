@@ -7,6 +7,7 @@ import io
 from dataclasses import dataclass, field
 from datetime import date
 from sqlalchemy import or_
+from flask_login import current_user
 
 from app.extensions import db
 from app.models import (
@@ -18,12 +19,17 @@ from app.models import (
     SatsColumnSetting,
     SatsExamTab,
     SatsResult,
+    PhonicsScore,
+    PhonicsTestColumn,
     SchoolClass,
     SimpleSatsExamTab,
     SubjectResult,
+    TimesTableScore,
+    TimesTableTestColumn,
+    FoundationResult,
     WritingResult,
 )
-from app.utils import school_scoped_query
+from app.utils import current_school_id, school_scoped_query
 from .assessments import get_selected_current_academic_year
 from .setup import get_or_create_academic_year
 from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting, short_band_label
@@ -33,16 +39,18 @@ from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats
 from .gender import normalize_gender
 
 COMBINED_PUPIL_COLUMNS = [
-    'first_name',
-    'last_name',
+    'pupil',
+    'class_name',
+    'year_group',
+    'academic_year',
     'gender',
     'pupil_premium',
+    'send',
     'laps',
     'service_child',
-    'send',
-    'class_name',
-    'academic_year',
 ]
+# Backwards-compatible columns accepted on upload, but not prioritised in the template.
+COMBINED_LEGACY_PUPIL_COLUMNS = ['first_name', 'last_name']
 COMBINED_SUBJECT_SCORE_COLUMNS = {
     'maths': {
         'autumn': ('maths_autumn_paper1', 'maths_autumn_paper2'),
@@ -65,32 +73,24 @@ COMBINED_WRITING_COLUMNS = {
     'spring': ('writing_spring_band', 'writing_spring_notes'),
     'summer': ('writing_summer_band', 'writing_summer_notes'),
 }
-COMBINED_TEMPLATE_COLUMNS = COMBINED_PUPIL_COLUMNS + [
-    'maths_autumn_paper1',
-    'maths_autumn_paper2',
-    'maths_spring_paper1',
-    'maths_spring_paper2',
-    'maths_summer_paper1',
-    'maths_summer_paper2',
-    'reading_autumn_paper1',
-    'reading_autumn_paper2',
-    'reading_spring_paper1',
-    'reading_spring_paper2',
-    'reading_summer_paper1',
-    'reading_summer_paper2',
-    'spag_autumn_paper1',
-    'spag_autumn_paper2',
-    'spag_spring_paper1',
-    'spag_spring_paper2',
-    'spag_summer_paper1',
-    'spag_summer_paper2',
-    'writing_autumn_band',
-    'writing_autumn_notes',
-    'writing_spring_band',
-    'writing_spring_notes',
-    'writing_summer_band',
-    'writing_summer_notes',
-]
+COMBINED_RECEPTION_COLUMNS = ['reception_autumn_score', 'reception_spring_score', 'reception_summer_score', 'reception_notes']
+COMBINED_PHONICS_COLUMNS = ['phonics_y1_score', 'phonics_y2_retake_score', 'phonics_passed']
+COMBINED_TIMES_TABLES_COLUMNS = ['times_tables_score', 'times_tables_date']
+SATS_COMBINED_FIELDS = ['arithmetic', 'reasoning1', 'reasoning2', 'maths_scaled', 'reading', 'reading_scaled', 'spelling', 'grammar', 'spag_scaled']
+COMBINED_SATS_COLUMNS = [f'sats_exam{exam}_{field}' for exam in range(1, 5) for field in SATS_COMBINED_FIELDS]
+FOUNDATION_COMBINED_SUBJECTS = ['art', 'computing', 'dt', 'geography', 'history', 'music', 'pe', 're', 'science']
+COMBINED_FOUNDATION_COLUMNS = [f'foundation_{term}_{subject}' for term in ('autumn', 'spring', 'summer') for subject in FOUNDATION_COMBINED_SUBJECTS]
+COMBINED_TEMPLATE_COLUMNS = (
+    COMBINED_PUPIL_COLUMNS
+    + [column for terms in COMBINED_SUBJECT_SCORE_COLUMNS.values() for pair in terms.values() for column in pair]
+    + [column for pair in COMBINED_WRITING_COLUMNS.values() for column in pair]
+    + COMBINED_RECEPTION_COLUMNS
+    + COMBINED_PHONICS_COLUMNS
+    + COMBINED_TIMES_TABLES_COLUMNS
+    + COMBINED_SATS_COLUMNS
+    + COMBINED_FOUNDATION_COLUMNS
+    + COMBINED_LEGACY_PUPIL_COLUMNS
+)
 RECEPTION_TEMPLATE_COLUMNS = [
     'pupil_first_name',
     'pupil_last_name',
@@ -185,13 +185,7 @@ def generate_csv(template_type: str) -> str:
     template_rows = {
         'combined': [
             COMBINED_TEMPLATE_COLUMNS,
-            [
-                'Ava', 'Brown', 'Female', 'false', 'false', 'false', 'Year 1', '2025/26',
-                '18', '17', '', '', '', '',
-                '22', '18', '', '', '', '',
-                '', '', '', '', '', '',
-                'expected', 'Autumn moderation complete', '', '', '', '',
-            ],
+            ['Example Pupil', 'Example Class', 'Year 4', '2025/26', 'Male', 'No', 'No', 'No', 'No'] + [''] * (len(COMBINED_TEMPLATE_COLUMNS) - len(COMBINED_PUPIL_COLUMNS)),
         ],
         'reception': [
             RECEPTION_TEMPLATE_COLUMNS,
@@ -243,6 +237,81 @@ def _require_value(row: dict, column: str, *, label: str | None = None) -> str:
         raise CsvImportError(f'{label or column} is required.')
     return value
 
+
+
+def _split_pupil_name(row: dict) -> tuple[str, str, str]:
+    pupil_name = _clean_value(row.get('pupil'))
+    first_name = _clean_value(row.get('first_name'))
+    last_name = _clean_value(row.get('last_name'))
+    if not pupil_name and (first_name or last_name):
+        pupil_name = f'{first_name} {last_name}'.strip()
+    if not pupil_name:
+        raise CsvImportError('pupil is required.')
+    parts = pupil_name.split()
+    if not first_name:
+        first_name = parts[0]
+    if not last_name:
+        last_name = ' '.join(parts[1:]) or parts[0]
+    return pupil_name, first_name, last_name
+
+
+def _parse_year_group(value: str | None) -> int:
+    raw = _clean_value(value).lower().replace(' ', '')
+    aliases = {'reception': 0, 'rec': 0, 'r': 0, 'yearr': 0}
+    for year in range(1, 7):
+        aliases[str(year)] = year
+        aliases[f'y{year}'] = year
+        aliases[f'year{year}'] = year
+    if raw not in aliases:
+        raise CsvImportError('Unknown year group.')
+    return aliases[raw]
+
+
+def _get_or_create_class(class_name: str, year_group: int) -> tuple[SchoolClass, bool]:
+    school_id = current_school_id()
+    if school_id is None:
+        raise CsvImportError('Select a school before importing CSV data.')
+    school_class = SchoolClass.query.filter_by(school_id=school_id, name=class_name).first()
+    if school_class:
+        if school_class.year_group != year_group:
+            school_class.year_group = year_group
+        school_class.is_active = True
+        db.session.add(school_class)
+        return school_class, False
+    school_class = SchoolClass(name=class_name, year_group=year_group, school_id=school_id, is_active=True, is_demo=getattr(current_user, 'is_demo', False))
+    db.session.add(school_class)
+    db.session.flush()
+    return school_class, True
+
+
+def _find_combined_pupil(row: dict, first_name: str, last_name: str, pupil_name: str, school_class: SchoolClass) -> Pupil | None:
+    school_id = current_school_id()
+    pupil_id = _clean_value(row.get('pupil_id'))
+    if pupil_id.isdigit():
+        found = Pupil.query.filter_by(id=int(pupil_id), school_id=school_id).first()
+        if found:
+            return found
+    found = Pupil.query.filter_by(first_name=first_name, last_name=last_name, class_id=school_class.id, school_id=school_id).first()
+    if found:
+        return found
+    return Pupil.query.filter(Pupil.school_id == school_id, Pupil.class_id == school_class.id, (Pupil.first_name + ' ' + Pupil.last_name) == pupil_name).first()
+
+
+def _save_class_history(pupil: Pupil, school_class: SchoolClass, academic_year: str) -> None:
+    history = PupilClassHistory.query.filter_by(school_id=school_class.school_id, pupil_id=pupil.id, academic_year=academic_year).first()
+    if not history:
+        history = PupilClassHistory(school_id=school_class.school_id, pupil_id=pupil.id, academic_year=academic_year)
+    history.class_name = school_class.name
+    history.year_group = school_class.year_group
+    history.teacher_username = school_class.teacher.username if school_class.teacher else None
+    db.session.add(history)
+
+
+def _normalize_foundation(value: str | None) -> str | None:
+    raw = _clean_value(value).lower()
+    if not raw or raw == 'not_assessed':
+        return None
+    return {'working_towards': 'Working Towards', 'expected': 'On Track', 'working_at': 'On Track', 'exceeding': 'Exceeding'}.get(raw)
 
 def _find_class(class_name: str) -> SchoolClass:
     school_class = school_scoped_query(SchoolClass.query.filter_by(name=class_name.strip()), SchoolClass).first()
@@ -380,9 +449,9 @@ def _normalize_writing_band(value: str | None) -> str | None:
     text = raw.strip().lower()
     if any(token in text for token in ('working towards','working toward','wts','wt','below')):
         return 'working_towards'
-    if any(token in text for token in ('on track','working at','working at are','ot')):
+    if text in {'expected', 'working_at'} or any(token in text for token in ('on track','working at','working at are','ot')):
         return 'expected'
-    if any(token in text for token in ('exceeding','greater depth','gds','exs','exc')):
+    if text in {'exceeding', 'greater_depth'} or any(token in text for token in ('exceeding','greater depth','gds','exs','exc')):
         return 'greater_depth'
     return text
 def _is_writing_result_incomplete(result: WritingResult) -> bool:
@@ -419,117 +488,139 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
     summary = CsvImportSummary()
     for index, row in enumerate(rows, start=2):
         summary.rows_processed += 1
-        if summary.rows_processed % 100 == 0:
-            db.session.flush()
         try:
-            with db.session.begin_nested():
-                school_class = _find_class(_require_value(row, 'class_name', label='class_name'))
-                first_name = _require_value(row, 'first_name', label='first_name')
-                last_name = _require_value(row, 'last_name', label='last_name')
-                academic_year = _require_value(row, 'academic_year', label='academic_year')
-                get_or_create_academic_year(academic_year)
+            pupil_name, first_name, last_name = _split_pupil_name(row)
+            if pupil_name.lower().startswith('example'):
+                summary.rows_skipped += 1
+                summary.skipped += 1
+                continue
+            class_name = _require_value(row, 'class_name', label='class_name')
+            year_group = _parse_year_group(row.get('year_group'))
+            academic_year = _require_value(row, 'academic_year', label='academic_year')
+            get_or_create_academic_year(academic_year)
 
-                pupil = Pupil.query.filter_by(first_name=first_name, last_name=last_name, class_id=school_class.id).first()
-                progress = RowProgress()
-                if pupil is None:
-                    pupil = Pupil(
-                        first_name=first_name,
-                        last_name=last_name,
-                        gender=normalize_gender(_clean_value(row.get('gender'))) or '',
-                        pupil_premium=_parse_bool(row.get('pupil_premium')),
-                        laps=_parse_bool(row.get('laps')),
-                        service_child=_parse_bool(row.get('service_child')),
-                        send=_parse_bool(_get_send_value(row)),
-                        class_id=school_class.id,
-                        join_year_group=_parse_join_year_group(row),
-                        join_date=_parse_join_date(row),
-                        is_active=True,
-                    )
-                    db.session.add(pupil)
-                    db.session.flush()
-                    progress.pupil_created = True
-                else:
-                    progress.pupil_updated = _update_pupil_fields(pupil, row, school_class)
-                    db.session.add(pupil)
+            school_class, class_created = _get_or_create_class(class_name, year_group)
+            pupil = _find_combined_pupil(row, first_name, last_name, pupil_name, school_class)
+            progress = RowProgress()
+            if class_created:
+                summary.add_message(f'Row {index}: class to create/imported: {class_name}.')
+            if pupil is None:
+                pupil = Pupil(
+                    first_name=first_name,
+                    last_name=last_name,
+                    gender=normalize_gender(_clean_value(row.get('gender'))) or '',
+                    pupil_premium=_parse_bool(row.get('pupil_premium')),
+                    laps=_parse_bool(row.get('laps')),
+                    service_child=_parse_bool(row.get('service_child')),
+                    send=_parse_bool(_get_send_value(row)),
+                    class_id=school_class.id,
+                    join_year_group=year_group,
+                    join_date=_parse_join_date(row),
+                    school_id=school_class.school_id,
+                    is_active=True,
+                    is_demo=getattr(current_user, 'is_demo', False),
+                )
+                db.session.add(pupil)
+                db.session.flush()
+                progress.pupil_created = True
+            else:
+                progress.pupil_updated = _update_pupil_fields(pupil, row, school_class)
+                pupil.first_name = first_name
+                pupil.last_name = last_name
+                pupil.school_id = school_class.school_id
+                db.session.add(pupil)
+            _save_class_history(pupil, school_class, academic_year)
 
-                if not _has_any_subject_data(row) and not _has_any_writing_data(row):
-                    progress.skipped = True
-
+            if year_group in {1, 2, 3, 4, 5}:
                 for subject, terms in COMBINED_SUBJECT_SCORE_COLUMNS.items():
                     for term, (paper_1_column, paper_2_column) in terms.items():
                         paper_1_score = _parse_optional_int(row.get(paper_1_column), paper_1_column)
                         paper_2_score = _parse_optional_int(row.get(paper_2_column), paper_2_column)
                         if paper_1_score is None and paper_2_score is None:
                             continue
-                        existing = SubjectResult.query.filter_by(
-                            pupil_id=pupil.id,
-                            academic_year=academic_year,
-                            term=term,
-                            subject=subject,
-                        ).first()
-                        result, reason = _write_subject_result(
-                            existing,
-                            pupil=pupil,
-                            academic_year=academic_year,
-                            term=term,
-                            subject=subject,
-                            paper_1_score=paper_1_score,
-                            paper_2_score=paper_2_score,
-                        )
+                        existing = SubjectResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, term=term, subject=subject).first()
+                        result, reason = _write_subject_result(existing, pupil=pupil, academic_year=academic_year, term=term, subject=subject, paper_1_score=paper_1_score, paper_2_score=paper_2_score)
                         if result is None and reason:
                             progress.manual_skips += 1
-                            summary.add_message(
-                                f'Row {index}: skipped {subject} {term} for {pupil.full_name} because the existing result source is {reason}.'
-                            )
-                            continue
-                        if result is not None:
-                            if existing is None:
-                                progress.subject_created += 1
-                            else:
-                                progress.subject_updated += 1
-
+                            summary.add_message(f'Row {index}: skipped {subject} {term} for {pupil.full_name} because existing result source is {reason}.')
+                        elif result is not None:
+                            progress.subject_created += 1 if existing is None else 0
+                            progress.subject_updated += 1 if existing is not None else 0
                 for term, (band_column, notes_column) in COMBINED_WRITING_COLUMNS.items():
-                    band = _normalize_writing_band(row.get(band_column))
-                    notes = _clean_value(row.get(notes_column)) or None
-                    if not band:
+                    raw_band = _clean_value(row.get(band_column))
+                    if not raw_band:
                         continue
+                    band = _normalize_writing_band(raw_band)
+                    notes = _clean_value(row.get(notes_column)) or None
                     existing = WritingResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, term=term).first()
-                    result, reason = _write_writing_result(
-                        existing,
-                        pupil=pupil,
-                        academic_year=academic_year,
-                        term=term,
-                        band=band,
-                        notes=notes,
-                    )
+                    result, reason = _write_writing_result(existing, pupil=pupil, academic_year=academic_year, term=term, band=band, notes=notes)
                     if result is None and reason:
                         progress.manual_skips += 1
-                        summary.add_message(
-                            f'Row {index}: skipped writing {term} for {pupil.full_name} because the existing result source is {reason}.'
-                        )
-                        continue
-                    if result is not None:
-                        if existing is None:
-                            progress.writing_created += 1
-                        else:
-                            progress.writing_updated += 1
+                    elif result is not None:
+                        progress.writing_created += 1 if existing is None else 0
+                        progress.writing_updated += 1 if existing is not None else 0
 
-                summary.pupils_created += 1 if progress.pupil_created else 0
-                summary.created += 1 if progress.pupil_created else 0
-                summary.pupils_updated += 1 if progress.pupil_updated else 0
-                summary.updated += 1 if progress.pupil_updated else 0
-                summary.subject_results_created += progress.subject_created
-                summary.subject_results_updated += progress.subject_updated
-                summary.writing_results_created += progress.writing_created
-                summary.writing_results_updated += progress.writing_updated
-                summary.manual_results_skipped += progress.manual_skips
-                if progress.skipped and not any((progress.pupil_created, progress.pupil_updated, progress.subject_created, progress.subject_updated, progress.writing_created, progress.writing_updated)):
-                    summary.rows_skipped += 1
-                    summary.skipped += 1
+            if year_group == 0:
+                for term in ('autumn', 'spring', 'summer'):
+                    score = _clean_value(row.get(f'reception_{term}_score'))
+                    if score:
+                        entry = ReceptionTrackerEntry.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, tracking_point=term, area_key='overall').first() or ReceptionTrackerEntry(pupil_id=pupil.id, academic_year=academic_year, tracking_point=term, area_key='overall')
+                        entry.status = score
+                        entry.school_id = school_class.school_id
+                        db.session.add(entry)
+                        summary.tracker_entries_created += 1
+            elif year_group in {1, 2}:
+                score_col = 'phonics_y1_score' if year_group == 1 else 'phonics_y2_retake_score'
+                score = _parse_optional_int(row.get(score_col), score_col)
+                if score is not None:
+                    column = PhonicsTestColumn.query.filter_by(school_id=school_class.school_id, year_group=year_group, name=score_col).first() or PhonicsTestColumn(school_id=school_class.school_id, year_group=year_group, name=score_col, display_order=1, is_active=True)
+                    db.session.add(column); db.session.flush()
+                    rec = PhonicsScore.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, phonics_test_column_id=column.id).first() or PhonicsScore(pupil_id=pupil.id, academic_year=academic_year, phonics_test_column_id=column.id, school_id=school_class.school_id)
+                    rec.score = score; db.session.add(rec); summary.tracker_entries_created += 1
+            elif year_group == 4:
+                score = _parse_optional_int(row.get('times_tables_score'), 'times_tables_score')
+                if score is not None:
+                    column = TimesTableTestColumn.query.filter_by(year_group=4, name='Combined CSV').first() or TimesTableTestColumn(year_group=4, name='Combined CSV', display_order=1, is_active=True)
+                    db.session.add(column); db.session.flush()
+                    rec = TimesTableScore.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, times_table_test_column_id=column.id).first() or TimesTableScore(pupil_id=pupil.id, academic_year=academic_year, times_table_test_column_id=column.id, school_id=school_class.school_id)
+                    rec.score = score; db.session.add(rec); summary.tracker_entries_created += 1
+            elif year_group == 6:
+                for exam in range(1, 5):
+                    vals = {field: _parse_optional_int(row.get(f'sats_exam{exam}_{field}'), f'sats_exam{exam}_{field}') for field in SATS_COMBINED_FIELDS}
+                    if any(value is not None for value in vals.values()):
+                        rec = SatsResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, exam_number=exam).first() or SatsResult(pupil_id=pupil.id, academic_year=academic_year, exam_number=exam, subject='combined', assessment_point=exam, school_id=school_class.school_id)
+                        rec.arithmetic_score = vals['arithmetic']; rec.reasoning_1_score = vals['reasoning1']; rec.reasoning_2_score = vals['reasoning2']; rec.maths_scaled_score = vals['maths_scaled']
+                        rec.reading_score = vals['reading']; rec.reading_scaled_score = vals['reading_scaled']; rec.spelling_score = vals['spelling']; rec.grammar_score = vals['grammar']; rec.spag_scaled_score = vals['spag_scaled']
+                        db.session.add(rec); summary.tracker_entries_created += 1
+
+            if year_group in {1, 2, 3, 4, 5}:
+                for term in ('autumn', 'spring', 'summer'):
+                    for subject in FOUNDATION_COMBINED_SUBJECTS:
+                        judgement = _normalize_foundation(row.get(f'foundation_{term}_{subject}'))
+                        if judgement is None:
+                            continue
+                        rec = FoundationResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, half_term=term, subject=subject).first() or FoundationResult(pupil_id=pupil.id, academic_year=academic_year, half_term=term, subject=subject, school_id=school_class.school_id)
+                        rec.judgement = judgement
+                        rec.updated_by_user_id = getattr(current_user, 'id', None)
+                        db.session.add(rec); summary.tracker_entries_created += 1
+
+            summary.pupils_created += 1 if progress.pupil_created else 0
+            summary.created += 1 if progress.pupil_created else 0
+            summary.pupils_updated += 1 if progress.pupil_updated else 0
+            summary.updated += 1 if progress.pupil_updated else 0
+            summary.pupils_matched += 0 if progress.pupil_created else 1
+            summary.subject_results_created += progress.subject_created
+            summary.subject_results_updated += progress.subject_updated
+            summary.writing_results_created += progress.writing_created
+            summary.writing_results_updated += progress.writing_updated
+            summary.manual_results_skipped += progress.manual_skips
+            if summary.rows_processed % 100 == 0:
+                db.session.flush()
         except Exception as exc:
             summary.rows_skipped += 1
             summary.skipped += 1
             summary.add_error(f'Row {index}: {exc}')
+    db.session.flush()
     return summary
 
 

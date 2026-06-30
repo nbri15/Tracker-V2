@@ -1930,19 +1930,28 @@ def imports():
         selected_import_type = request.form.get('import_type', 'combined')
         try:
             rows = parse_uploaded_csv(request.files.get('csv_file'))
-            summary, retried = _run_import_with_single_retry(selected_import_type, rows)
+            selected_year_record = AcademicYear.query.filter_by(id=request.form.get('academic_year_id')).first() if request.form.get('academic_year_id') else None
+            fallback_year = selected_year_record.name if selected_year_record else get_selected_current_academic_year()
+            for row in rows:
+                if not (row.get('academic_year') or '').strip():
+                    row['academic_year'] = fallback_year
+            summary = import_combined_results(rows) if selected_import_type == 'combined' else _run_import_with_single_retry(selected_import_type, rows)[0]
+            if request.form.get('confirm_save') == '1':
+                _safe_import_commit(route_name='admin.imports', import_type=selected_import_type)
+                action_label = 'Import finished'
+            else:
+                db.session.rollback()
+                action_label = 'Preview finished (nothing saved)'
             if summary.errors:
                 for error in summary.errors[:20]:
                     flash(error, 'warning')
             flash(
-                f'Import finished: rows processed {summary.rows_processed}, pupils matched {summary.pupils_matched}, '
-                f'rows skipped {summary.rows_skipped}, tracker entries created {summary.tracker_entries_created}, '
-                f'tracker entries updated {summary.tracker_entries_updated}, created {summary.created}, updated {summary.updated}, '
-                f'manual/protected results skipped {summary.manual_results_skipped}, validation errors {summary.validation_errors}.',
+                f'{action_label}: total rows {summary.rows_processed}, pupils to create/created {summary.pupils_created}, '
+                f'pupils to update/updated {summary.pupils_updated}, pupils matched {summary.pupils_matched}, '
+                f'assessment results to import/imported {summary.subject_results_created + summary.subject_results_updated + summary.writing_results_created + summary.writing_results_updated + summary.tracker_entries_created + summary.tracker_entries_updated}, '
+                f'rows skipped {summary.rows_skipped}, warnings/errors {summary.validation_errors}.',
                 'success',
             )
-            if retried:
-                flash('Import connection dropped once and was retried automatically.', 'warning')
         except CsvImportError as exc:
             db.session.rollback()
             flash(f'Import failed: {exc}', 'danger')
@@ -1987,7 +1996,7 @@ def download_import_template(template_type: str):
         flash('Unknown template type.', 'warning')
         return redirect(url_for('admin.imports'))
     csv_text = generate_csv(template_type)
-    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={template_type}_template.csv'})
+    return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={"class_compass_combined_import_template.csv" if template_type == "combined" else f"{template_type}_template.csv"}' })
 
 
 @admin_bp.route('/imports/full-template.xlsx')
