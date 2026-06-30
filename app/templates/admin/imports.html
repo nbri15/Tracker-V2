@@ -26,18 +26,21 @@
         </ol>
       </div>
     </div>
-    <div class="card shadow-sm border-primary">
+
+    <div class="card shadow-sm border-primary mt-4">
       <div class="card-body">
-        <h5>Download Full School Workbook</h5>
-        <p class="text-muted small">Recommended for most schools. Includes all tabs in one Excel file.</p>
-        <a class="btn btn-primary" href="{{ url_for('admin.download_full_template_xlsx') }}">Download full school import template</a>
+        <h5>Download combined CSV template</h5>
+        <p class="text-muted small">Use the combined CSV when adding pupils and assessment data. Each row is one pupil.</p>
+        <a class="btn btn-primary" href="{{ url_for('admin.download_import_template', template_type='combined') }}">Download combined CSV template</a>
       </div>
     </div>
 
     <div class="card shadow-sm mt-4">
-      <div class="card-header bg-white"><strong>Workbook Upload</strong></div>
+      <div class="card-header bg-white"><strong>Combined CSV Import</strong></div>
       <div class="card-body">
-        <form method="post" action="{{ url_for('admin.import_full_workbook') }}" enctype="multipart/form-data" class="form-grid">
+        <p class="small text-muted">Upload one CSV sheet containing pupil details, classes, and assessment columns. If a row has an academic_year value it overrides the selected year below.</p>
+        <form method="post" enctype="multipart/form-data" class="form-grid">
+          <input type="hidden" name="import_type" value="combined">
           <div class="col-md-4">
             <label class="form-label">Academic year this data belongs to</label>
             <select name="academic_year_id" class="form-select" required>
@@ -46,62 +49,16 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-md-4"><label class="form-label">Workbook (.xlsx)</label><input type="file" name="workbook_file" class="form-control" accept=".xlsx" required></div>
+          <div class="col-md-4"><label class="form-label">CSV file</label><input type="file" name="csv_file" class="form-control" accept=".csv,text/csv" required></div>
           <div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-primary w-100" name="confirm_save" value="0">Preview</button></div>
-          <div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100" name="confirm_save" value="1">Save</button></div>
+          <div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100" name="confirm_save" value="1">Confirm import</button></div>
         </form>
-        <p class="text-muted small mt-2 mb-0">Preview now includes row-by-row validation, suggested fixes, and save confirmation.
-        <br><span class="text-warning">Choose the academic year this data belongs to. Historical imports will not move pupils’ current classes; they will update class history for that year.</span></p>
-      </div>
-    </div>
-    {% if workbook_preview %}
-    <div class="card shadow-sm mt-4">
-      <div class="card-header bg-white"><strong>Latest Preview</strong></div>
-      <div class="card-body">
-        <p class="small text-muted mb-2">New/updated rows, warnings, and skipped rows before import is committed. Academic year: <strong>{{ workbook_preview.academic_year or selected_year or current_year }}</strong>.</p>
-        <div class="d-flex gap-3 small mb-3">
-          <span class="badge bg-success">New/Updated: {{ workbook_preview.created + workbook_preview.updated }}</span>
-          <span class="badge bg-warning text-dark">Warnings: {{ workbook_preview.warnings }}</span>
-          <span class="badge bg-secondary">Skipped: {{ workbook_preview.skipped }}</span>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead><tr><th>Sheet</th><th>Row</th><th>Status</th><th>Reason</th><th>Suggested fix</th></tr></thead>
-            <tbody>
-              {% for row in workbook_preview.rows %}
-              <tr>
-                <td>{{ row.sheet }}</td><td>{{ row.row_number }}</td><td>{{ row.status }}</td><td>{{ row.detail }}</td><td>{{ row.fix or '—' }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    <div class="card shadow-sm mt-4">
-      <div class="card-header bg-white"><strong>Legacy CSV Imports</strong></div>
-      <div class="card-body">
-        <p class="small text-muted">Older import method. Excel workbook recommended.</p>
-        <details>
-          <summary>Show CSV import options</summary>
-          <form method="post" enctype="multipart/form-data" class="form-grid mt-3">
-            <div class="col-md-4"><select name="import_type" class="form-select"><option value="combined">Import pupils CSV</option><option value="combined">Import maths CSV</option><option value="combined">Import reading CSV</option><option value="combined">Import SPaG CSV</option><option value="combined">Import writing CSV</option><option value="combined">Import phonics CSV</option><option value="combined">Import times tables CSV</option><option value="combined">Import foundation CSV</option></select></div>
-            <div class="col-md-5"><input type="file" name="csv_file" class="form-control" accept=".csv" required></div>
-            <div class="col-md-3"><button class="btn btn-outline-secondary w-100">Upload CSV</button></div>
-          </form>
-        </details>
       </div>
     </div>
 
     <div class="card shadow-sm mt-4">
       <div class="card-header bg-white"><strong>Exports</strong></div>
       <div class="card-body d-flex flex-wrap gap-2">
-        <div>
-          <a class="btn btn-primary" href="{{ url_for('admin.export_full_workbook') }}">Download full-school import workbook</a>
-          <div class="form-text">Refresh pupil list: The workbook is generated from the current pupil list each time you download it.</div>
-        </div>
         <a class="btn btn-outline-primary" href="{{ url_for('admin.export_pupil_overview') }}">Export Pupils CSV</a>
         <a class="btn btn-outline-primary" href="{{ url_for('admin.export_subject_results') }}">Export Results CSV</a>
       </div>
