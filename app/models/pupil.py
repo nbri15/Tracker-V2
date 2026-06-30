@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from app.extensions import db
+from sqlalchemy.ext.hybrid import hybrid_property
 
 
 class Pupil(db.Model):
@@ -51,9 +52,17 @@ class Pupil(db.Model):
     times_table_scores = db.relationship('TimesTableScore', back_populates='pupil', cascade='all, delete-orphan')
     foundation_results = db.relationship('FoundationResult', back_populates='pupil', cascade='all, delete-orphan')
 
+    @hybrid_property
+    def name(self) -> str:
+        return f'{self.first_name} {self.last_name}'
+
+    @name.expression
+    def name(cls):
+        return cls.first_name + ' ' + cls.last_name
+
     @property
     def full_name(self) -> str:
-        return f'{self.first_name} {self.last_name}'
+        return self.name
 
     def __repr__(self) -> str:
         return f'<Pupil {self.full_name}>'

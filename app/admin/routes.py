@@ -9,7 +9,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Response, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user, login_required
 
 from sqlalchemy import and_, func, or_
@@ -371,74 +371,24 @@ def _normalize_writing_band(value) -> str | None:
     return None
 
 
-def _selected_template_class():
-    school_id = _selected_school_id_for_admin_actions()
-    if school_id is None:
-        return None
-    class_id = request.args.get('class_id', type=int)
-    if not class_id:
-        return None
-    return demo_filter_classes(
-        SchoolClass.query.filter_by(id=class_id, school_id=school_id, is_active=True)
-    ).first()
-
-
 def _workbook_effective_school_id() -> int | None:
-    return current_school_id() if current_user.is_executive_admin else current_user.school_id
+    """Resolve the school that should own a generated import workbook."""
+    if current_user.is_executive_admin:
+        return current_school_id()
+    return current_user.school_id
 
 
-def get_active_school_pupils(effective_school_id: int, selected_class: SchoolClass | None = None):
-    pupil_query = (
-        demo_filter_pupils(Pupil.query)
-        .outerjoin(SchoolClass, Pupil.class_id == SchoolClass.id)
-        .options(joinedload(Pupil.school_class))
+def get_import_template_pupils(effective_school_id):
+    """Return the single authoritative pupil list for full-school import workbooks."""
+    pupils = (
+        Pupil.query
+        .outerjoin(SchoolClass)
         .filter(Pupil.school_id == effective_school_id)
+        .order_by(SchoolClass.year_group, SchoolClass.name, Pupil.name)
+        .all()
     )
-    if hasattr(Pupil, 'is_archived'):
-        pupil_query = pupil_query.filter(Pupil.is_archived.is_(False))
-    if hasattr(Pupil, 'is_active'):
-        pupil_query = pupil_query.filter(Pupil.is_active.is_(True))
-    if hasattr(SchoolClass, 'is_active'):
-        pupil_query = pupil_query.filter(or_(SchoolClass.id.is_(None), SchoolClass.is_active.is_(True)))
-    if selected_class:
-        pupil_query = pupil_query.filter(Pupil.class_id == selected_class.id)
-    return pupil_query.order_by(Pupil.last_name, Pupil.first_name).all()
-
-
-def _log_workbook_pupil_source(effective_school_id: int, pupils: list[Pupil]) -> None:
-    total_pupils = Pupil.query.count()
-    total_school_pupils = Pupil.query.filter(Pupil.school_id == effective_school_id).count()
-    active_school_query = Pupil.query.filter(Pupil.school_id == effective_school_id)
-    if hasattr(Pupil, 'is_archived'):
-        active_school_query = active_school_query.filter(Pupil.is_archived.is_(False))
-    if hasattr(Pupil, 'is_active'):
-        active_school_query = active_school_query.filter(Pupil.is_active.is_(True))
-    total_active_pupils = active_school_query.count()
-
-    current_app.logger.info("Effective school: %s", effective_school_id)
-    current_app.logger.info("Total pupils in database = %s", total_pupils)
-    current_app.logger.info("Total pupils for school = %s", total_school_pupils)
-    current_app.logger.info("Total active pupils = %s", total_active_pupils)
-    current_app.logger.info("Loaded pupils:")
-    for pupil in pupils:
-        current_app.logger.info(
-            "id=%s name=%s school=%s class=%s archived=%s",
-            pupil.id,
-            _pupil_display_name(pupil),
-            pupil.school_id,
-            pupil.class_id,
-            getattr(pupil, "is_archived", None),
-        )
-    current_app.logger.info("Workbook pupil count = %s", len(pupils))
-
-
-def _template_pupils(selected_class: SchoolClass | None):
-    effective_school_id = _workbook_effective_school_id()
-    if effective_school_id is None:
-        return []
-    pupils = get_active_school_pupils(effective_school_id, selected_class)
-    _log_workbook_pupil_source(effective_school_id, pupils)
     return pupils
+
 
 def _style_template_sheet(ws, header_row: int = 3):
     ws.freeze_panes = f'A{header_row + 1}'
@@ -449,7 +399,7 @@ def _style_template_sheet(ws, header_row: int = 3):
     for idx, col in enumerate(ws.iter_cols(min_row=header_row, max_row=header_row), start=1):
         header = _norm(col[0].value)
         width = max(14, min(40, len(header) + 4))
-        ws.column_dimensions[chr(64 + idx)].width = width
+        ws.column_dimensions[ws.cell(row=header_row, column=idx).column_letter].width = width
 
 
 def _pupil_year_group(pupil: Pupil) -> int | None:
@@ -485,6 +435,13 @@ def filter_pupils_for_sheet(pupils, sheet_name):
     return [pupil for pupil in pupils if _pupil_year_group(pupil) in year_groups_by_sheet]
 
 
+def _append_template_header(ws, columns):
+    ws['A1'] = 'Pupils loaded: 0'
+    ws.append([])
+    ws.append(columns)
+    ws.column_dimensions['A'].hidden = True
+
+
 def write_pupil_rows(ws, pupils, extra_values_factory=None):
     rows = []
     for pupil in pupils:
@@ -498,58 +455,64 @@ def write_pupil_rows(ws, pupils, extra_values_factory=None):
     return rows
 
 
-def _build_full_template_workbook(selected_class: SchoolClass | None = None):
+def _log_full_workbook_export(effective_school_id: int, pupils: list[Pupil], rows_written_by_sheet: dict[str, int]) -> None:
+    total_pupils = Pupil.query.count()
+    pupils_for_school = Pupil.query.filter(Pupil.school_id == effective_school_id).count()
+    current_app.logger.info(
+        'Full-school import workbook export: current_user.id=%s current_user.school_id=%s effective_school_id=%s total_pupils_in_db=%s pupils_for_school=%s rows_written_per_sheet=%s',
+        current_user.id,
+        current_user.school_id,
+        effective_school_id,
+        total_pupils,
+        pupils_for_school,
+        rows_written_by_sheet,
+    )
+    current_app.logger.debug('Full-school import workbook pupil ids: %s', [pupil.id for pupil in pupils])
+
+
+def _build_full_template_workbook(effective_school_id: int):
     wb = Workbook()
     wb.remove(wb.active)
-    for name, cols in FULL_WORKBOOK_SHEETS.items():
-        ws = wb.create_sheet(title=name)
-        ws['A1'] = 'Pupils loaded: 0'
-        ws['B1'] = 'Pupils loaded: 0'
-        ws.append([])
-        ws.append(cols)
 
-    instructions = wb['Instructions']
+    instructions = wb.create_sheet(title='Instructions')
+    _append_template_header(instructions, FULL_WORKBOOK_SHEETS['Instructions'])
     instructions_rows = [
         ('Workbook purpose', 'Use this workbook to import pupil details and assessment data into Class Compass.'),
         ('Do not rename sheets', 'The upload parser uses these exact worksheet names.'),
         ('Do not edit hidden pupil_id columns', 'Hidden pupil IDs are used first to match pupils safely and prevent duplicates.'),
-        ('Pupil column', 'Enter pupil names in the Pupil column only if manually adding a new child.'),
+        ('Pupil list source', 'This workbook is generated directly from the selected school database pupils.'),
         ('Academic year', 'Choose the correct academic year on the upload page before importing the completed workbook.'),
-        ('Historical imports', 'Historical imports do not move current classes; they save class history for the selected academic year.'),
-        ('Refresh pupil list', 'The workbook is generated from the current pupil list each time you download it.'),
         ('Year group routing', 'Reception only appears on Reception; Years 1-5 appear on Maths, Reading, SPaG, Writing, and Foundation; Years 1-2 appear on Phonics; Year 4 appears on Times Tables; Year 6 appears only on SATs.'),
-        ('Accepted band labels', 'WT = Working Towards'),
-        ('Accepted band labels', 'OT = On Track'),
-        ('Accepted band labels', 'EXC = Exceeding'),
     ]
     for row in instructions_rows:
         instructions.append(row)
     instructions.column_dimensions['A'].width = 26
     instructions.column_dimensions['B'].width = 120
 
-    pupils = list(_template_pupils(selected_class))
-    total_rows_written = 0
-    current_app.logger.info("Workbook sheets: %s", wb.sheetnames)
+    for sheet_name, columns in FULL_WORKBOOK_SHEETS.items():
+        if sheet_name == 'Instructions':
+            continue
+        _append_template_header(wb.create_sheet(title=sheet_name), columns)
+
+    pupils = get_import_template_pupils(effective_school_id)
+    rows_written_by_sheet = {}
 
     pupils_ws = wb['Pupils']
-    for p in pupils:
-        pupil_id, pupil_name, class_name, year_group = _pupil_template_identity(p)
+    for pupil in pupils:
+        pupil_id, pupil_name, class_name, year_group = _pupil_template_identity(pupil)
         pupils_ws.append([
             pupil_id,
             pupil_name,
             class_name,
             year_group,
-            p.gender,
-            p.pupil_premium,
-            p.send,
-            p.laps,
-            p.service_child,
+            pupil.gender,
+            pupil.pupil_premium,
+            pupil.send,
+            pupil.laps,
+            pupil.service_child,
         ])
-        total_rows_written += 1
     pupils_ws['A1'] = f'Pupils loaded: {len(pupils)}'
-    pupils_ws['B1'] = f'Pupils loaded: {len(pupils)}'
-    pupils_ws.column_dimensions['A'].hidden = True
-    current_app.logger.info("Writing %s pupils to %s", len(pupils), 'Pupils')
+    rows_written_by_sheet['Pupils'] = len(pupils)
 
     extra_values_by_sheet = {
         'Reception': lambda _p: [['', '', '', '', '']],
@@ -565,20 +528,15 @@ def _build_full_template_workbook(selected_class: SchoolClass | None = None):
     for sheet_name, extra_values_factory in extra_values_by_sheet.items():
         sheet_pupils = filter_pupils_for_sheet(pupils, sheet_name)
         rows = write_pupil_rows(wb[sheet_name], sheet_pupils, extra_values_factory=extra_values_factory)
-        total_rows_written += len(rows)
-        pupil_count = len(sheet_pupils)
-        wb[sheet_name]['A1'] = f'Pupils loaded: {pupil_count}'
-        wb[sheet_name]['B1'] = f'Pupils loaded: {pupil_count}'
-        current_app.logger.info("Writing %s pupils to %s", pupil_count, sheet_name)
-        current_app.logger.debug("Writing %s workbook rows to %s", len(rows), sheet_name)
-    current_app.logger.info("Total rows written = %s", total_rows_written)
+        wb[sheet_name]['A1'] = f'Pupils loaded: {len(sheet_pupils)}'
+        rows_written_by_sheet[sheet_name] = len(rows)
 
     for sheet_name in FULL_WORKBOOK_SHEETS:
-        ws = wb[sheet_name]
-        if sheet_name != 'Instructions' and ws.max_column >= 1 and _norm(ws.cell(row=3, column=1).value) == 'pupil_id':
-            ws.column_dimensions['A'].hidden = True
-        _style_template_sheet(ws, header_row=3)
+        _style_template_sheet(wb[sheet_name], header_row=3)
+
+    _log_full_workbook_export(effective_school_id, pupils, rows_written_by_sheet)
     return wb
+
 
 CLASS_DETAIL_SUBJECT_SORT_COLUMNS = {'name', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'assessment_year_group', 'progress_delta'}
 CLASS_DETAIL_WRITING_SORT_COLUMNS = {'name', 'band_label', 'notes'}
@@ -2036,15 +1994,15 @@ def download_import_template(template_type: str):
 @login_required
 @admin_required
 def download_full_template_xlsx():
-    if _workbook_effective_school_id() is None:
+    effective_school_id = _workbook_effective_school_id()
+    if effective_school_id is None:
         flash('Select a school before downloading the full-school import workbook.', 'warning')
         return redirect(url_for('admin.imports'))
-    selected_class = _selected_template_class()
-    wb = _build_full_template_workbook(selected_class)
-    out = io.BytesIO()
-    wb.save(out)
-    out.seek(0)
-    return Response(out.getvalue(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=full_school_template.xlsx'})
+    wb = _build_full_template_workbook(effective_school_id)
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(output, as_attachment=True, download_name='full_school_import_template.xlsx')
 
 
 @admin_bp.route('/imports/full-workbook', methods=['POST'])
@@ -2470,13 +2428,15 @@ def import_full_workbook():
 @login_required
 @admin_required
 def export_full_workbook():
-    if _workbook_effective_school_id() is None:
+    effective_school_id = _workbook_effective_school_id()
+    if effective_school_id is None:
         flash('Select a school before downloading the full-school import workbook.', 'warning')
         return redirect(url_for('admin.imports'))
-    selected_class = _selected_template_class()
-    wb = _build_full_template_workbook(selected_class)
-    out=io.BytesIO(); wb.save(out); out.seek(0)
-    return Response(out.getvalue(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=school_data_workbook.xlsx'})
+    wb = _build_full_template_workbook(effective_school_id)
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(output, as_attachment=True, download_name='full_school_import_template.xlsx')
 
 
 @admin_bp.route('/reports/headline')
