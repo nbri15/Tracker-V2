@@ -2452,9 +2452,10 @@ def export_full_workbook():
 @login_required
 @admin_required
 def headline_report():
-    context_redirect = _require_admin_school_context()
+    context_redirect = _require_admin_school_context('Select a school before viewing the headline report.')
     if context_redirect:
         return context_redirect
+    effective_school_id = _selected_school_id_for_admin_actions()
     academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
     tracker_key = (request.args.get('tracker_key', '') or '').strip()
@@ -2478,6 +2479,16 @@ def headline_report():
         year_group=year_group,
         filters=pupil_filters,
         tracker_key=tracker_key or None,
+        school_id=effective_school_id,
+    )
+    current_app.logger.info(
+        'headline_report school_scope user_id=%s role=%s user_school_id=%s effective_school_id=%s pupils=%s results=%s',
+        current_user.id,
+        current_user.role,
+        current_user.school_id,
+        effective_school_id,
+        report.get('debug', {}).get('pupil_count'),
+        report.get('debug', {}).get('result_count'),
     )
     tracker_options = []
     if subject == 'eyfs':
@@ -2487,10 +2498,10 @@ def headline_report():
     elif subject == 'phonics':
         phonics_years = [year_group] if year_group in {1, 2} else [1, 2]
         for year in phonics_years:
-            for column in ensure_phonics_columns(year, current_school_id()):
+            for column in ensure_phonics_columns(year, effective_school_id):
                 tracker_options.append({'value': str(column.id), 'label': f'Year {year} · {column.name}'})
     elif subject == 'times_tables':
-        for column in ensure_times_tables_columns(4):
+        for column in ensure_times_tables_columns(4, effective_school_id):
             tracker_options.append({'value': str(column.id), 'label': column.name})
     elif subject == 'sats':
         tracker_options = [{'value': '', 'label': 'Latest active exam tab'}] + [
@@ -2515,6 +2526,10 @@ def headline_report():
 @login_required
 @admin_required
 def export_headline_report():
+    context_redirect = _require_admin_school_context('Select a school before downloading the headline report.')
+    if context_redirect:
+        return context_redirect
+    effective_school_id = _selected_school_id_for_admin_actions()
     academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     subject = (request.args.get('subject', 'maths') or 'maths').strip().lower()
     tracker_key = (request.args.get('tracker_key', '') or '').strip()
@@ -2535,6 +2550,16 @@ def export_headline_report():
         year_group=year_group,
         filters=pupil_filters,
         tracker_key=tracker_key or None,
+        school_id=effective_school_id,
+    )
+    current_app.logger.info(
+        'headline_report_export school_scope user_id=%s role=%s user_school_id=%s effective_school_id=%s pupils=%s results=%s',
+        current_user.id,
+        current_user.role,
+        current_user.school_id,
+        effective_school_id,
+        report.get('debug', {}).get('pupil_count'),
+        report.get('debug', {}).get('result_count'),
     )
 
     output = io.StringIO()
