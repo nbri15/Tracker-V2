@@ -5,7 +5,7 @@
 {% macro sort_link(column, label) -%}
   {% set state = header_state[column] %}
   <a
-    href="{{ url_for('teacher.' ~ subject_key, academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, sort=column, direction=state.next_direction) }}"
+    href="{{ url_for('teacher.' ~ subject_key, year=selected_year.id, academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, sort=column, direction=state.next_direction) }}"
     class="table-sort-link{% if state.active %} active{% endif %}"
   >
     <span>{{ label }}</span>
@@ -20,11 +20,11 @@
     <p class="text-muted mb-0">Year {{ school_class.year_group if school_class else '—' }} · {{ academic_year }} · {{ get_term_label(term) }} · spreadsheet-style entry for {{ page_title }}.</p>
   </div>
   <div class="d-flex flex-wrap gap-2 subject-nav-tabs">
-    <a class="btn btn-sm {% if subject_key == 'maths' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.maths') }}">Maths</a>
-    <a class="btn btn-sm {% if subject_key == 'reading' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.reading') }}">Reading</a>
-    <a class="btn btn-sm {% if subject_key == 'spag' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.spag') }}">SPaG</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.writing') }}">Writing</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.foundation') }}">Foundation</a>
+    <a class="btn btn-sm {% if subject_key == 'maths' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.maths', year=selected_year.id) }}">Maths</a>
+    <a class="btn btn-sm {% if subject_key == 'reading' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.reading', year=selected_year.id) }}">Reading</a>
+    <a class="btn btn-sm {% if subject_key == 'spag' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('teacher.spag', year=selected_year.id) }}">SPaG</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.writing', year=selected_year.id) }}">Writing</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.foundation', academic_year=academic_year) }}">Foundation</a>
     {% if school_class and school_class.year_group in [1, 2] %}
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.phonics') }}">Phonics</a>
     {% endif %}
@@ -39,9 +39,9 @@
     <form method="get" class="tracker-filter-grid compact-filter-row">
       <div class="col-sm-6 col-lg-2">
         <label class="form-label">Academic year</label>
-        <select name="academic_year" class="form-select form-select-sm">
+        <select name="year" class="form-select form-select-sm">
           {% for option in academic_year_options %}
-            <option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>
+            <option value="{{ option.id }}" {% if option.name == academic_year %}selected{% endif %}>{{ option.name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -108,12 +108,12 @@
           <strong>{{ page_title }} page settings</strong>
           <div class="text-muted small">Teachers can adjust paper names, max marks, and thresholds here.</div>
         </div>
-        <a class="btn btn-outline-primary btn-sm touch-button" href="{{ url_for('teacher.gap_analysis', subject=subject_key, academic_year=academic_year, term=term) }}">GAP Analysis</a>
+        <a class="btn btn-outline-primary btn-sm touch-button" href="{{ url_for('teacher.gap_analysis', subject=subject_key, year=selected_year.id, academic_year=academic_year, term=term) }}">GAP Analysis</a>
       </div>
       <div class="card-body">
         <form method="post" class="row g-3 align-items-end js-setting-form">
           <input type="hidden" name="form_name" value="settings">
-          <input type="hidden" name="academic_year" value="{{ academic_year }}">
+          <input type="hidden" name="year" value="{{ selected_year.id }}">
           <input type="hidden" name="term" value="{{ term }}">
           <input type="hidden" name="search" value="{{ filters.search }}">
           <input type="hidden" name="gender" value="{{ filters.gender }}">
@@ -174,7 +174,7 @@
     <div class="card shadow-sm h-100">
       <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <strong>Intervention suggestions</strong>
-        <a class="btn btn-outline-secondary btn-sm touch-button" href="{{ url_for('teacher.interventions', subject=subject_key, term=term, academic_year=academic_year) }}">Manage</a>
+        <a class="btn btn-outline-secondary btn-sm touch-button" href="{{ url_for('teacher.interventions', subject=subject_key, term=term, year=selected_year.id, academic_year=academic_year) }}">Manage</a>
       </div>
       <div class="card-body">
         <p class="text-muted small">Closest 6 pupils below the pass threshold are auto-flagged for {{ page_title }}.</p>
@@ -213,7 +213,7 @@
   <div class="card-body p-0">
     <form method="post">
       <input type="hidden" name="form_name" value="results">
-      <input type="hidden" name="academic_year" value="{{ academic_year }}">
+      <input type="hidden" name="year" value="{{ selected_year.id }}">
       <input type="hidden" name="term" value="{{ term }}">
       <input type="hidden" name="search" value="{{ filters.search }}">
       <input type="hidden" name="gender" value="{{ filters.gender }}">
@@ -283,7 +283,7 @@
       <div class="px-3 py-3 d-flex justify-content-between align-items-center gap-2 border-top bg-light-subtle">
         <div class="small text-muted">Scores are validated against the current max marks. GAP totals can also populate empty combined scores.</div>
         <div class="d-flex gap-2">
-          <a class="btn btn-outline-primary btn-sm touch-button" href="{{ url_for('teacher.gap_analysis', subject=subject_key, academic_year=academic_year, term=term) }}">Question Analysis</a>
+          <a class="btn btn-outline-primary btn-sm touch-button" href="{{ url_for('teacher.gap_analysis', subject=subject_key, year=selected_year.id, academic_year=academic_year, term=term) }}">Question Analysis</a>
           <button type="submit" class="btn btn-success btn-sm touch-button">Save {{ page_title }} results</button>
         </div>
       </div>

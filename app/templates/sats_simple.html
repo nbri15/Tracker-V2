@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Simple SATs{% endblock %}
+{% block title %}Simple SATs · Assessment year: {{ academic_year }}{% endblock %}
 {% set page_heading = 'Year 6 SATs tracker' %}
 {% block content %}
 <style>
@@ -29,12 +29,12 @@
 
 <div class="card mb-3"><div class="card-body">
   <form method="get" class="sats-toolbar mb-2">
-    <div class="field"><label class="form-label">Academic year</label><input name="academic_year" class="form-control form-control-sm" value="{{ academic_year }}"></div>
+    <div class="field"><label class="form-label">Academic year</label><select name="year" class="form-select form-select-sm">{% for option in academic_year_options %}<option value="{{ option.id }}" {% if option.name == academic_year %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select></div>
     <div class="field"><label class="form-label">Class</label><select name="class_id" class="form-select form-select-sm">{% for c in class_options %}<option value="{{ c.id }}" {% if selected_class and c.id==selected_class.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
     <div class="actions"><button class="btn btn-sm btn-primary">Load</button><button type="button" id="btn-settings" class="btn btn-sm btn-outline-secondary">Settings</button></div>
   </form>
   <div class="sats-tabs">
-    {% for tab in tabs %}{% if tab.is_active %}<a class="btn btn-sm {% if exam_number==tab.exam_number %}btn-primary{% else %}btn-outline-secondary{% endif %} sats-tab" href="{{ url_for('dashboards.sats_simple', academic_year=academic_year, class_id=selected_class.id if selected_class else None, exam_number=tab.exam_number) }}">{{ tab.name }}</a>{% endif %}{% endfor %}
+    {% for tab in tabs %}{% if tab.is_active %}<a class="btn btn-sm {% if exam_number==tab.exam_number %}btn-primary{% else %}btn-outline-secondary{% endif %} sats-tab" href="{{ url_for('dashboards.sats_simple', year=selected_year.id, academic_year=academic_year, class_id=selected_class.id if selected_class else None, exam_number=tab.exam_number) }}">{{ tab.name }}</a>{% endif %}{% endfor %}
     <button type="button" id="btn-add-exam" class="btn btn-sm btn-outline-primary sats-add-tab">+ Add exam</button>
   </div>
 </div></div>

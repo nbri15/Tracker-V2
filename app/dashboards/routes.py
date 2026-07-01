@@ -16,6 +16,8 @@ from app.services import (
     build_subject_overview_cards,
     calculate_progress,
     get_selected_current_academic_year,
+    get_selected_academic_year,
+    build_academic_year_options,
     get_dashboard_stats,
     get_class_pupil_query,
     get_gender_filter_options,
@@ -63,7 +65,8 @@ def teacher_dashboard():
         term = "Summer"
 
     school_class = get_primary_class_for_user(current_user)
-    academic_year = get_selected_current_academic_year()
+    selected_year = get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+    academic_year = selected_year.name
     pupil_count = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).count() if school_class else 0
     summary_rows = get_dashboard_stats(school_class.id if school_class else None, academic_year)
     active_interventions = (
@@ -88,6 +91,8 @@ def teacher_dashboard():
         'has_year6_sats_access': get_year_group_class_for_user(current_user, 6) is not None,
         'pupil_count': pupil_count,
         'academic_year': academic_year,
+        'selected_year': selected_year,
+        'academic_year_options': build_academic_year_options(academic_year),
         'term': term,
         'term_label': 'All terms' if term == 'All' else term,
         'summary_rows': summary_rows,
@@ -107,7 +112,8 @@ def teacher_dashboard():
 def admin_dashboard():
     if current_user.is_executive_admin and current_school_id() is None:
         return redirect(url_for('executive.schools'))
-    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
+    selected_year = get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+    academic_year = selected_year.name
     term = (request.args.get("term") or "Summer").strip()
     if term not in ("Autumn", "Spring", "Summer", "All"):
         term = "Summer"
@@ -137,6 +143,8 @@ def admin_dashboard():
 
     context = {
         'academic_year': academic_year,
+        'selected_year': selected_year,
+        'academic_year_options': build_academic_year_options(academic_year),
         'term': term,
         'selected_term': selected_term,
         'term_choices': ['Autumn', 'Spring', 'Summer', 'All'],
@@ -202,7 +210,8 @@ def sats_simple():
     school_id = current_school_id()
     if school_id is None:
         return redirect(url_for('executive.schools'))
-    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
+    selected_year = get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+    academic_year = selected_year.name
     term = (request.args.get('term', 'all') or 'all').strip().lower()
     if term not in {'all', 'autumn', 'spring', 'summer'}:
         term = 'all'
@@ -250,7 +259,7 @@ def sats_simple():
         rows = [r for r in all_rows if r.exam_number == exam_number]
         result_map={r.pupil_id:r for r in rows}
     settings = {row.exam_number: row for row in SimpleSatsSetting.query.filter_by(school_id=school_id, academic_year=academic_year).all()}
-    return render_template('sats_simple.html', academic_year=academic_year, exam_number=exam_number, pupils=pupils, result_map=result_map, class_options=class_options, selected_class=selected_class, settings=settings, tabs=tabs, scores_by_pupil_exam=scores_by_pupil_exam, scaled_band= _scaled_band, scaled_progress=_scaled_progress)
+    return render_template('sats_simple.html', academic_year=academic_year, selected_year=selected_year, academic_year_options=build_academic_year_options(academic_year), exam_number=exam_number, pupils=pupils, result_map=result_map, class_options=class_options, selected_class=selected_class, settings=settings, tabs=tabs, scores_by_pupil_exam=scores_by_pupil_exam, scaled_band= _scaled_band, scaled_progress=_scaled_progress)
 
 @dashboards_bp.route('/api/sats/simple/quick-save', methods=['POST'])
 @login_required
