@@ -70,6 +70,7 @@ from app.services import (
     save_reception_tracker_entries,
     save_foundation_results,
     save_gap_scores,
+    sync_gap_totals_to_subject_results,
     save_phonics_columns,
     save_phonics_scores,
     sort_phonics_tracker_rows,
@@ -335,6 +336,10 @@ def gap_analysis(subject: str):
         return render_template('teacher/gap_analysis.html', rows=[], questions=[], template=None, max_total=0, papers=[], active_paper='paper_1', setting=None, **context)
 
     template = get_or_create_gap_template(school_class.year_group, subject, context['term'], context['academic_year'])
+    if template.school_id != school_class.school_id:
+        template.school_id = school_class.school_id
+        db.session.add(template)
+        db.session.flush()
     pupils = context['pupils']
     setting = get_subject_setting(school_class.year_group, subject, context['term'])
     paper_tabs = [
@@ -372,17 +377,36 @@ def gap_analysis(subject: str):
                     question_type=question_type,
                     max_score=max_score,
                     display_order=next_order,
+                    school_id=school_class.school_id,
                 )
                 db.session.add(question)
                 db.session.commit()
                 flash(f'Added question {label} to {dict((item["key"], item["label"]) for item in paper_tabs)[active_paper]}.', 'success')
+            elif action == 'sync_results':
+                questions = list(template.questions)
+                outcome = {'warnings': sync_gap_totals_to_subject_results(
+                    pupils,
+                    questions,
+                    school_id=school_class.school_id,
+                    assessment_year_group=school_class.year_group,
+                )}
+                db.session.commit()
+                flash('QLA saved and results table updated.', 'success')
+                for warning in outcome['warnings']:
+                    flash(warning, 'warning')
             else:
                 template.paper_name = request.form.get('paper_name', '').strip() or None
                 questions = parse_question_columns(request.form, template)
                 db.session.flush()
-                outcome = save_gap_scores(pupils, questions, request.form)
+                outcome = save_gap_scores(
+                    pupils,
+                    questions,
+                    request.form,
+                    school_id=school_class.school_id,
+                    assessment_year_group=school_class.year_group,
+                )
                 db.session.commit()
-                flash(f'{format_subject_name(subject)} GAP analysis saved for {school_class.name}.', 'success')
+                flash('QLA saved and results table updated.', 'success')
                 for warning in outcome['warnings']:
                     flash(warning, 'warning')
             return redirect(url_for('teacher.gap_analysis', subject=subject, academic_year=context['academic_year'], term=context['term'], paper=active_paper))

@@ -64,6 +64,12 @@
   {% endfor %}
 </div>
 
+<form method="post" class="mb-3">
+  <input type="hidden" name="action" value="sync_results">
+  <input type="hidden" name="active_paper" value="{{ active_paper }}">
+  <button type="submit" class="btn btn-outline-success btn-sm">Sync totals to results table</button>
+</form>
+
 <div class="card shadow-sm mb-4">
   <div class="card-body py-3">
     <form method="post" class="row g-2 align-items-end">
