@@ -39,6 +39,7 @@ from .assessments import (
     get_class_pupil_query,
     get_current_academic_year,
     get_selected_current_academic_year,
+    get_selected_academic_year,
     get_current_term,
     get_next_sort_direction,
     get_latest_previous_assessment,

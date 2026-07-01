@@ -46,6 +46,7 @@ from app.services import (
     previous_term,
     progress_theme,
     get_selected_current_academic_year,
+    get_selected_academic_year,
     get_current_term,
     get_class_pupil_query,
     get_foundation_half_term,
@@ -391,7 +392,7 @@ def gap_analysis(subject: str):
                     assessment_year_group=school_class.year_group,
                 )}
                 db.session.commit()
-                flash('QLA saved and results table updated.', 'success')
+                flash(f'QLA saved and synced to {context["academic_year"]} results table.', 'success')
                 for warning in outcome['warnings']:
                     flash(warning, 'warning')
             else:
@@ -406,10 +407,10 @@ def gap_analysis(subject: str):
                     assessment_year_group=school_class.year_group,
                 )
                 db.session.commit()
-                flash('QLA saved and results table updated.', 'success')
+                flash(f'QLA saved and synced to {context["academic_year"]} results table.', 'success')
                 for warning in outcome['warnings']:
                     flash(warning, 'warning')
-            return redirect(url_for('teacher.gap_analysis', subject=subject, academic_year=context['academic_year'], term=context['term'], paper=active_paper))
+            return redirect(url_for('teacher.gap_analysis', subject=subject, year=context['selected_year'].id, academic_year=context['academic_year'], term=context['term'], paper=active_paper))
         except (ValueError, AssessmentValidationError) as exc:
             db.session.rollback()
             flash(f'GAP analysis could not be saved: {exc}', 'danger')
@@ -787,8 +788,9 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
 
 def _base_subject_context(subject_key: str) -> dict:
     school_class = get_primary_class_for_user(current_user)
+    selected_year = get_selected_academic_year(request.values.get('year'), request.values.get('academic_year'))
     current_year = get_selected_current_academic_year()
-    academic_year = request.values.get('academic_year', current_year)
+    academic_year = selected_year.name
     term = request.values.get('term', get_current_term())
     filters = build_admin_pupil_filter_state(request.values)
     sort_state = build_table_sort_state(
@@ -805,6 +807,7 @@ def _base_subject_context(subject_key: str) -> dict:
         'school_class': school_class,
         'current_year': current_year,
         'academic_year': academic_year,
+        'selected_year': selected_year,
         'term': term,
         'filters': filters,
         'sort_state': sort_state,
@@ -865,6 +868,7 @@ def render_subject_page(subject_key: str):
             return redirect(
                 url_for(
                     f'teacher.{subject_key}',
+                    year=context['selected_year'].id,
                     academic_year=context['academic_year'],
                     term=context['term'],
                     search=context['filters']['search'],
@@ -1000,6 +1004,7 @@ def render_subject_page(subject_key: str):
             return redirect(
                 url_for(
                     f'teacher.{subject_key}',
+                    year=context['selected_year'].id,
                     academic_year=context['academic_year'],
                     term=context['term'],
                     search=context['filters']['search'],
@@ -1106,6 +1111,7 @@ def render_writing_page():
             return redirect(
                 url_for(
                     'teacher.writing',
+                    year=context['selected_year'].id,
                     academic_year=context['academic_year'],
                     term=context['term'],
                     search=context['filters']['search'],

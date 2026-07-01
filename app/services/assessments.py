@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import or_
@@ -94,6 +95,25 @@ BOOLEAN_FILTER_CHOICES = {
 }
 SATS_SUBJECTS = ('reading', 'maths', 'spag')
 SATS_ASSESSMENT_POINTS = (1, 2, 3, 4)
+
+
+@dataclass(frozen=True)
+class AcademicYearOption:
+    id: int | str
+    name: str
+
+    @property
+    def label(self) -> str:
+        return self.name
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return self.name == other
+        return super().__eq__(other)
+
 
 SUBJECT_DEFAULTS = {
     'maths': {
@@ -205,12 +225,37 @@ def get_current_term(today: datetime | None = None) -> str:
     return 'summer'
 
 
-def build_academic_year_options(current_year: str, total_years: int = 4) -> list[str]:
+def build_academic_year_options(current_year: str | None = None, total_years: int = 4) -> list:
+    """Return AcademicYear rows for selectors, falling back to generated names."""
+    rows = AcademicYear.query.order_by(AcademicYear.name.desc()).all()
+    if rows:
+        return [AcademicYearOption(row.id, row.name) for row in rows]
+    current_year = current_year or get_current_academic_year()
     start_year = int(current_year.split('/')[0])
     years = [f'{year}/{str(year + 1)[-2:]}' for year in range(start_year - 1, start_year - 1 + total_years)]
     if current_year not in years:
         years.append(current_year)
-    return sorted(set(years), reverse=True)
+    return [AcademicYearOption(name, name) for name in sorted(set(years), reverse=True)]
+
+
+def get_selected_academic_year(raw_year_id: str | None = None, raw_academic_year: str | None = None) -> AcademicYear:
+    """Resolve a selected academic year from `year=<id>`, falling back to current."""
+    selected = None
+    if raw_year_id:
+        try:
+            selected = AcademicYear.query.get(int(raw_year_id))
+        except (TypeError, ValueError):
+            selected = None
+    if selected is None and raw_academic_year:
+        selected = AcademicYear.query.filter_by(name=raw_academic_year).first()
+    if selected is None:
+        selected = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
+    if selected is None:
+        current_name = get_current_academic_year()
+        selected = AcademicYear.query.filter_by(name=current_name).first()
+    if selected is None:
+        selected = AcademicYear(name=get_current_academic_year(), is_current=True)
+    return selected
 
 
 
