@@ -21,11 +21,35 @@
 </div>
 
 
+<form method="get" class="card shadow-sm mb-3">
+  <div class="card-body d-flex flex-wrap gap-3 align-items-end">
+    <div>
+      <label class="form-label small text-muted" for="academic_year_id">Academic year</label>
+      <select class="form-select form-select-sm" id="academic_year_id" name="academic_year_id">
+        {% for year in academic_year_options %}
+          <option value="{{ year.id }}" {% if year.id|string == selected_year_id|string %}selected{% endif %}>{{ year.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label small text-muted" for="term">Term</label>
+      <select class="form-select form-select-sm" id="term" name="term">
+        <option value="" {% if not selected_term %}selected{% endif %}>Latest available</option>
+        {% for term_value, term_label in [('autumn','Autumn'), ('spring','Spring'), ('summer','Summer')] %}
+          <option value="{{ term_value }}" {% if selected_term == term_value %}selected{% endif %}>{{ term_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary btn-sm">Apply</button>
+    <span class="small text-muted">Showing {{ selected_academic_year }}{% if selected_term %} · {{ selected_term|title }}{% else %} · latest term{% endif %}</span>
+  </div>
+</form>
+
 <div id="pupil-profile-pdf">
   <div class="card shadow-sm mb-4">
     <div class="card-body">
-      <h4 class="mb-1">{{ pupil.full_name }} — Year {{ pupil.school_class.year_group }}</h4>
-      <p class="mb-2 text-muted">Class: {{ pupil.school_class.name }}</p>
+      <h4 class="mb-1">{{ pupil.full_name }} — {% if selected_profile_year_group == 0 %}Reception{% elif selected_profile_year_group is not none %}Year {{ selected_profile_year_group }}{% else %}Year —{% endif %}</h4>
+      <p class="mb-2 text-muted">Class: {{ selected_profile_class_name }}</p>
       <p class="mb-2 text-muted">Year Joined School: {% if pupil.join_year_group == 0 %}Reception{% elif pupil.join_year_group is not none %}Year {{ pupil.join_year_group }}{% else %}Unknown{% endif %}</p>
       <p class="mb-2 text-muted">Join Date: {{ pupil.join_date or '' }}</p>
       <div class="d-flex flex-wrap gap-2 mb-3">
@@ -42,7 +66,7 @@
               <strong>{{ label }}:</strong>
               {% if item and item.band %}
                 <span class="badge text-bg-{{ item.band_theme }}">{{ short_band_label(item.band) }}</span>
-                <span class="{% if item.progress_theme %}text-{{ item.progress_theme }}{% else %}text-muted{% endif %}">{{ item.progress_label or '—' }}</span>
+                <span>{{ item.display or '—' }}</span>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}

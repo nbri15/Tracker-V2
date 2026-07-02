@@ -77,7 +77,8 @@ def get_eyfs_data(pupil: Pupil, academic_year: str | None = None) -> dict:
 def build_pupil_overview_data(pupil: Pupil, academic_year: str | None = None) -> dict:
     """Year-specific overview payload used by pages and exports."""
     year = academic_year or get_selected_current_academic_year()
-    year_group = pupil.school_class.year_group if pupil.school_class else None
+    history_row = next((row for row in pupil.class_history if row.academic_year == year), None)
+    year_group = history_row.year_group if history_row else (pupil.school_class.year_group if pupil.school_class else None)
     payload = {
         'academic_year': year,
         'year_group': year_group,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
 
@@ -26,7 +26,7 @@ from app.models import (
     TimesTableScore,
     WritingResult,
 )
-from app.services import build_pupil_overview_data, format_progress_delta, progress_theme, summarize_gld_status
+from app.services import build_academic_year_options, build_pupil_overview_data, format_progress_delta, get_selected_academic_year, progress_theme, summarize_gld_status
 from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, teacher_or_admin_required
 
 from . import pupils_bp
@@ -97,7 +97,14 @@ def profile(pupil_id: int):
         flash('Pupil notes saved.', 'success')
         return redirect(url_for('pupils.profile', pupil_id=pupil.id))
 
-    overview_data = build_pupil_overview_data(pupil)
+    selected_year = get_selected_academic_year(request.args.get('academic_year_id'), request.args.get('academic_year'))
+    selected_year_id = selected_year.id
+    selected_academic_year = selected_year.name
+    selected_term = (request.args.get('term') or '').strip().lower() or None
+    if selected_term == 'all':
+        selected_term = None
+
+    overview_data = build_pupil_overview_data(pupil, selected_academic_year)
     subject_rows = overview_data['tracker']['subject_rows']
     writing_rows = overview_data['tracker']['writing_rows']
     phonics_rows = overview_data['phonics']
@@ -107,8 +114,13 @@ def profile(pupil_id: int):
     sats_column_rows = overview_data['sats']
     intervention_rows = Intervention.query.filter_by(pupil_id=pupil.id).order_by(Intervention.created_at.desc()).all()
     history_rows = PupilClassHistory.query.filter_by(pupil_id=pupil.id).order_by(PupilClassHistory.academic_year.desc()).all()
+    selected_history_row = next((row for row in history_rows if row.academic_year == selected_academic_year), None)
+    selected_profile_year_group = overview_data.get('year_group')
+    selected_profile_class_name = selected_history_row.class_name if selected_history_row else (pupil.school_class.name if pupil.school_class else '—')
 
-    latest_summary = _build_latest_summary(subject_rows, writing_rows)
+    latest_summary, latest_result_rows = _build_selected_latest_summary(pupil.id, selected_academic_year, selected_term)
+    latest_foundation_rows = _filter_latest_foundation_rows(pupil.id, selected_academic_year, selected_term)
+    _log_profile_assessment_debug(pupil.id, selected_year_id, selected_term, latest_result_rows, len(latest_foundation_rows))
     subject_history_cards = _build_subject_history_cards(subject_rows, writing_rows)
     intervention_summary = {
         'total': len(intervention_rows),
@@ -119,11 +131,11 @@ def profile(pupil_id: int):
     active_focuses = sorted({row.subject for row in intervention_rows if row.is_active and row.subject})
 
     missing_data_warnings = []
-    if not latest_summary.get('reading'):
+    if not latest_summary.get('reading', {}).get('band'):
         missing_data_warnings.append('Missing Reading result.')
-    if not latest_summary.get('maths'):
+    if not latest_summary.get('maths', {}).get('band'):
         missing_data_warnings.append('Missing Maths result.')
-    if not latest_summary.get('writing'):
+    if not latest_summary.get('writing', {}).get('band'):
         missing_data_warnings.append('Missing Writing judgement.')
 
     phonics_view_rows = [
@@ -164,7 +176,7 @@ def profile(pupil_id: int):
         times_tables_rows=times_tables_view_rows,
         reception_rows=reception_rows,
         foundation_history=_build_foundation_history(foundation_rows),
-        latest_foundation=_latest_foundation_by_subject(foundation_rows),
+        latest_foundation=_latest_foundation_by_subject(latest_foundation_rows),
         sats_column_rows=sats_column_rows,
         gld_status=summarize_gld_status(reception_rows),
         intervention_rows=intervention_rows,
@@ -173,10 +185,114 @@ def profile(pupil_id: int):
         active_focuses=active_focuses,
         history_rows=history_rows,
         missing_data_warnings=missing_data_warnings,
+        academic_year_options=build_academic_year_options(),
+        selected_year_id=selected_year_id,
+        selected_term=selected_term or '',
+        selected_academic_year=selected_academic_year,
+        selected_profile_year_group=selected_profile_year_group,
+        selected_profile_class_name=selected_profile_class_name,
         gap_rows=gap_rows,
     )
 
 
+
+def _latest_term_row(query, term_attr='term'):
+    rows = query.all()
+    if not rows:
+        return None
+    return sorted(rows, key=lambda row: (_term_rank(getattr(row, term_attr)), row.updated_at), reverse=True)[0]
+
+
+def _build_selected_latest_summary(pupil_id: int, academic_year: str, selected_term: str | None) -> tuple[dict, dict]:
+    latest_rows = {}
+    summary = {}
+    for subject in ['reading', 'maths', 'spag']:
+        query = SubjectResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year, subject=subject)
+        if selected_term:
+            query = query.filter(SubjectResult.term == selected_term)
+        row = _latest_term_row(query)
+        latest_rows[subject] = row
+        summary[subject] = _selected_subject_payload(row)
+
+    writing_query = WritingResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year)
+    if selected_term:
+        writing_query = writing_query.filter(WritingResult.term == selected_term)
+    writing_row = _latest_term_row(writing_query)
+    latest_rows['writing'] = writing_row
+    summary['writing'] = _selected_writing_payload(writing_row)
+
+    available_bands = [payload.get('band') for key, payload in summary.items() if key != 'overall' and payload.get('band')]
+    if not available_bands:
+        overall_label = None
+    elif any(_is_working_towards(band) for band in available_bands):
+        overall_label = 'Needs support'
+    else:
+        overall_label = 'On track'
+    summary['overall'] = {
+        'band': overall_label,
+        'display': overall_label or '—',
+        'band_theme': 'danger' if overall_label == 'Needs support' else ('success' if overall_label else 'secondary'),
+        'rank': 1 if overall_label == 'Needs support' else (2 if overall_label else None),
+    }
+    return summary, latest_rows
+
+
+def _selected_subject_payload(row: SubjectResult | None) -> dict:
+    if row is None:
+        return {'band': None, 'display': '—', 'band_theme': 'secondary'}
+    percent = f'{row.combined_percent:.1f}%' if row.combined_percent is not None else '—'
+    band = row.band_label or '—'
+    term = (row.term or '').title()
+    return {
+        'band': row.band_label,
+        'display': f'{percent} — {band} ({term})',
+        'band_theme': BAND_THEME.get(row.band_label or '', 'secondary'),
+        'rank': BAND_RANK.get(row.band_label) if row.band_label else None,
+        'current_percent': row.combined_percent,
+    }
+
+
+def _selected_writing_payload(row: WritingResult | None) -> dict:
+    if row is None:
+        return {'band': None, 'display': '—', 'band_theme': 'secondary'}
+    term = (row.term or '').title()
+    return {
+        'band': row.band,
+        'display': f'{row.band} ({term})',
+        'band_theme': BAND_THEME.get(row.band or '', 'secondary'),
+        'rank': BAND_RANK.get(row.band) if row.band else None,
+    }
+
+
+def _is_working_towards(band: str | None) -> bool:
+    return (band or '').strip().lower() in {'working towards', 'working toward', 'wt', 'below', 'below expected'}
+
+
+def _filter_latest_foundation_rows(pupil_id: int, academic_year: str, selected_term: str | None) -> list[FoundationResult]:
+    query = FoundationResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year)
+    rows = query.all()
+    if not rows:
+        return []
+    if selected_term:
+        rows = [row for row in rows if (row.half_term or '').lower().startswith(f'{selected_term}_')]
+        if not rows:
+            return []
+    latest_half_term = max((row.half_term for row in rows), key=_half_term_rank)
+    return [row for row in rows if row.half_term == latest_half_term]
+
+
+def _log_profile_assessment_debug(pupil_id: int, selected_year_id: int | str | None, selected_term: str | None, latest_rows: dict, foundation_count: int) -> None:
+    current_app.logger.debug(
+        'pupil summary assessment lookup pupil_id=%s selected_year_id=%s selected_term=%s maths row found=%s reading row found=%s spag row found=%s writing row found=%s foundation rows count=%s',
+        pupil_id,
+        selected_year_id,
+        selected_term or 'latest',
+        bool(latest_rows.get('maths')),
+        bool(latest_rows.get('reading')),
+        bool(latest_rows.get('spag')),
+        bool(latest_rows.get('writing')),
+        foundation_count,
+    )
 
 
 @pupils_bp.route('/api/pupil-profile/quick-save', methods=['POST'])
