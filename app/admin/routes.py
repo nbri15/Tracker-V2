@@ -9,14 +9,38 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Response, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Response, current_app, flash, jsonify, make_response, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user, login_required
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
+from weasyprint import HTML
 
 from app.extensions import db
+
+
+def _pdf_requested() -> bool:
+    return request.args.get('format', '').strip().lower() == 'pdf' or request.args.get('pdf', '0') == '1'
+
+
+def _render_table_pdf(title: str, headers: list, rows: list, filters: dict | None = None, anonymised: bool = False, filename: str | None = None, subtitle: str | None = None):
+    safe_title = title if not anonymised else title.replace('named', 'anonymised').replace('Named', 'Anonymised')
+    html = render_template(
+        'exports/table_pdf.html',
+        title=safe_title,
+        subtitle=subtitle,
+        headers=headers,
+        rows=rows,
+        filters=filters or {},
+        anonymise=anonymised,
+        generated_at=datetime.now(timezone.utc),
+    )
+    pdf = HTML(string=html, base_url=request.host_url).write_pdf()
+    response = make_response(pdf)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename={filename or "table_report.pdf"}'
+    return response
 from app.models import (
     School,
     AcademicYear,
@@ -775,8 +799,9 @@ def class_detail(class_id: int):
 
     export_mode = request.args.get('export', '').strip().lower() == 'csv'
     print_mode = request.args.get('print', '0') == '1'
+    pdf_mode = _pdf_requested()
     anon_mode = request.args.get('anon', '0') == '1'
-    if export_mode or print_mode:
+    if export_mode or print_mode or pdf_mode:
         headers = ['Pupil', 'Class', 'Gender', 'PP', 'SEND', 'LAPS', 'Service']
         rows = []
         for idx, row in enumerate(context['pupil_rows'], start=1):
@@ -793,7 +818,11 @@ def class_detail(class_id: int):
         if export_mode:
             out = io.StringIO(); w = csv.writer(out); w.writerow(headers); w.writerows(rows)
             return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename=class_{context["selected_subject"]}_export.csv'})
-        return render_template('admin/report_table.html', title=f'{context["subject_label"]} class report', subtitle='Anonymised' if anon_mode else 'Named', headers=headers, rows=rows, filters=pupil_filters, anonymised=anon_mode)
+        title = f'{context["subject_label"]} class report'
+        subtitle = 'Anonymised' if anon_mode else 'Named'
+        if pdf_mode:
+            return _render_table_pdf(title, headers, rows, pupil_filters, anon_mode, f'class_{context["selected_subject"]}_report.pdf', subtitle)
+        return render_template('admin/report_table.html', title=title, subtitle=subtitle, headers=headers, rows=rows, filters=pupil_filters, anonymised=anon_mode)
 
     return render_template(
         'admin/class_detail.html',
@@ -1296,6 +1325,13 @@ def pupils():
     elif send_filter == 'no':
         query = query.filter(or_(Pupil.send.is_(False), Pupil.send.is_(None)))
     pupils = query.order_by(Pupil.last_name, Pupil.first_name).all()
+    if _pdf_requested() or request.args.get('print', '0') == '1':
+        anon_mode = request.args.get('anon', '0') == '1'
+        headers = ['Pupil', 'Class', 'Gender', 'PP', 'SEND', 'LAPS', 'Service']
+        rows = [[f'Pupil {idx}' if anon_mode else pupil.full_name, pupil.school_class.name if pupil.school_class else '', normalize_gender(pupil.gender) or '', 'Yes' if pupil.pupil_premium else 'No', 'Yes' if pupil.send else 'No', 'Yes' if pupil.laps else 'No', 'Yes' if pupil.service_child else 'No'] for idx, pupil in enumerate(pupils, start=1)]
+        filters = dict(pupil_filters, class_id=class_id_raw, send=send_filter)
+        if _pdf_requested():
+            return _render_table_pdf('Pupil overview' if not anon_mode else 'Pupil overview — anonymised', headers, rows, filters, anon_mode, 'pupil_overview.pdf')
     return render_template(
         'admin/pupils.html',
         pupils=pupils,
@@ -1714,6 +1750,11 @@ def interventions():
     query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
     current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
+    if _pdf_requested():
+        headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score']
+        table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.focus_area or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—'] for idx, row in enumerate(rows, start=1)]
+        filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status}
+        return _render_table_pdf('Interventions' if not anon_mode else 'Interventions — anonymised', headers, table_rows, filters, anon_mode, 'interventions.pdf')
 
     return render_template(
         'admin/interventions.html',
@@ -2562,6 +2603,27 @@ def export_headline_report():
         report.get('debug', {}).get('result_count'),
     )
 
+    header = [report.get('row_header_label', 'Year group')]
+    for term in report['buckets']:
+        term_label = report['bucket_labels'][term]
+        for measure_key in report['measure_keys']:
+            header.append(f"{term_label} {report['measure_labels'][measure_key]}")
+    table_rows = []
+    for row in report['rows']:
+        row_data = [row.get('label') or f"Year {row.get('year_group', '')}".strip()]
+        for term in report['buckets']:
+            for measure_key in report['measure_keys']:
+                row_data.append(row['cells'][term][measure_key]['display'])
+        table_rows.append(row_data)
+    total_row = ['Whole school']
+    for term in report['buckets']:
+        for measure_key in report['measure_keys']:
+            total_row.append(report['totals'][term][measure_key]['display'])
+    table_rows.append(total_row)
+    if request.args.get('format', '').strip().lower() == 'pdf':
+        filters = {'academic_year': academic_year, 'subject': report['subject_label'], 'year_group': f'Year {year_group}' if year_group is not None else 'Whole school', 'send': send_filter}
+        return _render_table_pdf('Headline report', header, table_rows, filters, False, 'headline_report.pdf', report['subject_label'])
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['Headline report'])
@@ -2631,6 +2693,8 @@ def report_class_overview():
     if fmt == 'xlsx':
         data = _build_xlsx(headers, rows, 'Class overview')
         return Response(data, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=class_overview_report.xlsx'})
+    if fmt == 'pdf':
+        return _render_table_pdf('Class overview report', headers, rows, filters, False, 'class_overview_report.pdf', 'Printable class summary')
     return render_template('admin/report_table.html', title='Class overview report', subtitle='Printable class summary', headers=headers, rows=rows, filters=filters, anonymised=False)
 
 
@@ -2657,6 +2721,8 @@ def report_governor_summary():
         return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition':'attachment; filename=governor_summary_report.csv'})
     if fmt=='xlsx':
         return Response(_build_xlsx(headers,rows,'Governor summary'), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=governor_summary_report.xlsx'})
+    if fmt == 'pdf':
+        return _render_table_pdf('Governor / SLT anonymised summary', headers, rows, filters, True, 'governor_summary_report.pdf', 'No pupil names included')
     return render_template('admin/report_table.html', title='Governor / SLT anonymised summary', subtitle='No pupil names included', headers=headers, rows=rows, filters=filters, anonymised=True)
 @admin_bp.route('/exports/subject-results')
 @login_required
