@@ -25,22 +25,46 @@ def _pdf_requested() -> bool:
 
 
 def _render_table_pdf(title: str, headers: list, rows: list, filters: dict | None = None, anonymised: bool = False, filename: str | None = None, subtitle: str | None = None):
+    template_name = 'exports/table_pdf.html'
     safe_title = title if not anonymised else title.replace('named', 'anonymised').replace('Named', 'Anonymised')
-    html = render_template(
-        'exports/table_pdf.html',
-        title=safe_title,
-        subtitle=subtitle,
-        headers=headers,
-        rows=rows,
-        filters=filters or {},
-        anonymise=anonymised,
-        generated_at=datetime.now(timezone.utc),
+    current_app.logger.info(
+        'PDF export route hit endpoint=%s template=%s rows=%s anonymised=%s filename=%s',
+        request.endpoint,
+        template_name,
+        len(rows),
+        anonymised,
+        filename or 'table_report.pdf',
     )
-    pdf = HTML(string=html, base_url=request.host_url).write_pdf()
-    response = make_response(pdf)
+    try:
+        html = render_template(
+            template_name,
+            title=safe_title,
+            subtitle=subtitle,
+            headers=headers,
+            rows=rows,
+            filters=filters or {},
+            anonymise=anonymised,
+            generated_at=datetime.now(timezone.utc),
+        )
+        pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf()
+    except Exception:
+        current_app.logger.exception('PDF generation failed endpoint=%s template=%s rows=%s', request.endpoint, template_name, len(rows))
+        flash('PDF could not be generated. Check server logs.', 'danger')
+        return redirect(request.referrer or url_for('admin.classes'))
+
+    current_app.logger.info(
+        'PDF export generated endpoint=%s template=%s rows=%s bytes=%s',
+        request.endpoint,
+        template_name,
+        len(rows),
+        len(pdf_bytes),
+    )
+    response = make_response(pdf_bytes)
     response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = f'attachment; filename={filename or "table_report.pdf"}'
+    response.headers['Content-Disposition'] = f'attachment; filename={filename or "table-export.pdf"}'
     return response
+
+
 from app.models import (
     School,
     AcademicYear,

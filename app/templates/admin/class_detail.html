@@ -215,7 +215,7 @@
       <strong>{{ subject_label }} pupil table</strong>
       <div class="d-flex gap-2 align-items-center">
         <span class="small text-muted">Showing {{ pupil_rows|length }} pupils · {{ selected_term|title }} term · click headings to sort</span>
-        <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#admin-class-subject-export" data-pdf-filename="{{ selected_subject }}-{{ selected_term }}-{{ academic_year }}-class-view.pdf">Download PDF</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject, term=selected_term, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, search=filters.search, sort=sort_state.column, direction=sort_state.direction, pdf=1, anon=request.args.get('anon', '0')) }}">Download PDF</a>
       </div>
     </div>
     <div class="table-responsive">
@@ -311,7 +311,7 @@
       <strong>Year 6 SATs overview</strong>
       <div class="d-flex gap-2 align-items-center">
         <span class="small text-muted">Latest saved SATs values for the filtered pupils</span>
-        <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#admin-class-sats-export" data-pdf-filename="admin-sats-overview-{{ academic_year }}.pdf">Download PDF</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.class_detail', class_id=school_class.id, academic_year=academic_year, subject=selected_subject, term=selected_term, pupil_status=filters.pupil_status, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, search=filters.search, sort=sort_state.column, direction=sort_state.direction, pdf=1, anon=request.args.get('anon', '0')) }}">Download PDF</a>
       </div>
     </div>
     <div class="table-responsive">
