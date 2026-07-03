@@ -108,7 +108,7 @@
     </div>
     <div class="d-flex align-items-center gap-2">
       <span class="text-muted small">{{ rows|length }} pupils shown</span>
-      <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#writing-results-export" data-pdf-filename="writing-{{ term }}-{{ academic_year }}-results.pdf">Download PDF</button>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.writing', year=selected_year.id, academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, sort=sort_state.column, direction=sort_state.direction, pdf=1) }}">Download PDF</a>
     </div>
   </div>
   <div class="card-body p-0">

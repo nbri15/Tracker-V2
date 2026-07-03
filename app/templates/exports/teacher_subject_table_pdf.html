@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ subject_label }} tracker</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111827; font-size: 10px; margin: 0; }
+    header { margin-bottom: 8mm; border-bottom: 1px solid #d1d5db; padding-bottom: 4mm; }
+    h1 { font-size: 18px; margin: 0 0 2mm; }
+    .subtitle, .meta { color: #4b5563; font-size: 10px; margin-bottom: 2mm; }
+    .filters { margin-top: 3mm; font-size: 9px; }
+    .filter { display: inline-block; border: 1px solid #d1d5db; border-radius: 2mm; padding: 1mm 2mm; margin: 0 1mm 1mm 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 9px; page-break-inside: auto; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+    th, td { border: 1px solid #ccc; padding: 4px; vertical-align: top; overflow-wrap: anywhere; }
+    th { background: #f3f4f6; font-weight: 700; text-align: left; }
+    tbody tr:nth-child(even) td { background: #fafafa; }
+    .empty { text-align: center; color: #6b7280; padding: 8mm; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{ subject_label }} tracker</h1>
+    <div class="subtitle">
+      {{ school_class.name if school_class else 'No class assigned' }} · {{ academic_year }} · {{ get_term_label(term) }} · {{ rows|length }} pupils
+    </div>
+    <div class="meta">Generated {{ generated_at.strftime('%d %b %Y %H:%M UTC') }}{% if anonymise %} · Anonymised{% endif %}</div>
+    {% if filters %}
+      <div class="filters"><strong>Filters:</strong>
+        {% for key, value in filters.items() if value is not none and value != '' and value != 'all' %}
+          <span class="filter">{{ key|replace('_', ' ')|title }}: {{ value }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </header>
+
+  <table>
+    {% if subject_key == 'writing' %}
+      <thead>
+        <tr><th>Pupil</th><th>Band</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ 'Pupil ' ~ loop.index if anonymise else row.pupil.full_name }}</td>
+            <td>{{ row.band_label if row.band_label else '—' }}</td>
+            <td>{{ row.notes if row.notes else '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td class="empty" colspan="3">No pupils match the current filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    {% else %}
+      <thead>
+        <tr>
+          <th>Pupil</th>
+          <th>{{ setting.paper_1_name if setting else 'Paper 1' }}</th>
+          <th>{{ setting.paper_2_name if setting else 'Paper 2' }}</th>
+          <th>Combined</th>
+          <th>Percent</th>
+          <th>Category</th>
+          <th>Test</th>
+          <th>Progress</th>
+          <th>Notes</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ 'Pupil ' ~ loop.index if anonymise else row.pupil.full_name }}</td>
+            <td>{{ row.paper_1_score if row.paper_1_score not in [none, ''] else '—' }}</td>
+            <td>{{ row.paper_2_score if row.paper_2_score not in [none, ''] else '—' }}</td>
+            <td>{{ row.combined_score if row.combined_score is not none else '—' }}</td>
+            <td>{% if row.combined_percent is not none %}{{ '%.1f'|format(row.combined_percent) }}%{% else %}—{% endif %}</td>
+            <td>{{ row.band_label if row.band_label else '—' }}</td>
+            <td>Year {{ row.assessment_year_group }}</td>
+            <td>{{ row.progress_label if row.progress_label else '—' }}</td>
+            <td>{{ row.notes if row.notes else '—' }}</td>
+            <td>{{ row.source if row.source else '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td class="empty" colspan="10">No pupils match the current filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    {% endif %}
+  </table>
+</body>
+</html>
