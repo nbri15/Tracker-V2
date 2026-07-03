@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import current_app, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
@@ -844,6 +844,58 @@ def _build_subject_rows(pupils: list[Pupil], existing_by_pupil: dict[int, Subjec
     return rows
 
 
+def _pdf_redirect_url() -> str:
+    args = request.args.to_dict(flat=True)
+    args.pop('pdf', None)
+    if request.endpoint:
+        return url_for(request.endpoint, **args)
+    return request.referrer or url_for('dashboards.teacher_dashboard')
+
+
+def export_teacher_subject_pdf(subject_key: str, context: dict, rows: list[dict], anonymise: bool = False):
+    current_app.logger.info(
+        'PDF export requested subject=%s year=%s row_count=%s anonymise=%s',
+        subject_key,
+        context['selected_year'].id if context.get('selected_year') else context.get('academic_year'),
+        len(rows),
+        anonymise,
+    )
+    try:
+        from weasyprint import HTML
+
+        html = render_template(
+            'exports/teacher_subject_table_pdf.html',
+            subject_key=subject_key,
+            subject_label=context['page_title'],
+            pupils=context['pupils'],
+            rows=rows,
+            year=context['selected_year'],
+            filters=context['filters'],
+            anonymise=anonymise,
+            academic_year=context['academic_year'],
+            term=context['term'],
+            school_class=context['school_class'],
+            setting=context.get('setting'),
+            generated_at=datetime.now(timezone.utc),
+        )
+        pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf()
+    except Exception:
+        current_app.logger.exception(
+            'Teacher subject PDF generation failed subject=%s year=%s row_count=%s anonymise=%s',
+            subject_key,
+            context['selected_year'].id if context.get('selected_year') else context.get('academic_year'),
+            len(rows),
+            anonymise,
+        )
+        flash('PDF export is not available on this server.', 'danger')
+        return redirect(_pdf_redirect_url())
+
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename={subject_key}-tracker.pdf'
+    return response
+
+
 def render_subject_page(subject_key: str):
     context = _base_subject_context(subject_key)
     school_class = context['school_class']
@@ -1038,6 +1090,14 @@ def render_subject_page(subject_key: str):
     active_interventions = sync_auto_interventions(school_class, subject_key, context['term'], context['academic_year'], setting.below_are_threshold_percent)
     db.session.commit()
     rows = sort_subject_result_rows(rows, context['sort_state']['column'], context['sort_state']['direction'])
+    context['setting'] = setting
+    if request.args.get('pdf') == '1':
+        return export_teacher_subject_pdf(
+            subject_key=subject_key,
+            context=context,
+            rows=rows,
+            anonymise=request.args.get('anonymous') == '1' or request.args.get('anon') == '1',
+        )
     return render_template(
         'teacher/subject_scores.html',
         rows=rows,
@@ -1137,6 +1197,13 @@ def render_writing_page():
             'outcome_theme': get_writing_outcome_theme(existing.band if existing else None),
         })
     rows = sort_writing_result_rows(rows, context['sort_state']['column'], context['sort_state']['direction'])
+    if request.args.get('pdf') == '1':
+        return export_teacher_subject_pdf(
+            subject_key='writing',
+            context=context,
+            rows=rows,
+            anonymise=request.args.get('anonymous') == '1' or request.args.get('anon') == '1',
+        )
     return render_template(
         'teacher/writing_results.html',
         rows=rows,

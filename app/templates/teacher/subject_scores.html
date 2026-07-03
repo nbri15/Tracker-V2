@@ -207,7 +207,7 @@
         <div>{{ setting.paper_1_name if setting else 'Paper 1' }} max: <strong>{{ setting.paper_1_max if setting else '—' }}</strong> · {{ setting.paper_2_name if setting else 'Paper 2' }} max: <strong>{{ setting.paper_2_max if setting else '—' }}</strong></div>
         <div>Combined max: <strong>{{ setting.combined_max if setting else '—' }}</strong> · Pass below <strong>{{ setting.below_are_threshold_percent if setting else '—' }}%</strong></div>
       </div>
-      <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#subject-results-export" data-pdf-filename="{{ subject_key }}-{{ term }}-{{ academic_year }}-results.pdf">Download PDF</button>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.' ~ subject_key, year=selected_year.id, academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, sort=sort_state.column, direction=sort_state.direction, pdf=1) }}">Download PDF</a>
     </div>
   </div>
   <div class="card-body p-0">
