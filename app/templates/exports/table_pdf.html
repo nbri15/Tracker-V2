@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }}</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111827; font-size: 10px; margin: 0; }
+    header { margin-bottom: 8mm; border-bottom: 1px solid #d1d5db; padding-bottom: 4mm; }
+    h1 { font-size: 18px; margin: 0 0 2mm; }
+    .subtitle { color: #4b5563; font-size: 11px; margin-bottom: 2mm; }
+    .meta { color: #374151; font-size: 9px; }
+    .filters { margin-top: 3mm; font-size: 9px; }
+    .filter { display: inline-block; border: 1px solid #d1d5db; border-radius: 2mm; padding: 1mm 2mm; margin: 0 1mm 1mm 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 9px; page-break-inside: auto; }
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+    th, td { border: 1px solid #ccc; padding: 4px; vertical-align: top; overflow-wrap: anywhere; }
+    th { background: #f3f4f6; font-weight: 700; text-align: left; }
+    tbody tr:nth-child(even) td { background: #fafafa; }
+    .empty { text-align: center; color: #6b7280; padding: 8mm; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{ title }}</h1>
+    {% if subtitle %}<div class="subtitle">{{ subtitle }}</div>{% endif %}
+    <div class="meta">Generated {{ generated_at.strftime('%d %b %Y %H:%M UTC') }}{% if anonymise %} · Anonymised{% endif %}</div>
+    {% if filters %}
+      <div class="filters"><strong>Filters:</strong>
+        {% for key, value in filters.items() if value is not none and value != '' %}
+          <span class="filter">{{ key|replace('_', ' ')|title }}: {{ value }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </header>
+  <table>
+    <thead><tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>{% for cell in row %}<td>{{ cell if cell is not none and cell != '' else '—' }}</td>{% endfor %}</tr>
+      {% else %}
+        <tr><td class="empty" colspan="{{ headers|length }}">No data available for selected filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
