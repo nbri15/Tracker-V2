@@ -1098,6 +1098,7 @@ def render_subject_page(subject_key: str):
             rows=rows,
             anonymise=request.args.get('anonymous') == '1' or request.args.get('anon') == '1',
         )
+    context.pop('setting', None)
     return render_template(
         'teacher/subject_scores.html',
         rows=rows,
