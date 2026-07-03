@@ -887,8 +887,25 @@ def export_teacher_subject_pdf(subject_key: str, context: dict, rows: list[dict]
             len(rows),
             anonymise,
         )
-        flash('PDF export is not available on this server.', 'danger')
-        return redirect(_pdf_redirect_url())
+        html = render_template(
+            'exports/teacher_subject_table_pdf.html',
+            subject_key=subject_key,
+            subject_label=context['page_title'],
+            pupils=context['pupils'],
+            rows=rows,
+            year=context['selected_year'],
+            filters=context['filters'],
+            anonymise=anonymise,
+            academic_year=context['academic_year'],
+            term=context['term'],
+            school_class=context['school_class'],
+            setting=context.get('setting'),
+            generated_at=datetime.now(timezone.utc),
+            pdf_error_message='PDF generation failed. Use browser print/save as PDF.',
+        )
+        response = make_response(html)
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        return response
 
     response = make_response(pdf_bytes)
     response.headers['Content-Type'] = 'application/pdf'

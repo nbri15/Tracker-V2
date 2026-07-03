@@ -19,6 +19,7 @@
     th { background: #f3f4f6; font-weight: 700; text-align: left; }
     tbody tr:nth-child(even) td { background: #fafafa; }
     .empty { text-align: center; color: #6b7280; padding: 8mm; }
+    .pdf-fallback-message { margin: 0 0 6mm; border: 1px solid #f59e0b; background: #fffbeb; color: #92400e; padding: 3mm; font-size: 12px; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -36,6 +37,10 @@
       </div>
     {% endif %}
   </header>
+
+  {% if pdf_error_message %}
+    <div class="pdf-fallback-message">{{ pdf_error_message }}</div>
+  {% endif %}
 
   <table>
     {% if subject_key == 'writing' %}
