@@ -457,7 +457,25 @@ def _class_year_overview_context():
             pct=round((count/total)*100) if total else 0
             bands.append({'band':band,'count':count,'total':total,'percent':pct})
         summary.append({'term':term.title(),'bands':bands})
-    return dict(selected_year=selected_year, academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year), subject=subject, subject_options=[('maths','Maths'),('reading','Reading'),('spag','SPaG'),('writing','Writing')], class_options=class_options, selected_class=selected_class, filters=filters, gender_options=get_gender_filter_options(class_id=selected_class.id) if selected_class else [], rows=child_rows, summary=summary, terms=terms)
+    boolean_filter_options = [('all', 'All'), ('yes', 'Yes'), ('no', 'No')]
+    return dict(
+        selected_year=selected_year,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        subject=subject,
+        subject_options=[('maths', 'Maths'), ('reading', 'Reading'), ('spag', 'SPaG'), ('writing', 'Writing')],
+        class_options=class_options,
+        selected_class=selected_class,
+        filters=filters,
+        gender_options=[('all', 'All'), ('male', 'Male'), ('female', 'Female')],
+        pp_options=boolean_filter_options,
+        send_options=boolean_filter_options,
+        laps_options=boolean_filter_options,
+        service_options=boolean_filter_options,
+        rows=child_rows,
+        summary=summary,
+        terms=terms,
+    )
 
 
 def _download_year_overview(ctx, anonymised=False, as_pdf=False):

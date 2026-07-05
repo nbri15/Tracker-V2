@@ -26,15 +26,15 @@
       </div>
       <div class="col-md-2">
         <label class="form-label">Gender</label>
-        <select name="gender" class="form-select"><option value="all">All</option>{% for value,label in gender_options %}<option value="{{ value }}" {% if filters.gender == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <select name="gender" class="form-select">
+          {% for value, label in gender_options %}<option value="{{ value }}" {% if filters.gender == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
       </div>
-      {% for key,label in [('pupil_premium','PP'),('send','SEND'),('laps','LAPS'),('service_child','Service')] %}
+      {% for key, label, options in [('pupil_premium','PP',pp_options),('send','SEND',send_options),('laps','LAPS',laps_options),('service_child','Service',service_options)] %}
       <div class="col-md-1">
         <label class="form-label">{{ label }}</label>
         <select name="{{ key }}" class="form-select">
-          <option value="all" {% if filters[key] == 'all' %}selected{% endif %}>All</option>
-          <option value="yes" {% if filters[key] == 'yes' %}selected{% endif %}>Yes</option>
-          <option value="no" {% if filters[key] == 'no' %}selected{% endif %}>No</option>
+          {% for value, option_label in options %}<option value="{{ value }}" {% if filters[key] == value %}selected{% endif %}>{{ option_label }}</option>{% endfor %}
         </select>
       </div>
       {% endfor %}
