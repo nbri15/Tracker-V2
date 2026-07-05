@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Class yearly overview{% endblock %}
+{% set page_heading = 'Class yearly overview' %}
+{% block content %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>Filters</strong></div>
+  <div class="card-body">
+    <form method="get" class="form-grid">
+      <div class="col-md-2">
+        <label class="form-label">Academic year</label>
+        <select name="year" class="form-select">
+          {% for year in academic_year_options %}<option value="{{ year.id }}" {% if selected_year and year.id == selected_year.id %}selected{% endif %}>{{ year.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Class</label>
+        <select name="class_id" class="form-select">
+          {% for class in class_options %}<option value="{{ class.id }}" {% if selected_class and class.id == selected_class.id %}selected{% endif %}>{{ class.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Subject</label>
+        <select name="subject" class="form-select">
+          {% for value,label in subject_options %}<option value="{{ value }}" {% if subject == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Gender</label>
+        <select name="gender" class="form-select"><option value="all">All</option>{% for value,label in gender_options %}<option value="{{ value }}" {% if filters.gender == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </div>
+      {% for key,label in [('pupil_premium','PP'),('send','SEND'),('laps','LAPS'),('service_child','Service')] %}
+      <div class="col-md-1">
+        <label class="form-label">{{ label }}</label>
+        <select name="{{ key }}" class="form-select">
+          <option value="all" {% if filters[key] == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if filters[key] == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if filters[key] == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      {% endfor %}
+      <input type="hidden" name="pupil_status" value="active">
+      <div class="col-md-2 d-flex gap-2"><button class="btn btn-primary flex-grow-1">Apply</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  {% set qs = request.query_string.decode() %}
+  <a class="btn btn-outline-secondary btn-sm" href="{{ request.path }}?{{ qs }}{% if qs %}&{% endif %}download=csv">Download CSV</a>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ request.path }}?{{ qs }}{% if qs %}&{% endif %}download=pdf">Download PDF</a>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ request.path }}?{{ qs }}{% if qs %}&{% endif %}download=anon_pdf">Download anonymised PDF</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>{{ dict(subject_options).get(subject) }} overview</strong></div>
+  <div class="card-body row g-3">
+    {% for term in summary %}
+      <div class="col-md-4">
+        <h3 class="h6">{{ term.term }}</h3>
+        <ul class="list-unstyled mb-0">
+          {% for band in term.bands %}<li>{{ band.band }}: <strong>{{ band.percent }}%</strong> ({{ band.count }}/{{ band.total }})</li>{% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr><th>Pupil</th><th>Autumn</th><th>Spring</th><th>Summer</th><th>Progress/Notes</th></tr></thead>
+      <tbody>
+        {% for row in rows %}<tr><td>{{ row.pupil.full_name }}</td><td>{{ row.cells.autumn }}</td><td>{{ row.cells.spring }}</td><td>{{ row.cells.summer }}</td><td class="text-muted">—</td></tr>{% else %}<tr><td colspan="5" class="text-muted text-center py-4">No pupils match these filters.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
