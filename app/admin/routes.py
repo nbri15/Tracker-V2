@@ -144,6 +144,7 @@ from app.services import (
     get_class_detail_context,
     get_class_pupil_query,
     get_selected_current_academic_year,
+    get_selected_academic_year,
     get_foundation_half_term,
     get_gender_filter_options,
     get_next_sort_direction,
@@ -1584,6 +1585,14 @@ def settings():
     if request.method == 'POST':
         action = request.form.get('action', 'create')
         try:
+            if action == 'set-active-academic-year':
+                year = AcademicYear.query.get(int(request.form.get('academic_year_id', '0')))
+                if not year:
+                    flash('Academic year could not be found.', 'danger')
+                else:
+                    session['selected_academic_year_id'] = year.id
+                    flash(f'Academic year set to {year.name}', 'success')
+                return redirect(url_for('admin.settings'))
             if action == 'generate-academic-years':
                 created_years = generate_next_missing_academic_years()
                 if created_years:
@@ -1658,6 +1667,8 @@ def settings():
         filter_term_choices=[('', 'All terms')] + TERMS,
         form=form,
         terms=TERMS,
+        selected_year=get_selected_academic_year(request.args.get('year'), request.args.get('academic_year')),
+        academic_year_options=build_academic_year_options(),
     )
 
 

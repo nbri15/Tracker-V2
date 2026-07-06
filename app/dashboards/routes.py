@@ -2,15 +2,18 @@
 
 from datetime import datetime, timezone
 
-from flask import redirect, render_template, request, url_for
+from flask import current_app, flash, make_response, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
+from weasyprint import HTML
 
-from app.models import Intervention, Pupil, SatsResult, SchoolClass, SimpleSatsExamTab, SimpleSatsSetting, User
+from app.models import AcademicYear, Intervention, Pupil, SatsResult, SchoolClass, SimpleSatsExamTab, SimpleSatsSetting, SubjectResult, User, WritingResult
 from app.services import (
     BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
     build_admin_pupil_filter_state,
+    apply_admin_pupil_filters,
     build_class_overview_rows,
     build_dashboard_summary,
     build_subject_overview_cards,
@@ -45,6 +48,23 @@ def home():
         return redirect(url_for('dashboards.index'))
     return render_template('public_home.html')
 
+
+
+
+@dashboards_bp.route('/set-academic-year', methods=['POST'])
+@login_required
+def set_academic_year():
+    year_id = request.form.get('academic_year_id') or request.form.get('year')
+    try:
+        year = AcademicYear.query.get(int(year_id))
+    except (TypeError, ValueError):
+        year = None
+    if year is None:
+        flash('Academic year could not be found.', 'danger')
+    else:
+        session['selected_academic_year_id'] = year.id
+        flash(f'Academic year set to {year.name}', 'success')
+    return redirect(request.referrer or url_for('dashboards.index'))
 
 @dashboards_bp.route('/dashboard')
 @login_required
@@ -365,3 +385,213 @@ def sats_simple_save_settings():
     db.session.add(settings)
     db.session.commit()
     return {'ok': True}
+
+
+def _band_short(value):
+    text = (value or '').strip().lower().replace('_', ' ')
+    if text in {'wt', 'wts', 'working towards', 'working towards are'} or 'towards' in text:
+        return 'WT'
+    if text in {'ot', 'on track', 'working at', 'working at are'} or 'on track' in text or 'working at' in text:
+        return 'OT'
+    if text in {'exs', 'gds', 'exceeding', 'exceeding are'} or 'exceed' in text:
+        return 'EXS'
+    return value or '—'
+
+
+def _normalise_year_overview_subject(value: str | None) -> str:
+    key = (value or '').strip().lower().replace('-', '_').replace(' ', '_')
+    aliases = {
+        'maths': 'maths',
+        'mathematics': 'maths',
+        'reading': 'reading',
+        'read': 'reading',
+        'spag': 'spag',
+        'spa_g': 'spag',
+        'spelling_grammar': 'spag',
+        'spelling_punctuation_grammar': 'spag',
+        'grammar_punctuation_spelling': 'spag',
+        'writing': 'writing',
+    }
+    return aliases.get(key, key)
+
+
+def _normalise_year_overview_term(value: str | None) -> str | None:
+    key = (value or '').strip().lower()
+    if key in {'autumn', 'aut', 'a'}:
+        return 'autumn'
+    if key in {'spring', 'spr', 'sp', 's'}:
+        return 'spring'
+    if key in {'summer', 'sum', 'su'}:
+        return 'summer'
+    return None
+
+
+def _subject_result_display(row: SubjectResult) -> str:
+    parts = []
+    if row.paper_1_score is not None:
+        parts.append(f'P1 {row.paper_1_score}')
+    if row.paper_2_score is not None:
+        parts.append(f'P2 {row.paper_2_score}')
+    if row.combined_percent is not None:
+        parts.append(f'{row.combined_percent:g}%')
+    band = _band_short(row.band_label)
+    if band and band != '—':
+        parts.append(band)
+    return ' · '.join(parts) if parts else '—'
+
+
+def _latest_year_overview_row(rows):
+    return sorted(rows, key=lambda row: ((row.updated_at.isoformat() if row.updated_at else ''), row.id or 0), reverse=True)[0] if rows else None
+
+
+def _class_year_overview_context():
+    selected_year = get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+    academic_year = selected_year.name
+    subject = (request.args.get('subject') or 'maths').strip().lower()
+    if subject not in {'maths', 'reading', 'spag', 'writing'}:
+        subject = 'maths'
+    class_options_query = demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
+    if current_user.is_teacher and not current_user.can_manage_school:
+        class_options_query = class_options_query.filter(SchoolClass.teacher_id == current_user.id)
+    class_options = class_options_query.order_by(SchoolClass.year_group, SchoolClass.name).all()
+    selected_class_id = request.args.get('class_id', type=int)
+    selected_class = next((c for c in class_options if c.id == selected_class_id), class_options[0] if class_options else None)
+    filters = build_admin_pupil_filter_state(request.args)
+    pupils = []
+    if selected_class:
+        pupils = apply_admin_pupil_filters(get_class_pupil_query(selected_class, academic_year), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupil_ids = [p.id for p in pupils]
+    terms = ['autumn', 'spring', 'summer']
+    result_map = {}
+    rows_by_term = {term: [] for term in terms}
+    sample_debug_row = None
+    if pupil_ids:
+        if subject == 'writing':
+            rows = WritingResult.query.filter(
+                WritingResult.academic_year == academic_year,
+                WritingResult.pupil_id.in_(pupil_ids),
+                func.lower(WritingResult.term).in_(['autumn', 'aut', 'spring', 'spr', 'summer', 'sum']),
+            ).order_by(WritingResult.updated_at.desc(), WritingResult.id.desc()).all()
+            grouped = {}
+            for row in rows:
+                canonical_term = _normalise_year_overview_term(row.term)
+                if canonical_term not in terms:
+                    continue
+                rows_by_term[canonical_term].append(row)
+                grouped.setdefault((row.pupil_id, canonical_term), []).append(row)
+                if sample_debug_row is None:
+                    sample_debug_row = (row.pupil_id, 'writing', row.term, None, row.band)
+            for key, grouped_rows in grouped.items():
+                latest = _latest_year_overview_row(grouped_rows)
+                result_map[key] = {'display': _band_short(latest.band), 'band': _band_short(latest.band)}
+        else:
+            subject_aliases = {
+                'maths': ['maths', 'mathematics'],
+                'reading': ['reading', 'read'],
+                'spag': ['spag', 'spa_g', 'spelling_grammar', 'spelling grammar', 'spelling_punctuation_grammar', 'spelling punctuation grammar', 'grammar_punctuation_spelling', 'grammar punctuation spelling'],
+            }[subject]
+            rows = SubjectResult.query.filter(
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.pupil_id.in_(pupil_ids),
+                func.lower(SubjectResult.term).in_(['autumn', 'aut', 'spring', 'spr', 'summer', 'sum']),
+                func.lower(SubjectResult.subject).in_(subject_aliases),
+            ).order_by(SubjectResult.updated_at.desc(), SubjectResult.id.desc()).all()
+            grouped = {}
+            for row in rows:
+                canonical_term = _normalise_year_overview_term(row.term)
+                canonical_subject = _normalise_year_overview_subject(row.subject)
+                if canonical_term not in terms or canonical_subject != subject:
+                    continue
+                rows_by_term[canonical_term].append(row)
+                grouped.setdefault((row.pupil_id, canonical_term), []).append(row)
+                if sample_debug_row is None:
+                    sample_debug_row = (row.pupil_id, row.subject, row.term, row.combined_percent, row.band_label)
+            for key, grouped_rows in grouped.items():
+                latest = _latest_year_overview_row(grouped_rows)
+                band = _band_short(latest.band_label)
+                result_map[key] = {'display': _subject_result_display(latest), 'band': band}
+    current_app.logger.info(
+        'class yearly overview lookup selected_year_id=%s selected_subject=%s pupil_count=%s autumn_count=%s spring_count=%s summer_count=%s sample=%s',
+        getattr(selected_year, 'id', None),
+        subject,
+        len(pupil_ids),
+        len(rows_by_term['autumn']),
+        len(rows_by_term['spring']),
+        len(rows_by_term['summer']),
+        sample_debug_row,
+    )
+    child_rows=[]
+    counts={term:{'WT':0,'OT':0,'EXS':0} for term in terms}
+    for idx,p in enumerate(pupils, start=1):
+        cells={}
+        for term in terms:
+            cell=result_map.get((p.id, term), {'display':'—','band':None})
+            cells[term]=cell['display']
+            if cell.get('band') in counts[term]:
+                counts[term][cell['band']]+=1
+        child_rows.append({'pupil':p,'anon_name':f'Pupil {idx}','cells':cells})
+    total=len(pupils)
+    summary=[]
+    for term in terms:
+        bands=[]
+        for band in ['WT','OT','EXS']:
+            count=counts[term][band]
+            pct=round((count/total)*100) if total else 0
+            bands.append({'band':band,'count':count,'total':total,'percent':pct})
+        summary.append({'term':term.title(),'bands':bands})
+    boolean_filter_options = [('all', 'All'), ('yes', 'Yes'), ('no', 'No')]
+    return dict(
+        selected_year=selected_year,
+        academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
+        subject=subject,
+        subject_options=[('maths', 'Maths'), ('reading', 'Reading'), ('spag', 'SPaG'), ('writing', 'Writing')],
+        class_options=class_options,
+        selected_class=selected_class,
+        filters=filters,
+        gender_options=[('all', 'All'), ('male', 'Male'), ('female', 'Female')],
+        pp_options=boolean_filter_options,
+        send_options=boolean_filter_options,
+        laps_options=boolean_filter_options,
+        service_options=boolean_filter_options,
+        rows=child_rows,
+        summary=summary,
+        terms=terms,
+    )
+
+
+def _download_year_overview(ctx, anonymised=False, as_pdf=False):
+    subject_label = dict(ctx['subject_options']).get(ctx['subject'], ctx['subject'].title())
+    title = f"{subject_label} class yearly overview - {ctx['academic_year']}"
+    headers = ['Pupil', 'Autumn', 'Spring', 'Summer']
+    rows = [[(r['anon_name'] if anonymised else r['pupil'].full_name), r['cells']['autumn'], r['cells']['spring'], r['cells']['summer']] for r in ctx['rows']]
+    if as_pdf:
+        html = render_template('exports/table_pdf.html', title=title, subtitle=ctx['selected_class'].name if ctx['selected_class'] else '', headers=headers, rows=rows, filters={'Academic year': ctx['academic_year'], 'Subject': subject_label}, anonymise=anonymised, generated_at=datetime.now(timezone.utc))
+        pdf = HTML(string=html, base_url=request.url_root).write_pdf()
+        resp = make_response(pdf); resp.headers['Content-Type']='application/pdf'; resp.headers['Content-Disposition']=f'attachment; filename=class-year-overview-{ctx["subject"]}.pdf'; return resp
+    import csv, io
+    output=io.StringIO(); writer=csv.writer(output); writer.writerow(headers); writer.writerows(rows)
+    resp=make_response(output.getvalue()); resp.headers['Content-Type']='text/csv'; resp.headers['Content-Disposition']=f'attachment; filename=class-year-overview-{ctx["subject"]}.csv'; return resp
+
+
+@dashboards_bp.route('/class/year-overview')
+@login_required
+def class_year_overview():
+    if not (current_user.is_teacher or current_user.can_manage_school):
+        return redirect(url_for('dashboards.index'))
+    ctx = _class_year_overview_context()
+    fmt = (request.args.get('download') or '').lower()
+    if fmt == 'csv':
+        return _download_year_overview(ctx)
+    if fmt == 'pdf':
+        return _download_year_overview(ctx, as_pdf=True)
+    if fmt == 'anon_pdf':
+        return _download_year_overview(ctx, anonymised=True, as_pdf=True)
+    return render_template('class_year_overview.html', **ctx)
+
+
+@dashboards_bp.route('/admin/class-year-overview')
+@login_required
+@admin_required
+def admin_class_year_overview():
+    return class_year_overview()

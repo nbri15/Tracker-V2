@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from flask import has_request_context, request, session
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
@@ -239,22 +240,46 @@ def build_academic_year_options(current_year: str | None = None, total_years: in
 
 
 def get_selected_academic_year(raw_year_id: str | None = None, raw_academic_year: str | None = None) -> AcademicYear:
-    """Resolve a selected academic year from `year=<id>`, falling back to current."""
+    """Resolve and persist the selected academic year for the current request.
+
+    Priority: explicit query/form year, session selection, school/global current year,
+    then latest available academic year. `year` is treated as an AcademicYear id;
+    `academic_year` is kept for legacy links that pass the display name.
+    """
     selected = None
+    explicit_selection = False
+
+    if has_request_context():
+        raw_year_id = raw_year_id or request.values.get('year') or request.values.get('academic_year_id')
+        raw_academic_year = raw_academic_year or request.values.get('academic_year')
+
     if raw_year_id:
         try:
             selected = AcademicYear.query.get(int(raw_year_id))
+            explicit_selection = selected is not None
         except (TypeError, ValueError):
             selected = None
     if selected is None and raw_academic_year:
         selected = AcademicYear.query.filter_by(name=raw_academic_year).first()
+        explicit_selection = selected is not None
+
+    if selected is None and has_request_context():
+        session_year_id = session.get('selected_academic_year_id')
+        if session_year_id:
+            try:
+                selected = AcademicYear.query.get(int(session_year_id))
+            except (TypeError, ValueError):
+                selected = None
+
     if selected is None:
         selected = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
     if selected is None:
-        current_name = get_current_academic_year()
-        selected = AcademicYear.query.filter_by(name=current_name).first()
+        selected = AcademicYear.query.order_by(AcademicYear.name.desc()).first()
     if selected is None:
         selected = AcademicYear(name=get_current_academic_year(), is_current=True)
+
+    if has_request_context() and (explicit_selection or not session.get('selected_academic_year_id')) and getattr(selected, 'id', None):
+        session['selected_academic_year_id'] = selected.id
     return selected
 
 
@@ -278,8 +303,21 @@ def get_class_pupil_query(school_class: SchoolClass, academic_year: str | None =
     PupilClassHistory so a later promotion or import does not move past records.
     """
 
+    current_membership_query = Pupil.query.filter(
+        Pupil.class_id == school_class.id,
+        Pupil.school_id == school_class.school_id,
+    )
     if not academic_year or is_current_academic_year(academic_year):
-        return Pupil.query.filter(Pupil.class_id == school_class.id)
+        return current_membership_query
+
+    history_exists = PupilClassHistory.query.filter(
+        PupilClassHistory.school_id == school_class.school_id,
+        PupilClassHistory.academic_year == academic_year,
+        PupilClassHistory.class_name == school_class.name,
+        PupilClassHistory.year_group == school_class.year_group,
+    ).first() is not None
+    if not history_exists:
+        return current_membership_query
 
     return (
         Pupil.query
