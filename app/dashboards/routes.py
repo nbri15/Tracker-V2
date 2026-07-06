@@ -2,8 +2,9 @@
 
 from datetime import datetime, timezone
 
-from flask import flash, make_response, redirect, render_template, request, session, url_for
+from flask import current_app, flash, make_response, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from weasyprint import HTML
 
@@ -388,13 +389,59 @@ def sats_simple_save_settings():
 
 def _band_short(value):
     text = (value or '').strip().lower().replace('_', ' ')
-    if text in {'wt', 'working towards', 'working towards are'} or 'towards' in text:
+    if text in {'wt', 'wts', 'working towards', 'working towards are'} or 'towards' in text:
         return 'WT'
     if text in {'ot', 'on track', 'working at', 'working at are'} or 'on track' in text or 'working at' in text:
         return 'OT'
-    if text in {'exs', 'exceeding', 'exceeding are'} or 'exceed' in text:
+    if text in {'exs', 'gds', 'exceeding', 'exceeding are'} or 'exceed' in text:
         return 'EXS'
     return value or '—'
+
+
+def _normalise_year_overview_subject(value: str | None) -> str:
+    key = (value or '').strip().lower().replace('-', '_').replace(' ', '_')
+    aliases = {
+        'maths': 'maths',
+        'mathematics': 'maths',
+        'reading': 'reading',
+        'read': 'reading',
+        'spag': 'spag',
+        'spa_g': 'spag',
+        'spelling_grammar': 'spag',
+        'spelling_punctuation_grammar': 'spag',
+        'grammar_punctuation_spelling': 'spag',
+        'writing': 'writing',
+    }
+    return aliases.get(key, key)
+
+
+def _normalise_year_overview_term(value: str | None) -> str | None:
+    key = (value or '').strip().lower()
+    if key in {'autumn', 'aut', 'a'}:
+        return 'autumn'
+    if key in {'spring', 'spr', 'sp', 's'}:
+        return 'spring'
+    if key in {'summer', 'sum', 'su'}:
+        return 'summer'
+    return None
+
+
+def _subject_result_display(row: SubjectResult) -> str:
+    parts = []
+    if row.paper_1_score is not None:
+        parts.append(f'P1 {row.paper_1_score}')
+    if row.paper_2_score is not None:
+        parts.append(f'P2 {row.paper_2_score}')
+    if row.combined_percent is not None:
+        parts.append(f'{row.combined_percent:g}%')
+    band = _band_short(row.band_label)
+    if band and band != '—':
+        parts.append(band)
+    return ' · '.join(parts) if parts else '—'
+
+
+def _latest_year_overview_row(rows):
+    return sorted(rows, key=lambda row: ((row.updated_at.isoformat() if row.updated_at else ''), row.id or 0), reverse=True)[0] if rows else None
 
 
 def _class_year_overview_context():
@@ -416,28 +463,63 @@ def _class_year_overview_context():
     pupil_ids = [p.id for p in pupils]
     terms = ['autumn', 'spring', 'summer']
     result_map = {}
+    rows_by_term = {term: [] for term in terms}
+    sample_debug_row = None
     if pupil_ids:
         if subject == 'writing':
             rows = WritingResult.query.filter(
                 WritingResult.academic_year == academic_year,
-                WritingResult.term.in_(terms),
                 WritingResult.pupil_id.in_(pupil_ids),
-                WritingResult.school_id == current_school_id(),
-            ).all()
+                func.lower(WritingResult.term).in_(['autumn', 'aut', 'spring', 'spr', 'summer', 'sum']),
+            ).order_by(WritingResult.updated_at.desc(), WritingResult.id.desc()).all()
+            grouped = {}
             for row in rows:
-                result_map[(row.pupil_id, row.term)] = {'display': _band_short(row.band), 'band': _band_short(row.band)}
+                canonical_term = _normalise_year_overview_term(row.term)
+                if canonical_term not in terms:
+                    continue
+                rows_by_term[canonical_term].append(row)
+                grouped.setdefault((row.pupil_id, canonical_term), []).append(row)
+                if sample_debug_row is None:
+                    sample_debug_row = (row.pupil_id, 'writing', row.term, None, row.band)
+            for key, grouped_rows in grouped.items():
+                latest = _latest_year_overview_row(grouped_rows)
+                result_map[key] = {'display': _band_short(latest.band), 'band': _band_short(latest.band)}
         else:
+            subject_aliases = {
+                'maths': ['maths', 'mathematics'],
+                'reading': ['reading', 'read'],
+                'spag': ['spag', 'spa_g', 'spelling_grammar', 'spelling grammar', 'spelling_punctuation_grammar', 'spelling punctuation grammar', 'grammar_punctuation_spelling', 'grammar punctuation spelling'],
+            }[subject]
             rows = SubjectResult.query.filter(
                 SubjectResult.academic_year == academic_year,
-                SubjectResult.term.in_(terms),
-                SubjectResult.subject == subject,
                 SubjectResult.pupil_id.in_(pupil_ids),
-                SubjectResult.school_id == current_school_id(),
-            ).all()
+                func.lower(SubjectResult.term).in_(['autumn', 'aut', 'spring', 'spr', 'summer', 'sum']),
+                func.lower(SubjectResult.subject).in_(subject_aliases),
+            ).order_by(SubjectResult.updated_at.desc(), SubjectResult.id.desc()).all()
+            grouped = {}
             for row in rows:
-                band = _band_short(row.band_label)
-                pct = '—' if row.combined_percent is None else f'{row.combined_percent:g}%'
-                result_map[(row.pupil_id, row.term)] = {'display': f'{pct} — {band}', 'band': band}
+                canonical_term = _normalise_year_overview_term(row.term)
+                canonical_subject = _normalise_year_overview_subject(row.subject)
+                if canonical_term not in terms or canonical_subject != subject:
+                    continue
+                rows_by_term[canonical_term].append(row)
+                grouped.setdefault((row.pupil_id, canonical_term), []).append(row)
+                if sample_debug_row is None:
+                    sample_debug_row = (row.pupil_id, row.subject, row.term, row.combined_percent, row.band_label)
+            for key, grouped_rows in grouped.items():
+                latest = _latest_year_overview_row(grouped_rows)
+                band = _band_short(latest.band_label)
+                result_map[key] = {'display': _subject_result_display(latest), 'band': band}
+    current_app.logger.info(
+        'class yearly overview lookup selected_year_id=%s selected_subject=%s pupil_count=%s autumn_count=%s spring_count=%s summer_count=%s sample=%s',
+        getattr(selected_year, 'id', None),
+        subject,
+        len(pupil_ids),
+        len(rows_by_term['autumn']),
+        len(rows_by_term['spring']),
+        len(rows_by_term['summer']),
+        sample_debug_row,
+    )
     child_rows=[]
     counts={term:{'WT':0,'OT':0,'EXS':0} for term in terms}
     for idx,p in enumerate(pupils, start=1):
