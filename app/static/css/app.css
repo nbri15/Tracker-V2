@@ -1744,3 +1744,66 @@ label,
     min-width: 820px;
   }
 }
+
+/* Class yearly overview */
+.year-summary-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 0.9rem;
+  background: #fff;
+}
+.yearly-overview-wrap { max-height: 72vh; }
+.yearly-overview-table { min-width: 860px; font-size: 0.92rem; }
+.yearly-overview-table th { position: sticky; top: 0; z-index: 3; }
+.yearly-overview-table .sticky-pupil {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+  min-width: 180px;
+}
+.yearly-overview-table thead .sticky-pupil { z-index: 4; background: #f8f9fa; }
+.term-card {
+  min-width: 120px;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  background: #fff;
+  text-align: center;
+}
+.band-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.3rem;
+  border-radius: 999px;
+  padding: 0.22rem 0.65rem;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+.band-pill-wt { background: #dc3545; }
+.band-pill-are { background: #198754; }
+.band-pill-exs { background: #fd7e14; }
+.band-pill-missing { background: #6c757d; }
+.term-percent { font-size: 1.15rem; font-weight: 700; margin-top: 0.3rem; }
+.term-details { margin-top: 0.35rem; font-size: 0.78rem; color: #6b7280; line-height: 1.25; }
+.progress-cell { min-width: 180px; }
+.progress-track {
+  width: 100%;
+  height: 0.55rem;
+  background: #e9ecef;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.3rem;
+}
+.progress-fill { height: 100%; border-radius: 999px; }
+.progress-fill-positive { background: #198754; }
+.progress-fill-negative { background: #dc3545; }
+.progress-fill-neutral { background: #6c757d; }
+@media (max-width: 768px) {
+  .yearly-overview-table { font-size: 0.85rem; }
+  .term-card { min-width: 105px; padding: 0.45rem; }
+  .yearly-overview-table .sticky-pupil { min-width: 145px; }
+}

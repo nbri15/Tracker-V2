@@ -387,29 +387,31 @@ def sats_simple_save_settings():
     return {'ok': True}
 
 
+
+YEAR_OVERVIEW_TERMS = ['autumn', 'spring', 'summer']
+YEAR_OVERVIEW_BANDS = ['WT', 'ARE', 'EXS']
+
+
 def _band_short(value):
-    text = (value or '').strip().lower().replace('_', ' ')
+    """Normalise tracker/result labels into the three yearly overview bands."""
+    text = (value or '').strip().lower().replace('_', ' ').replace('-', ' ')
+    if not text:
+        return None
     if text in {'wt', 'wts', 'working towards', 'working towards are'} or 'towards' in text:
         return 'WT'
-    if text in {'ot', 'on track', 'working at', 'working at are'} or 'on track' in text or 'working at' in text:
-        return 'OT'
-    if text in {'exs', 'gds', 'exceeding', 'exceeding are'} or 'exceed' in text:
+    if text in {'are', 'ot', 'on track', 'working at', 'working at are', 'working at are', 'working at age related expectations'} or 'on track' in text or 'working at' in text:
+        return 'ARE'
+    if text in {'exs', 'gds', 'exceeding', 'exceeding are', 'greater depth'} or 'exceed' in text or 'greater depth' in text:
         return 'EXS'
-    return value or '—'
+    return None
 
 
 def _normalise_year_overview_subject(value: str | None) -> str:
     key = (value or '').strip().lower().replace('-', '_').replace(' ', '_')
     aliases = {
-        'maths': 'maths',
-        'mathematics': 'maths',
-        'reading': 'reading',
-        'read': 'reading',
-        'spag': 'spag',
-        'spa_g': 'spag',
-        'spelling_grammar': 'spag',
-        'spelling_punctuation_grammar': 'spag',
-        'grammar_punctuation_spelling': 'spag',
+        'maths': 'maths', 'mathematics': 'maths', 'reading': 'reading', 'read': 'reading',
+        'spag': 'spag', 'spa_g': 'spag', 'spelling_grammar': 'spag',
+        'spelling_punctuation_grammar': 'spag', 'grammar_punctuation_spelling': 'spag',
         'writing': 'writing',
     }
     return aliases.get(key, key)
@@ -426,22 +428,92 @@ def _normalise_year_overview_term(value: str | None) -> str | None:
     return None
 
 
-def _subject_result_display(row: SubjectResult) -> str:
-    parts = []
-    if row.paper_1_score is not None:
-        parts.append(f'P1 {row.paper_1_score}')
-    if row.paper_2_score is not None:
-        parts.append(f'P2 {row.paper_2_score}')
-    if row.combined_percent is not None:
-        parts.append(f'{row.combined_percent:g}%')
-    band = _band_short(row.band_label)
-    if band and band != '—':
-        parts.append(band)
-    return ' · '.join(parts) if parts else '—'
-
-
 def _latest_year_overview_row(rows):
     return sorted(rows, key=lambda row: ((row.updated_at.isoformat() if row.updated_at else ''), row.id or 0), reverse=True)[0] if rows else None
+
+
+def _paper_labels(subject):
+    return {
+        'maths': ('Arithmetic', 'Reasoning'),
+        'reading': ('Reading paper', 'Reading paper 2'),
+        'spag': ('Spelling', 'Grammar'),
+    }.get(subject, ('Paper 1', 'Paper 2'))
+
+
+def _term_cell(*, band=None, percent=None, paper_1=None, paper_2=None, subject='maths'):
+    label1, label2 = _paper_labels(subject)
+    details = []
+    if paper_1 is not None:
+        details.append({'label': label1, 'score': paper_1})
+    if paper_2 is not None:
+        details.append({'label': label2, 'score': paper_2})
+    return {'band': band, 'percent': percent, 'paper_1': paper_1, 'paper_2': paper_2, 'details': details, 'missing': band is None and percent is None}
+
+
+def _format_percent(value):
+    if value is None:
+        return ''
+    return f'{value:g}%'
+
+
+def _progress_for_cells(cells):
+    available = [(term, cells[term]) for term in YEAR_OVERVIEW_TERMS if cells[term].get('percent') is not None]
+    bands = [(term, cells[term].get('band')) for term in YEAR_OVERVIEW_TERMS if cells[term].get('band')]
+    if len(available) < 2:
+        return {'has_data': False, 'label': 'Not enough data', 'delta': None, 'from_percent': None, 'to_percent': None, 'latest_percent': None, 'theme': 'neutral', 'milestone': ''}
+    terms_with_percent = {term: cell for term, cell in available}
+    if 'autumn' in terms_with_percent and 'summer' in terms_with_percent:
+        first_term, latest_term = 'autumn', 'summer'
+    elif 'spring' in terms_with_percent and 'summer' in terms_with_percent:
+        first_term, latest_term = 'spring', 'summer'
+    else:
+        first_term, latest_term = available[0][0], available[-1][0]
+    first = terms_with_percent[first_term]['percent']
+    latest = terms_with_percent[latest_term]['percent']
+    delta = round(latest - first, 1)
+    if delta > 0:
+        label = f'⬆ +{delta:g}%'; theme = 'positive'
+    elif delta < 0:
+        label = f'⬇ {delta:g}%'; theme = 'negative'
+    else:
+        label = '➜ Stable'; theme = 'neutral'
+    start_band = next((cells[t].get('band') for t in YEAR_OVERVIEW_TERMS if cells[t].get('band')), None)
+    latest_band = next((cells[t].get('band') for t in reversed(YEAR_OVERVIEW_TERMS) if cells[t].get('band')), None)
+    available_bands = [band for _, band in bands]
+    milestone = ''
+    if delta < 0:
+        milestone = '⚠ Declined'
+    elif start_band == 'WT' and latest_band == 'EXS':
+        milestone = '🚀 Outstanding progress'
+    elif start_band == 'WT' and latest_band in {'ARE', 'EXS'}:
+        milestone = '🎯 Reached ARE'
+    elif start_band == 'ARE' and latest_band == 'EXS':
+        milestone = '🚀 Moved to EXS'
+    elif available_bands and all(b == 'EXS' for b in available_bands):
+        milestone = '⭐ Consistently EXS'
+    elif available_bands and all(b == 'WT' for b in available_bands):
+        milestone = '🔴 Needs continued support' if len(available_bands) == len(YEAR_OVERVIEW_TERMS) else '➜ Still WT'
+    elif delta == 0 and latest_band == 'ARE':
+        milestone = '➜ Stable ARE'
+    elif delta == 0 and latest_band == 'WT':
+        milestone = '➜ Still WT'
+    elif delta == 0 and latest_band == 'EXS':
+        milestone = '⭐ Consistently EXS'
+    return {'has_data': True, 'label': label, 'delta': delta, 'from_percent': first, 'to_percent': latest, 'latest_percent': latest, 'theme': theme, 'milestone': milestone, 'start_band': start_band, 'latest_band': latest_band, 'all_bands': available_bands}
+
+
+def _sort_year_overview_rows(rows, sort_key):
+    if sort_key == 'most_improved':
+        return sorted(rows, key=lambda r: (r['progress']['delta'] is not None, r['progress']['delta'] or -999), reverse=True)
+    if sort_key == 'biggest_decline':
+        return sorted(rows, key=lambda r: (r['progress']['delta'] is None, r['progress']['delta'] if r['progress']['delta'] is not None else 999))
+    if sort_key == 'reached_are':
+        return sorted(rows, key=lambda r: not (r['progress'].get('start_band') == 'WT' and r['progress'].get('latest_band') in {'ARE', 'EXS'}))
+    if sort_key == 'still_wt':
+        return sorted(rows, key=lambda r: not (r['progress'].get('latest_band') == 'WT'))
+    if sort_key == 'consistently_exs':
+        return sorted(rows, key=lambda r: not (r['progress'].get('all_bands') and all(b == 'EXS' for b in r['progress']['all_bands'])))
+    return sorted(rows, key=lambda r: (r['pupil'].last_name.lower(), r['pupil'].first_name.lower()))
 
 
 def _class_year_overview_context():
@@ -450,6 +522,14 @@ def _class_year_overview_context():
     subject = (request.args.get('subject') or 'maths').strip().lower()
     if subject not in {'maths', 'reading', 'spag', 'writing'}:
         subject = 'maths'
+    sort = request.args.get('sort', 'name')
+    if sort not in {'name', 'most_improved', 'biggest_decline', 'reached_are', 'still_wt', 'consistently_exs'}:
+        sort = 'name'
+    toggles = {
+        'show_percentages': request.args.get('show_percentages', '1') != '0',
+        'show_papers': request.args.get('show_papers', '0') == '1',
+        'show_progress_bars': request.args.get('show_progress_bars', '1') != '0',
+    }
     class_options_query = demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
     if current_user.is_teacher and not current_user.can_manage_school:
         class_options_query = class_options_query.filter(SchoolClass.teacher_id == current_user.id)
@@ -457,120 +537,68 @@ def _class_year_overview_context():
     selected_class_id = request.args.get('class_id', type=int)
     selected_class = next((c for c in class_options if c.id == selected_class_id), class_options[0] if class_options else None)
     filters = build_admin_pupil_filter_state(request.args)
-    pupils = []
-    if selected_class:
-        pupils = apply_admin_pupil_filters(get_class_pupil_query(selected_class, academic_year), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(selected_class, academic_year), filters).order_by(Pupil.last_name, Pupil.first_name).all() if selected_class else []
     pupil_ids = [p.id for p in pupils]
-    terms = ['autumn', 'spring', 'summer']
     result_map = {}
-    rows_by_term = {term: [] for term in terms}
-    sample_debug_row = None
     if pupil_ids:
         if subject == 'writing':
-            rows = WritingResult.query.filter(
-                WritingResult.academic_year == academic_year,
-                WritingResult.pupil_id.in_(pupil_ids),
-                func.lower(WritingResult.term).in_(['autumn', 'aut', 'spring', 'spr', 'summer', 'sum']),
-            ).order_by(WritingResult.updated_at.desc(), WritingResult.id.desc()).all()
+            rows = WritingResult.query.filter(WritingResult.academic_year == academic_year, WritingResult.pupil_id.in_(pupil_ids), func.lower(WritingResult.term).in_(['autumn','aut','spring','spr','summer','sum'])).order_by(WritingResult.updated_at.desc(), WritingResult.id.desc()).all()
             grouped = {}
             for row in rows:
-                canonical_term = _normalise_year_overview_term(row.term)
-                if canonical_term not in terms:
-                    continue
-                rows_by_term[canonical_term].append(row)
-                grouped.setdefault((row.pupil_id, canonical_term), []).append(row)
-                if sample_debug_row is None:
-                    sample_debug_row = (row.pupil_id, 'writing', row.term, None, row.band)
+                term = _normalise_year_overview_term(row.term)
+                if term in YEAR_OVERVIEW_TERMS:
+                    grouped.setdefault((row.pupil_id, term), []).append(row)
             for key, grouped_rows in grouped.items():
                 latest = _latest_year_overview_row(grouped_rows)
-                result_map[key] = {'display': _band_short(latest.band), 'band': _band_short(latest.band)}
+                result_map[key] = _term_cell(band=_band_short(latest.band), subject=subject)
         else:
-            subject_aliases = {
-                'maths': ['maths', 'mathematics'],
-                'reading': ['reading', 'read'],
-                'spag': ['spag', 'spa_g', 'spelling_grammar', 'spelling grammar', 'spelling_punctuation_grammar', 'spelling punctuation grammar', 'grammar_punctuation_spelling', 'grammar punctuation spelling'],
-            }[subject]
-            rows = SubjectResult.query.filter(
-                SubjectResult.academic_year == academic_year,
-                SubjectResult.pupil_id.in_(pupil_ids),
-                func.lower(SubjectResult.term).in_(['autumn', 'aut', 'spring', 'spr', 'summer', 'sum']),
-                func.lower(SubjectResult.subject).in_(subject_aliases),
-            ).order_by(SubjectResult.updated_at.desc(), SubjectResult.id.desc()).all()
+            aliases = {'maths':['maths','mathematics'], 'reading':['reading','read'], 'spag':['spag','spa_g','spelling_grammar','spelling grammar','spelling_punctuation_grammar','spelling punctuation grammar','grammar_punctuation_spelling','grammar punctuation spelling']}[subject]
+            rows = SubjectResult.query.filter(SubjectResult.academic_year == academic_year, SubjectResult.pupil_id.in_(pupil_ids), func.lower(SubjectResult.term).in_(['autumn','aut','spring','spr','summer','sum']), func.lower(SubjectResult.subject).in_(aliases)).order_by(SubjectResult.updated_at.desc(), SubjectResult.id.desc()).all()
             grouped = {}
             for row in rows:
-                canonical_term = _normalise_year_overview_term(row.term)
-                canonical_subject = _normalise_year_overview_subject(row.subject)
-                if canonical_term not in terms or canonical_subject != subject:
-                    continue
-                rows_by_term[canonical_term].append(row)
-                grouped.setdefault((row.pupil_id, canonical_term), []).append(row)
-                if sample_debug_row is None:
-                    sample_debug_row = (row.pupil_id, row.subject, row.term, row.combined_percent, row.band_label)
+                term = _normalise_year_overview_term(row.term)
+                if term in YEAR_OVERVIEW_TERMS and _normalise_year_overview_subject(row.subject) == subject:
+                    grouped.setdefault((row.pupil_id, term), []).append(row)
             for key, grouped_rows in grouped.items():
                 latest = _latest_year_overview_row(grouped_rows)
-                band = _band_short(latest.band_label)
-                result_map[key] = {'display': _subject_result_display(latest), 'band': band}
-    current_app.logger.info(
-        'class yearly overview lookup selected_year_id=%s selected_subject=%s pupil_count=%s autumn_count=%s spring_count=%s summer_count=%s sample=%s',
-        getattr(selected_year, 'id', None),
-        subject,
-        len(pupil_ids),
-        len(rows_by_term['autumn']),
-        len(rows_by_term['spring']),
-        len(rows_by_term['summer']),
-        sample_debug_row,
-    )
-    child_rows=[]
-    counts={term:{'WT':0,'OT':0,'EXS':0} for term in terms}
+                result_map[key] = _term_cell(band=_band_short(latest.band_label), percent=latest.combined_percent, paper_1=latest.paper_1_score, paper_2=latest.paper_2_score, subject=subject)
+    child_rows=[]; counts={term:{band:0 for band in YEAR_OVERVIEW_BANDS} for term in YEAR_OVERVIEW_TERMS}
     for idx,p in enumerate(pupils, start=1):
-        cells={}
-        for term in terms:
-            cell=result_map.get((p.id, term), {'display':'—','band':None})
-            cells[term]=cell['display']
-            if cell.get('band') in counts[term]:
-                counts[term][cell['band']]+=1
-        child_rows.append({'pupil':p,'anon_name':f'Pupil {idx}','cells':cells})
+        cells={term: result_map.get((p.id, term), _term_cell(subject=subject)) for term in YEAR_OVERVIEW_TERMS}
+        for term, cell in cells.items():
+            if cell.get('band') in counts[term]: counts[term][cell['band']] += 1
+        child_rows.append({'pupil':p, 'anon_name':f'Pupil {idx}', 'cells':cells, 'progress':_progress_for_cells(cells)})
+    child_rows = _sort_year_overview_rows(child_rows, sort)
     total=len(pupils)
-    summary=[]
-    for term in terms:
-        bands=[]
-        for band in ['WT','OT','EXS']:
-            count=counts[term][band]
-            pct=round((count/total)*100) if total else 0
-            bands.append({'band':band,'count':count,'total':total,'percent':pct})
-        summary.append({'term':term.title(),'bands':bands})
+    summary=[{'term':term.title(), 'key':term, 'bands':[{'band':band,'count':counts[term][band],'total':total,'percent':round((counts[term][band]/total)*100) if total else 0} for band in YEAR_OVERVIEW_BANDS]} for term in YEAR_OVERVIEW_TERMS]
     boolean_filter_options = [('all', 'All'), ('yes', 'Yes'), ('no', 'No')]
-    return dict(
-        selected_year=selected_year,
-        academic_year=academic_year,
-        academic_year_options=build_academic_year_options(academic_year),
-        subject=subject,
-        subject_options=[('maths', 'Maths'), ('reading', 'Reading'), ('spag', 'SPaG'), ('writing', 'Writing')],
-        class_options=class_options,
-        selected_class=selected_class,
-        filters=filters,
-        gender_options=[('all', 'All'), ('male', 'Male'), ('female', 'Female')],
-        pp_options=boolean_filter_options,
-        send_options=boolean_filter_options,
-        laps_options=boolean_filter_options,
-        service_options=boolean_filter_options,
-        rows=child_rows,
-        summary=summary,
-        terms=terms,
-    )
+    return dict(selected_year=selected_year, academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year), subject=subject, subject_options=[('maths','Maths'),('reading','Reading'),('spag','SPaG'),('writing','Writing')], class_options=class_options, selected_class=selected_class, filters=filters, gender_options=[('all','All'),('male','Male'),('female','Female')], pp_options=boolean_filter_options, send_options=boolean_filter_options, laps_options=boolean_filter_options, service_options=boolean_filter_options, rows=child_rows, summary=summary, terms=YEAR_OVERVIEW_TERMS, sort=sort, sort_options=[('name','Name'),('most_improved','Most Improved'),('biggest_decline','Biggest Decline'),('reached_are','Reached ARE'),('still_wt','Still WT'),('consistently_exs','Consistently EXS')], toggles=toggles)
 
 
 def _download_year_overview(ctx, anonymised=False, as_pdf=False):
     subject_label = dict(ctx['subject_options']).get(ctx['subject'], ctx['subject'].title())
     title = f"{subject_label} class yearly overview - {ctx['academic_year']}"
-    headers = ['Pupil', 'Autumn', 'Spring', 'Summer']
-    rows = [[(r['anon_name'] if anonymised else r['pupil'].full_name), r['cells']['autumn'], r['cells']['spring'], r['cells']['summer']] for r in ctx['rows']]
     if as_pdf:
+        headers = ['Pupil', 'Autumn', 'Spring', 'Summer', 'Progress']
+        rows = []
+        for r in ctx['rows']:
+            def pdf_cell(term):
+                c = r['cells'][term]; bits = [c.get('band') or 'Missing']
+                if c.get('percent') is not None: bits.append(_format_percent(c['percent']))
+                return ' '.join(bits)
+            rows.append([(r['anon_name'] if anonymised else r['pupil'].full_name), pdf_cell('autumn'), pdf_cell('spring'), pdf_cell('summer'), f"{r['progress']['label']} {r['progress'].get('milestone') or ''}".strip()])
         html = render_template('exports/table_pdf.html', title=title, subtitle=ctx['selected_class'].name if ctx['selected_class'] else '', headers=headers, rows=rows, filters={'Academic year': ctx['academic_year'], 'Subject': subject_label}, anonymise=anonymised, generated_at=datetime.now(timezone.utc))
         pdf = HTML(string=html, base_url=request.url_root).write_pdf()
         resp = make_response(pdf); resp.headers['Content-Type']='application/pdf'; resp.headers['Content-Disposition']=f'attachment; filename=class-year-overview-{ctx["subject"]}.pdf'; return resp
     import csv, io
-    output=io.StringIO(); writer=csv.writer(output); writer.writerow(headers); writer.writerows(rows)
+    headers = ['Pupil','Autumn Band','Autumn %','Autumn Paper 1','Autumn Paper 2','Spring Band','Spring %','Spring Paper 1','Spring Paper 2','Summer Band','Summer %','Summer Paper 1','Summer Paper 2','Progress %','Progress Label']
+    output=io.StringIO(); writer=csv.writer(output); writer.writerow(headers)
+    for r in ctx['rows']:
+        out=[r['anon_name'] if anonymised else r['pupil'].full_name]
+        for term in YEAR_OVERVIEW_TERMS:
+            c=r['cells'][term]; out += [c.get('band') or '', _format_percent(c.get('percent')), c.get('paper_1') or '', c.get('paper_2') or '']
+        out += [('' if r['progress']['delta'] is None else f"{r['progress']['delta']:g}%"), f"{r['progress']['label']} {r['progress'].get('milestone') or ''}".strip()]
+        writer.writerow(out)
     resp=make_response(output.getvalue()); resp.headers['Content-Type']='text/csv'; resp.headers['Content-Disposition']=f'attachment; filename=class-year-overview-{ctx["subject"]}.csv'; return resp
 
 

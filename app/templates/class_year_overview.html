@@ -6,71 +6,57 @@
   <div class="card-header bg-white"><strong>Filters</strong></div>
   <div class="card-body">
     <form method="get" class="form-grid">
-      <div class="col-md-2">
-        <label class="form-label">Academic year</label>
-        <select name="year" class="form-select">
-          {% for year in academic_year_options %}<option value="{{ year.id }}" {% if selected_year and year.id == selected_year.id %}selected{% endif %}>{{ year.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Class</label>
-        <select name="class_id" class="form-select">
-          {% for class in class_options %}<option value="{{ class.id }}" {% if selected_class and class.id == selected_class.id %}selected{% endif %}>{{ class.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Subject</label>
-        <select name="subject" class="form-select">
-          {% for value,label in subject_options %}<option value="{{ value }}" {% if subject == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">Gender</label>
-        <select name="gender" class="form-select">
-          {% for value, label in gender_options %}<option value="{{ value }}" {% if filters.gender == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-      </div>
+      <div class="col-md-2"><label class="form-label">Academic year</label><select name="year" class="form-select">{% for year in academic_year_options %}<option value="{{ year.id }}" {% if selected_year and year.id == selected_year.id %}selected{% endif %}>{{ year.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label">Class</label><select name="class_id" class="form-select">{% for class in class_options %}<option value="{{ class.id }}" {% if selected_class and class.id == selected_class.id %}selected{% endif %}>{{ class.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label">Subject</label><select name="subject" class="form-select">{% for value,label in subject_options %}<option value="{{ value }}" {% if subject == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label">Sort</label><select name="sort" class="form-select">{% for value,label in sort_options %}<option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label">Search</label><input class="form-control" name="search" value="{{ filters.search }}" placeholder="Pupil name"></div>
+      <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select">{% for value, label in gender_options %}<option value="{{ value }}" {% if filters.gender == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
       {% for key, label, options in [('pupil_premium','PP',pp_options),('send','SEND',send_options),('laps','LAPS',laps_options),('service_child','Service',service_options)] %}
-      <div class="col-md-1">
-        <label class="form-label">{{ label }}</label>
-        <select name="{{ key }}" class="form-select">
-          {% for value, option_label in options %}<option value="{{ value }}" {% if filters[key] == value %}selected{% endif %}>{{ option_label }}</option>{% endfor %}
-        </select>
-      </div>
+      <div class="col-md-1"><label class="form-label">{{ label }}</label><select name="{{ key }}" class="form-select">{% for value, option_label in options %}<option value="{{ value }}" {% if filters[key] == value %}selected{% endif %}>{{ option_label }}</option>{% endfor %}</select></div>
       {% endfor %}
       <input type="hidden" name="pupil_status" value="active">
-      <div class="col-md-2 d-flex gap-2"><button class="btn btn-primary flex-grow-1">Apply</button></div>
+      <input type="hidden" name="show_percentages" value="{{ 1 if toggles.show_percentages else 0 }}">
+      <input type="hidden" name="show_papers" value="{{ 1 if toggles.show_papers else 0 }}">
+      <input type="hidden" name="show_progress_bars" value="{{ 1 if toggles.show_progress_bars else 0 }}">
+      <div class="col-md-2 d-flex gap-2 align-items-end"><button class="btn btn-primary flex-grow-1">Apply</button></div>
     </form>
   </div>
 </div>
 
-<div class="d-flex flex-wrap gap-2 mb-3">
+<div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
   {% set qs = request.query_string.decode() %}
   <a class="btn btn-outline-secondary btn-sm" href="{{ request.path }}?{{ qs }}{% if qs %}&{% endif %}download=csv">Download CSV</a>
   <a class="btn btn-outline-secondary btn-sm" href="{{ request.path }}?{{ qs }}{% if qs %}&{% endif %}download=pdf">Download PDF</a>
   <a class="btn btn-outline-secondary btn-sm" href="{{ request.path }}?{{ qs }}{% if qs %}&{% endif %}download=anon_pdf">Download anonymised PDF</a>
+  <a class="btn btn-sm {{ 'btn-primary' if toggles.show_percentages else 'btn-outline-secondary' }}" href="{{ url_for(request.endpoint, **dict(request.args, show_percentages=(0 if toggles.show_percentages else 1), download=None)) }}">Show percentages</a>
+  <a class="btn btn-sm {{ 'btn-primary' if toggles.show_papers else 'btn-outline-secondary' }}" href="{{ url_for(request.endpoint, **dict(request.args, show_papers=(0 if toggles.show_papers else 1), download=None)) }}">Show paper scores</a>
+  <a class="btn btn-sm {{ 'btn-primary' if toggles.show_progress_bars else 'btn-outline-secondary' }}" href="{{ url_for(request.endpoint, **dict(request.args, show_progress_bars=(0 if toggles.show_progress_bars else 1), download=None)) }}">Show progress bars</a>
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-header bg-white"><strong>{{ dict(subject_options).get(subject) }} overview</strong></div>
+  <div class="card-header bg-white"><strong>{{ dict(subject_options).get(subject) }} class summary</strong><span class="text-muted small ms-2">visible filtered pupils only</span></div>
   <div class="card-body row g-3">
     {% for term in summary %}
-      <div class="col-md-4">
-        <h3 class="h6">{{ term.term }}</h3>
-        <ul class="list-unstyled mb-0">
-          {% for band in term.bands %}<li>{{ band.band }}: <strong>{{ band.percent }}%</strong> ({{ band.count }}/{{ band.total }})</li>{% endfor %}
-        </ul>
-      </div>
+      <div class="col-md-4"><div class="year-summary-card"><h3 class="h6 mb-3">{{ term.term }}</h3>{% for band in term.bands %}<div class="d-flex justify-content-between align-items-center mb-2"><span class="band-pill band-pill-{{ band.band|lower }}">{{ band.band }}</span><span><strong>{{ band.percent }}%</strong> <span class="text-muted">({{ band.count }}/{{ band.total }})</span></span></div>{% endfor %}</div></div>
     {% endfor %}
   </div>
 </div>
 
 <div class="card shadow-sm">
-  <div class="table-responsive">
-    <table class="table table-sm align-middle mb-0">
-      <thead class="table-light"><tr><th>Pupil</th><th>Autumn</th><th>Spring</th><th>Summer</th><th>Progress/Notes</th></tr></thead>
+  <div class="table-responsive yearly-overview-wrap">
+    <table class="table table-sm align-middle mb-0 yearly-overview-table">
+      <thead class="table-light"><tr><th class="sticky-pupil">Pupil</th><th>Autumn</th><th>Spring</th><th>Summer</th><th>Progress</th></tr></thead>
       <tbody>
-        {% for row in rows %}<tr><td>{{ row.pupil.full_name }}</td><td>{{ row.cells.autumn }}</td><td>{{ row.cells.spring }}</td><td>{{ row.cells.summer }}</td><td class="text-muted">—</td></tr>{% else %}<tr><td colspan="5" class="text-muted text-center py-4">No pupils match these filters.</td></tr>{% endfor %}
+      {% for row in rows %}
+        <tr>
+          <td class="sticky-pupil fw-semibold">{{ row.pupil.full_name }}</td>
+          {% for term in terms %}{% set cell = row.cells[term] %}
+          <td><div class="term-card"><span class="band-pill band-pill-{{ (cell.band or 'missing')|lower }}">{{ cell.band or 'Missing' }}</span>{% if toggles.show_percentages %}<div class="term-percent">{{ '%g%%'|format(cell.percent) if cell.percent is not none else '—' }}</div>{% endif %}{% if toggles.show_papers and cell.details %}<div class="term-details">{% for detail in cell.details %}<div>{{ detail.label }}: {{ detail.score }}</div>{% endfor %}</div>{% endif %}</div></td>
+          {% endfor %}
+          <td class="progress-cell"><div class="fw-semibold">{{ row.progress.label }}</div>{% if row.progress.milestone %}<div class="small text-muted">{{ row.progress.milestone }}</div>{% endif %}{% if toggles.show_progress_bars and row.progress.has_data %}<div class="small text-muted">{{ '%g%%'|format(row.progress.from_percent) }} → {{ '%g%%'|format(row.progress.to_percent) }}</div><div class="progress-track"><div class="progress-fill progress-fill-{{ row.progress.theme }}" style="width: {{ row.progress.latest_percent }}%"></div></div>{% endif %}</td>
+        </tr>
+      {% else %}<tr><td colspan="5" class="text-muted text-center py-4">No pupils match these filters.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
