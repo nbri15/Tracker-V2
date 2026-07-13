@@ -13,26 +13,52 @@
       <h1>Maths Fundamentals</h1>
       {% include 'partials/flash_messages.html' %}
       {% if no_session %}<div class="alert alert-info">Your teacher has not started a Maths Fundamentals assessment yet.</div>{% endif %}
-      {% if not classes %}<div class="alert alert-info">Ask your teacher to open the pupil iPad link from their active Maths Fundamentals session.</div>{% endif %}
-      <form method="get" class="mb-4">
-        {% if request.values.get('school_id') %}<input type="hidden" name="school_id" value="{{ request.values.get('school_id') }}">{% endif %}
-        <label class="form-label">Class</label>
-        <select name="class_id" class="form-select form-select-lg" onchange="this.form.submit()">
-          <option value="">Choose your class</option>
-          {% for class in classes %}<option value="{{ class.id }}" {% if selected_class_id==class.id %}selected{% endif %}>{{ class.name }}</option>{% endfor %}
-        </select>
-      </form>
-      <form method="post">
-        {% if request.values.get('school_id') %}<input type="hidden" name="school_id" value="{{ request.values.get('school_id') }}">{% endif %}
-        <input type="hidden" name="class_id" value="{{ selected_class_id or '' }}">
-        <label class="form-label">Name</label>
-        <select name="pupil_id" class="form-select form-select-lg mb-3" required>
-          {% for pupil in pupils %}<option value="{{ pupil.id }}">{{ pupil.full_name }}</option>{% endfor %}
-        </select>
-        <button class="btn btn-primary btn-lg w-100">Start</button>
-      </form>
+      {% if not classes %}
+        <div class="alert alert-info">No assessment is currently available. Ask your teacher to start a Maths Fundamentals session.</div>
+      {% else %}
+        <form method="post" id="fundamentals-join-form">
+          <label class="form-label" for="class_id">Class</label>
+          <select id="class_id" name="class_id" class="form-select form-select-lg mb-3" required>
+            <option value="">Choose your class</option>
+            {% for class in classes %}<option value="{{ class.id }}" {% if selected_class_id==class.id %}selected{% endif %}>{{ class.name }}</option>{% endfor %}
+          </select>
+
+          <label class="form-label" for="pupil_id">Name</label>
+          <select id="pupil_id" name="pupil_id" class="form-select form-select-lg mb-3" required {% if not pupils %}disabled{% endif %}>
+            <option value="">Choose your name</option>
+            {% for pupil in pupils %}<option value="{{ pupil.id }}">{{ pupil.full_name }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-primary btn-lg w-100">Start</button>
+        </form>
+      {% endif %}
     </div>
   </div>
 </main>
+{% if classes %}
+<script>
+  const classSelect = document.getElementById('class_id');
+  const pupilSelect = document.getElementById('pupil_id');
+
+  classSelect.addEventListener('change', async () => {
+    pupilSelect.innerHTML = '<option value="">Choose your name</option>';
+    pupilSelect.disabled = true;
+
+    const classId = classSelect.value;
+    if (!classId) return;
+
+    const response = await fetch(`/fundamentals/api/classes/${classId}/pupils`);
+    const data = response.ok ? await response.json() : {pupils: []};
+
+    for (const pupil of data.pupils || []) {
+      const option = document.createElement('option');
+      option.value = pupil.id;
+      option.textContent = pupil.name;
+      pupilSelect.appendChild(option);
+    }
+
+    pupilSelect.disabled = false;
+  });
+</script>
+{% endif %}
 </body>
 </html>

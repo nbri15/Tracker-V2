@@ -8,7 +8,7 @@ from io import BytesIO
 
 import qrcode
 
-from flask import abort, flash, redirect, render_template, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 
@@ -179,15 +179,32 @@ def _active_classes_for_user():
 
 
 def _classes_with_active_sessions():
-    query = (SchoolClass.query
-        .join(FundamentalSession, FundamentalSession.class_id == SchoolClass.id)
-        .filter(SchoolClass.is_active.is_(True), FundamentalSession.is_active.is_(True)))
-    if hasattr(SchoolClass, 'school_id'):
-        school_id = request.values.get('school_id', type=int)
-        if school_id is None:
-            return []
-        query = query.filter(SchoolClass.school_id == school_id)
-    return query.distinct().order_by(SchoolClass.year_group, SchoolClass.name).all()
+    active_class_ids = (
+        db.session.query(FundamentalSession.class_id)
+        .filter(FundamentalSession.is_active.is_(True))
+        .distinct()
+        .all()
+    )
+    active_class_ids = [row[0] for row in active_class_ids]
+    if not active_class_ids:
+        classes = []
+    else:
+        query = SchoolClass.query.filter(
+            SchoolClass.id.in_(active_class_ids),
+            SchoolClass.is_active.is_(True),
+        )
+        if hasattr(SchoolClass, 'is_archived'):
+            query = query.filter(SchoolClass.is_archived.is_(False))
+        if hasattr(SchoolClass, 'is_archive'):
+            query = query.filter(SchoolClass.is_archive.is_(False))
+        classes = query.order_by(SchoolClass.name.asc()).all()
+    current_app.logger.info(
+        "Fundamentals join active sessions=%s active_class_ids=%s classes=%s",
+        FundamentalSession.query.filter_by(is_active=True).count(),
+        active_class_ids,
+        [c.name for c in classes],
+    )
+    return classes
 
 
 def _active_session_for_class(class_id: int):
@@ -271,6 +288,13 @@ def start():
         session = FundamentalSession(class_id=school_class.id, teacher_id=current_user.id, strand_id=strand.id, start_level=start_level, is_active=True)
         db.session.add(session)
         db.session.commit()
+        current_app.logger.info(
+            "Created fundamentals session id=%s class_id=%s strand_id=%s active=%s",
+            session.id,
+            session.class_id,
+            session.strand_id,
+            session.is_active,
+        )
         flash('Maths Fundamentals session started.', 'success')
         return redirect(url_for('fundamentals.session_detail', session_id=session.id))
 
@@ -487,6 +511,34 @@ def stop_session(session_id: int):
     return redirect(url_for('fundamentals.session_detail', session_id=session.id))
 
 
+
+def _active_pupils_for_class(class_id: int):
+    query = Pupil.query.filter_by(class_id=class_id, is_active=True, is_archived=False)
+    if hasattr(Pupil, 'number'):
+        query = query.order_by(Pupil.number.is_(None), Pupil.number.asc(), Pupil.name.asc())
+    else:
+        query = query.order_by(Pupil.last_name.asc(), Pupil.first_name.asc())
+    return query.all()
+
+
+@fundamentals_bp.route('/api/classes/<int:class_id>/pupils')
+def api_class_pupils(class_id: int):
+    active_session = (
+        FundamentalSession.query
+        .filter_by(class_id=class_id, is_active=True)
+        .order_by(FundamentalSession.created_at.desc())
+        .first()
+    )
+    if not active_session:
+        return jsonify({'pupils': []}), 404
+    pupils = _active_pupils_for_class(class_id)
+    return jsonify({
+        'pupils': [
+            {'id': pupil.id, 'name': pupil.name}
+            for pupil in pupils
+        ]
+    })
+
 @fundamentals_bp.route('/pupil', methods=['GET', 'POST'])
 def pupil_login():
     classes = _classes_with_active_sessions()
@@ -494,7 +546,7 @@ def pupil_login():
     selected_class_id = request.values.get('class_id', type=int)
     selected_class = next((school_class for school_class in classes if school_class.id == selected_class_id), None)
     if selected_class:
-        pupils = Pupil.query.filter_by(class_id=selected_class_id, is_active=True, is_archived=False).order_by(Pupil.last_name, Pupil.first_name).all()
+        pupils = _active_pupils_for_class(selected_class_id)
     if request.method == 'POST':
         pupil = Pupil.query.get_or_404(request.form.get('pupil_id', type=int))
         if not selected_class or pupil.class_id != selected_class.id:
