@@ -27,9 +27,28 @@ from app.utils import current_school_id
 from . import fundamentals_bp
 
 
+NUMBER_BONDS_INTERVENTIONS = (
+    ('bonds within 5', 'Use counters, five frames and part-whole models to compose and partition quantities within 5.'),
+    ('bonds to 5', 'Practise pairs that total 5 using fingers, five frames and missing-number games.'),
+    ('bonds within 10', 'Use ten frames and counters to explore different ways to compose numbers within 10.'),
+    ('bonds to 10', 'Rehearse pairs to 10 using ten frames, bead strings and quick-fire recall.'),
+    ('bonds to 20', 'Use known bonds to 10 to derive pairs to 20.'),
+    ('crossing 10', 'Use ten frames and make-ten strategies to bridge through 10.'),
+    ('bonds to 50', 'Use place-value counters and known facts to derive complements to 50.'),
+    ('bonds to 100 in tens', 'Rehearse multiples-of-ten complements to 100.'),
+    ('bonds to 1000', 'Use place-value grids and complements to 100 to derive complements to 1000.'),
+    ('bonds to 100', 'Partition into tens and ones, then find the complement to 100.'),
+    ('decimal bonds to 1', 'Use hundred squares, decimal number lines and money contexts.'),
+    ('decimal bonds to 10', 'Partition whole numbers and decimals to find complements to 10.'),
+)
+
+
 def suggested_intervention_for_level(skill):
     """Return a short practical teaching suggestion based on skill text."""
     skill_text = (skill or '').casefold()
+    for skill_fragment, suggestion in NUMBER_BONDS_INTERVENTIONS:
+        if skill_fragment in skill_text:
+            return suggestion
     if 'subitise' in skill_text:
         return 'Use dot patterns, five frames and quick flash images. Ask pupils to say how they saw the quantity.'
     if 'count forwards' in skill_text:
@@ -201,7 +220,9 @@ def _get_session_or_404(session_id: int) -> FundamentalSession:
     return session
 
 
-def _default_start_level(school_class: SchoolClass) -> int:
+def _default_start_level(school_class: SchoolClass, strand: FundamentalStrand | None = None) -> int:
+    if strand and (strand.code or '').casefold() == 'nb':
+        return 5 if school_class.year_group and school_class.year_group >= 3 else 1
     return 5 if school_class.year_group and school_class.year_group >= 3 else 1
 
 
@@ -226,13 +247,26 @@ def start():
     strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
     selected_class_id = request.values.get('class_id', type=int) or (classes[0].id if classes else None)
     selected_class = next((c for c in classes if c.id == selected_class_id), None)
+    selected_strand_id = request.values.get('strand_id', type=int) or _default_strand_id(strands)
+    selected_strand = next((strand for strand in strands if strand.id == selected_strand_id), None)
+    levels_by_strand = {
+        strand.id: [level.level_number for level in FundamentalLevel.query.filter_by(strand_id=strand.id).order_by(FundamentalLevel.level_number).all()]
+        for strand in strands
+    }
+    defaults_by_strand = {
+        strand.id: (_default_start_level(selected_class, strand) if selected_class else 1)
+        for strand in strands
+    }
 
     if request.method == 'POST':
         school_class = SchoolClass.query.get_or_404(request.form.get('class_id', type=int))
         if not _can_access_class(school_class):
             abort(403)
         strand = FundamentalStrand.query.get_or_404(request.form.get('strand_id', type=int))
-        start_level = request.form.get('start_level', type=int) or _default_start_level(school_class)
+        start_level = request.form.get('start_level', type=int) or _default_start_level(school_class, strand)
+        if not FundamentalLevel.query.filter_by(strand_id=strand.id, level_number=start_level).first():
+            flash('Please choose a valid start level for the selected strand.', 'danger')
+            return redirect(url_for('fundamentals.start', class_id=school_class.id, strand_id=strand.id))
         FundamentalSession.query.filter_by(class_id=school_class.id, strand_id=strand.id, is_active=True).update({'is_active': False})
         session = FundamentalSession(class_id=school_class.id, teacher_id=current_user.id, strand_id=strand.id, start_level=start_level, is_active=True)
         db.session.add(session)
@@ -240,7 +274,16 @@ def start():
         flash('Maths Fundamentals session started.', 'success')
         return redirect(url_for('fundamentals.session_detail', session_id=session.id))
 
-    return render_template('fundamentals_start.html', classes=classes, strands=strands, selected_class=selected_class, default_level=_default_start_level(selected_class) if selected_class else 1)
+    return render_template(
+        'fundamentals_start.html',
+        classes=classes,
+        strands=strands,
+        selected_class=selected_class,
+        selected_strand_id=selected_strand_id,
+        levels_by_strand=levels_by_strand,
+        defaults_by_strand=defaults_by_strand,
+        default_level=_default_start_level(selected_class, selected_strand) if selected_class else 1,
+    )
 
 
 @fundamentals_bp.route('/session/<int:session_id>')
