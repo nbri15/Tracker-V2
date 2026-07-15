@@ -8,7 +8,7 @@ from io import BytesIO
 
 import qrcode
 
-from flask import abort, flash, redirect, render_template, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 
@@ -27,9 +27,28 @@ from app.utils import current_school_id
 from . import fundamentals_bp
 
 
+NUMBER_BONDS_INTERVENTIONS = (
+    ('bonds within 5', 'Use counters, five frames and part-whole models to compose and partition quantities within 5.'),
+    ('bonds to 5', 'Practise pairs that total 5 using fingers, five frames and missing-number games.'),
+    ('bonds within 10', 'Use ten frames and counters to explore different ways to compose numbers within 10.'),
+    ('bonds to 10', 'Rehearse pairs to 10 using ten frames, bead strings and quick-fire recall.'),
+    ('bonds to 20', 'Use known bonds to 10 to derive pairs to 20.'),
+    ('crossing 10', 'Use ten frames and make-ten strategies to bridge through 10.'),
+    ('bonds to 50', 'Use place-value counters and known facts to derive complements to 50.'),
+    ('bonds to 100 in tens', 'Rehearse multiples-of-ten complements to 100.'),
+    ('bonds to 1000', 'Use place-value grids and complements to 100 to derive complements to 1000.'),
+    ('bonds to 100', 'Partition into tens and ones, then find the complement to 100.'),
+    ('decimal bonds to 1', 'Use hundred squares, decimal number lines and money contexts.'),
+    ('decimal bonds to 10', 'Partition whole numbers and decimals to find complements to 10.'),
+)
+
+
 def suggested_intervention_for_level(skill):
     """Return a short practical teaching suggestion based on skill text."""
     skill_text = (skill or '').casefold()
+    for skill_fragment, suggestion in NUMBER_BONDS_INTERVENTIONS:
+        if skill_fragment in skill_text:
+            return suggestion
     if 'subitise' in skill_text:
         return 'Use dot patterns, five frames and quick flash images. Ask pupils to say how they saw the quantity.'
     if 'count forwards' in skill_text:
@@ -160,15 +179,32 @@ def _active_classes_for_user():
 
 
 def _classes_with_active_sessions():
-    query = (SchoolClass.query
-        .join(FundamentalSession, FundamentalSession.class_id == SchoolClass.id)
-        .filter(SchoolClass.is_active.is_(True), FundamentalSession.is_active.is_(True)))
-    if hasattr(SchoolClass, 'school_id'):
-        school_id = request.values.get('school_id', type=int)
-        if school_id is None:
-            return []
-        query = query.filter(SchoolClass.school_id == school_id)
-    return query.distinct().order_by(SchoolClass.year_group, SchoolClass.name).all()
+    active_class_ids = (
+        db.session.query(FundamentalSession.class_id)
+        .filter(FundamentalSession.is_active.is_(True))
+        .distinct()
+        .all()
+    )
+    active_class_ids = [row[0] for row in active_class_ids]
+    if not active_class_ids:
+        classes = []
+    else:
+        query = SchoolClass.query.filter(
+            SchoolClass.id.in_(active_class_ids),
+            SchoolClass.is_active.is_(True),
+        )
+        if hasattr(SchoolClass, 'is_archived'):
+            query = query.filter(SchoolClass.is_archived.is_(False))
+        if hasattr(SchoolClass, 'is_archive'):
+            query = query.filter(SchoolClass.is_archive.is_(False))
+        classes = query.order_by(SchoolClass.name.asc()).all()
+    current_app.logger.info(
+        "Fundamentals join active sessions=%s active_class_ids=%s classes=%s",
+        FundamentalSession.query.filter_by(is_active=True).count(),
+        active_class_ids,
+        [c.name for c in classes],
+    )
+    return classes
 
 
 def _active_session_for_class(class_id: int):
@@ -201,7 +237,9 @@ def _get_session_or_404(session_id: int) -> FundamentalSession:
     return session
 
 
-def _default_start_level(school_class: SchoolClass) -> int:
+def _default_start_level(school_class: SchoolClass, strand: FundamentalStrand | None = None) -> int:
+    if strand and (strand.code or '').casefold() == 'nb':
+        return 5 if school_class.year_group and school_class.year_group >= 3 else 1
     return 5 if school_class.year_group and school_class.year_group >= 3 else 1
 
 
@@ -226,21 +264,50 @@ def start():
     strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
     selected_class_id = request.values.get('class_id', type=int) or (classes[0].id if classes else None)
     selected_class = next((c for c in classes if c.id == selected_class_id), None)
+    selected_strand_id = request.values.get('strand_id', type=int) or _default_strand_id(strands)
+    selected_strand = next((strand for strand in strands if strand.id == selected_strand_id), None)
+    levels_by_strand = {
+        strand.id: [level.level_number for level in FundamentalLevel.query.filter_by(strand_id=strand.id).order_by(FundamentalLevel.level_number).all()]
+        for strand in strands
+    }
+    defaults_by_strand = {
+        strand.id: (_default_start_level(selected_class, strand) if selected_class else 1)
+        for strand in strands
+    }
 
     if request.method == 'POST':
         school_class = SchoolClass.query.get_or_404(request.form.get('class_id', type=int))
         if not _can_access_class(school_class):
             abort(403)
         strand = FundamentalStrand.query.get_or_404(request.form.get('strand_id', type=int))
-        start_level = request.form.get('start_level', type=int) or _default_start_level(school_class)
+        start_level = request.form.get('start_level', type=int) or _default_start_level(school_class, strand)
+        if not FundamentalLevel.query.filter_by(strand_id=strand.id, level_number=start_level).first():
+            flash('Please choose a valid start level for the selected strand.', 'danger')
+            return redirect(url_for('fundamentals.start', class_id=school_class.id, strand_id=strand.id))
         FundamentalSession.query.filter_by(class_id=school_class.id, strand_id=strand.id, is_active=True).update({'is_active': False})
         session = FundamentalSession(class_id=school_class.id, teacher_id=current_user.id, strand_id=strand.id, start_level=start_level, is_active=True)
         db.session.add(session)
         db.session.commit()
+        current_app.logger.info(
+            "Created fundamentals session id=%s class_id=%s strand_id=%s active=%s",
+            session.id,
+            session.class_id,
+            session.strand_id,
+            session.is_active,
+        )
         flash('Maths Fundamentals session started.', 'success')
         return redirect(url_for('fundamentals.session_detail', session_id=session.id))
 
-    return render_template('fundamentals_start.html', classes=classes, strands=strands, selected_class=selected_class, default_level=_default_start_level(selected_class) if selected_class else 1)
+    return render_template(
+        'fundamentals_start.html',
+        classes=classes,
+        strands=strands,
+        selected_class=selected_class,
+        selected_strand_id=selected_strand_id,
+        levels_by_strand=levels_by_strand,
+        defaults_by_strand=defaults_by_strand,
+        default_level=_default_start_level(selected_class, selected_strand) if selected_class else 1,
+    )
 
 
 @fundamentals_bp.route('/session/<int:session_id>')
@@ -444,6 +511,34 @@ def stop_session(session_id: int):
     return redirect(url_for('fundamentals.session_detail', session_id=session.id))
 
 
+
+def _active_pupils_for_class(class_id: int):
+    query = Pupil.query.filter_by(class_id=class_id, is_active=True, is_archived=False)
+    if hasattr(Pupil, 'number'):
+        query = query.order_by(Pupil.number.is_(None), Pupil.number.asc(), Pupil.name.asc())
+    else:
+        query = query.order_by(Pupil.last_name.asc(), Pupil.first_name.asc())
+    return query.all()
+
+
+@fundamentals_bp.route('/api/classes/<int:class_id>/pupils')
+def api_class_pupils(class_id: int):
+    active_session = (
+        FundamentalSession.query
+        .filter_by(class_id=class_id, is_active=True)
+        .order_by(FundamentalSession.created_at.desc())
+        .first()
+    )
+    if not active_session:
+        return jsonify({'pupils': []}), 404
+    pupils = _active_pupils_for_class(class_id)
+    return jsonify({
+        'pupils': [
+            {'id': pupil.id, 'name': pupil.name}
+            for pupil in pupils
+        ]
+    })
+
 @fundamentals_bp.route('/pupil', methods=['GET', 'POST'])
 def pupil_login():
     classes = _classes_with_active_sessions()
@@ -451,7 +546,7 @@ def pupil_login():
     selected_class_id = request.values.get('class_id', type=int)
     selected_class = next((school_class for school_class in classes if school_class.id == selected_class_id), None)
     if selected_class:
-        pupils = Pupil.query.filter_by(class_id=selected_class_id, is_active=True, is_archived=False).order_by(Pupil.last_name, Pupil.first_name).all()
+        pupils = _active_pupils_for_class(selected_class_id)
     if request.method == 'POST':
         pupil = Pupil.query.get_or_404(request.form.get('pupil_id', type=int))
         if not selected_class or pupil.class_id != selected_class.id:
