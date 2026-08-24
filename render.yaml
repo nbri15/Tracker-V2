@@ -3,7 +3,9 @@ services:
     name: tracker-v2
     env: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    # Importing the application before its Alembic schema is current can make
+    # SQLAlchemy select model columns that an older production database lacks.
+    buildCommand: pip install -r requirements.txt && flask db upgrade
     startCommand: gunicorn wsgi:app --timeout 180
     envVars:
       - key: PYTHON_VERSION
