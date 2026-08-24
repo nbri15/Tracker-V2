@@ -221,8 +221,15 @@ def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_m
         raise ValueError('A school must be selected before promoting pupils.')
     snapshot_count = snapshot_pupil_history(source_year, school_id)
     target_year = build_next_academic_year(source_year)
+    if int(target_year.split('/')[0]) <= int(source_year.split('/')[0]):
+        raise ValueError('The promotion destination must be after the working academic year.')
     ensure_academic_year(source_year, archived=True)
-    ensure_academic_year(target_year, mark_current=True)
+    target_record = ensure_academic_year(target_year)
+    school = db.session.get(School, school_id)
+    if not school:
+        raise ValueError('The selected school could not be found.')
+    school.current_academic_year = target_record
+    db.session.add(school)
 
     normalized_mapping = class_mapping or {}
     classes = SchoolClass.query.filter(SchoolClass.school_id == school_id, SchoolClass.is_active.is_(True)).order_by(SchoolClass.year_group.desc(), SchoolClass.name).all()

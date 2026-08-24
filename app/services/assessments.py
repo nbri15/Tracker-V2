@@ -292,6 +292,29 @@ def get_selected_current_academic_year() -> str:
     return current.name if current else get_current_academic_year()
 
 
+def get_school_working_academic_year(school_id: int | None) -> AcademicYear:
+    """Resolve a school's operational year without consulting the viewing session.
+
+    A school's explicit setting is authoritative. The legacy global current flag is
+    retained as a migration fallback, followed by the calendar-derived year. In
+    particular, the newest database row and dashboard/report selection are never
+    treated as the school's working year.
+    """
+    from app.models import School
+
+    school = db.session.get(School, school_id) if school_id is not None else None
+    if school and school.current_academic_year:
+        return school.current_academic_year
+
+    current = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
+    if current:
+        return current
+
+    fallback_name = get_current_academic_year()
+    fallback = AcademicYear.query.filter_by(name=fallback_name).first()
+    return fallback or AcademicYear(name=fallback_name, is_current=False)
+
+
 def is_current_academic_year(academic_year: str | None) -> bool:
     return (academic_year or get_selected_current_academic_year()) == get_selected_current_academic_year()
 
