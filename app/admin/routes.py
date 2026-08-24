@@ -144,6 +144,7 @@ from app.services import (
     get_class_detail_context,
     get_class_pupil_query,
     get_selected_current_academic_year,
+    get_school_working_academic_year,
     get_selected_academic_year,
     get_foundation_half_term,
     get_gender_filter_options,
@@ -1587,11 +1588,16 @@ def settings():
         try:
             if action == 'set-active-academic-year':
                 year = AcademicYear.query.get(int(request.form.get('academic_year_id', '0')))
+                school_id = _selected_school_id_for_admin_actions()
+                school = School.query.get(school_id) if school_id else None
                 if not year:
                     flash('Academic year could not be found.', 'danger')
+                elif not school:
+                    flash('Select a school before setting its working year.', 'warning')
                 else:
-                    session['selected_academic_year_id'] = year.id
-                    flash(f'Academic year set to {year.name}', 'success')
+                    school.current_academic_year = year
+                    db.session.commit()
+                    flash(f'School working academic year set to {year.name}.', 'success')
                 return redirect(url_for('admin.settings'))
             if action == 'generate-academic-years':
                 created_years = generate_next_missing_academic_years()
@@ -1667,7 +1673,7 @@ def settings():
         filter_term_choices=[('', 'All terms')] + TERMS,
         form=form,
         terms=TERMS,
-        selected_year=get_selected_academic_year(request.args.get('year'), request.args.get('academic_year')),
+        selected_year=get_school_working_academic_year(_selected_school_id_for_admin_actions()),
         academic_year_options=build_academic_year_options(),
     )
 
@@ -1898,9 +1904,10 @@ def _legacy_admin_sats_disabled():
 @login_required
 @admin_required
 def promotion():
-    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
-    next_year = build_next_academic_year(academic_year)
     effective_school_id = _selected_school_id_for_admin_actions()
+    working_year = get_school_working_academic_year(effective_school_id)
+    academic_year = working_year.name
+    next_year = build_next_academic_year(academic_year)
     mapping_rows = get_promotion_mapping_options(effective_school_id) if effective_school_id else []
     if request.method == 'POST':
         if effective_school_id is None:
@@ -1913,10 +1920,12 @@ def promotion():
         try:
             if action == 'snapshot':
                 count = snapshot_pupil_history(academic_year, effective_school_id)
-                ensure_academic_year(academic_year, mark_current=True)
+                ensure_academic_year(academic_year)
                 db.session.commit()
                 flash(f'Archived {count} pupil class history record(s) for {academic_year}.', 'success')
             elif action == 'promote':
+                if request.form.get('confirm_promotion') != 'yes':
+                    raise ValueError(f'Confirm promotion from {academic_year} into {next_year} before continuing.')
                 class_mapping: dict[int, int | None] = {}
                 for row in mapping_rows:
                     source_class = row['source_class']
@@ -1936,7 +1945,7 @@ def promotion():
                         class_mapping[source_class.id] = None
                 outcome = promote_pupils_to_next_year(academic_year, effective_school_id, class_mapping=class_mapping)
                 db.session.commit()
-                flash(f"Promotion complete. Moved {outcome['moved']} pupil(s), marked {outcome['leavers']} Year 6 leavers, and set {outcome['target_year']} as current.", 'success')
+                flash(f"Promotion complete. Moved {outcome['moved']} pupil(s), marked {outcome['leavers']} Year 6 leavers, and set {outcome['target_year']} as this school's working year.", 'success')
             return redirect(url_for('admin.promotion', academic_year=academic_year))
         except ValueError as exc:
             db.session.rollback()

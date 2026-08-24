@@ -104,15 +104,15 @@
         <form method="post" class="d-flex flex-wrap align-items-end gap-2">
           <input type="hidden" name="action" value="set-active-academic-year">
           <div>
-            <label class="form-label small mb-1">Academic year</label>
+            <label class="form-label small mb-1">School working academic year: <strong>{{ selected_year.name }}</strong></label>
             <select name="academic_year_id" class="form-select form-select-sm">
               {% for year in academic_year_options %}
                 <option value="{{ year.id }}" {% if selected_year and selected_year.id == year.id %}selected{% endif %}>{{ year.name }}</option>
               {% endfor %}
             </select>
           </div>
-          <button type="submit" class="btn btn-primary btn-sm">Set as active year</button>
-          <span class="small text-muted">Persists this academic year for your session.</span>
+          <button type="submit" class="btn btn-primary btn-sm">Set working year</button>
+          <span class="small text-muted">Promotion and academic-year history use this school-specific value. Viewing another year does not change it.</span>
         </form>
 
         <hr>

@@ -19,6 +19,12 @@ class School(db.Model):
     archived_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     archive_reason = db.Column(db.Text, nullable=True)
     is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    current_academic_year_id = db.Column(
+        db.Integer,
+        db.ForeignKey('academic_years.id'),
+        nullable=True,
+        index=True,
+    )
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -29,6 +35,7 @@ class School(db.Model):
         lazy='dynamic',
     )
     classes = db.relationship('SchoolClass', back_populates='school', lazy='dynamic')
+    current_academic_year = db.relationship('AcademicYear', foreign_keys=[current_academic_year_id])
     archived_by_user = db.relationship(
         'User',
         foreign_keys=[archived_by_user_id],

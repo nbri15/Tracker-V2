@@ -7,7 +7,10 @@
     <div class="card shadow-sm h-100">
       <div class="card-header bg-white"><strong>Promotion tools</strong></div>
       <div class="card-body">
-        <p class="text-muted">Current working academic year: <strong>{{ academic_year }}</strong>. Next year: <strong>{{ next_year }}</strong>.</p>
+        <div class="alert alert-warning" role="alert">
+          <div>Current working year: <strong>{{ academic_year }}</strong></div>
+          <div>Promoting will move pupils into: <strong>{{ next_year }}</strong></div>
+        </div>
         <form method="post" class="promotion-form mb-3">
           <input type="hidden" name="action" value="promote">
           <input type="hidden" name="academic_year" value="{{ academic_year }}">
@@ -49,6 +52,10 @@
                 {% endfor %}
               </tbody>
             </table>
+          </div>
+          <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" value="yes" id="confirm-promotion" name="confirm_promotion" required>
+            <label class="form-check-label" for="confirm-promotion">I confirm that I want to promote pupils from {{ academic_year }} into {{ next_year }}.</label>
           </div>
           <div class="form-actions promotion-actions">
             <button class="btn btn-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
