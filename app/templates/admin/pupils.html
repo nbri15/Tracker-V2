@@ -4,6 +4,9 @@
 {% set page_heading = 'Pupils' %}
 
 {% block content %}
+{% set print_mode = request.args.get('print') == '1' %}
+{% set anon_mode = request.args.get('anon') == '1' %}
+{% if print_mode %}<style>@media print {.sidebar,.topbar,.btn,form,.card-header,.card-body{display:none!important;} tr{page-break-inside:avoid;}}</style><h3>{{ 'Pupil overview — anonymised' if anon_mode else 'Pupil overview' }}</h3>{% endif %}
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white"><strong>Pupil filters</strong></div>
   <div class="card-body">
@@ -26,6 +29,14 @@
         </select>
       </div>
       <div class="col-md-3">
+        <label class="form-label">SEND</label>
+        <select name="send" class="form-select form-select-sm">
+          <option value="all" {% if send_filter == 'all' %}selected{% endif %}>All</option>
+          <option value="yes" {% if send_filter == 'yes' %}selected{% endif %}>SEND: Yes</option>
+          <option value="no" {% if send_filter == 'no' %}selected{% endif %}>SEND: No</option>
+        </select>
+      </div>
+      <div class="col-md-3">
         <label class="form-label">Pupil search</label>
         <input type="text" name="search" class="form-control form-control-sm" value="{{ pupil_filters.search }}" placeholder="First or last name">
       </div>
@@ -36,14 +47,38 @@
     </form>
   </div>
 </div>
+<div class="d-flex gap-2 justify-content-end mb-3 flex-wrap"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.export_pupil_overview', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, anon=0) }}">Download with names</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.export_pupil_overview', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, anon=1) }}">Download anonymised</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, pdf=1, anon=0) }}">Download PDF with names</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, pdf=1, anon=1) }}">Download anonymised PDF</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=0) }}">Print with names</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin.pupils', class_id=class_id_filter, pupil_status=pupil_filters.pupil_status, search=pupil_filters.search, send=send_filter, print=1, anon=1) }}">Print anonymised</a></div>
 
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>Quick add pupil</strong></div>
+  <div class="card-body">
+    <form method="post" class="row g-2 align-items-end" id="adminQuickAddForm">
+      <div class="col-md-2"><label class="form-label">First name</label><input name="first_name" class="form-control form-control-sm" required></div>
+      <div class="col-md-2"><label class="form-label">Last name</label><input name="last_name" class="form-control form-control-sm" required></div>
+      <div class="col-md-2"><label class="form-label">Class</label><select name="class_id" class="form-select form-select-sm" required>{% for school_class in class_options %}<option value="{{ school_class.id }}">Year {{ school_class.year_group }} · {{ school_class.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="">—</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
+      <div class="col-md-2"><label class="form-label">Year joined</label><select name="join_year_group" class="form-select form-select-sm"><option value="">Unknown</option><option value="0">Reception</option>{% for year in range(1, 7) %}<option value="{{ year }}">Year {{ year }}</option>{% endfor %}</select></div>
+      <div class="col-md-2 d-flex gap-2">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="pupil_premium" id="qa_pp"><label class="form-check-label" for="qa_pp">PP</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="laps" id="qa_laps"><label class="form-check-label" for="qa_laps">LAPS</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="service_child" id="qa_service"><label class="form-check-label" for="qa_service">Service</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="send" id="qa_send"><label class="form-check-label" for="qa_send">SEND</label></div>
+      </div>
+      <div class="col-12 d-flex align-items-center gap-2"><button class="btn btn-primary btn-sm" type="submit">Add pupil</button><span id="adminQuickAddStatus" class="small"></span></div>
+    </form>
+  </div>
+</div>
+<div class="d-flex justify-content-end mb-3">
+  <a class="btn btn-primary" href="{{ url_for('admin.new_pupil') }}">+ Add pupil</a>
+</div>
 <div class="card shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <strong>Pupil directory</strong>
     <span class="small text-muted">{{ pupils|length }} record(s)</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
+    <table class="table table-hover align-middle mb-0 data-table">
       <thead>
         <tr>
           <th>Name</th>
@@ -53,39 +88,80 @@
           <th>PP</th>
           <th>LAPS</th>
           <th>Service child</th>
+          <th>SEND</th><th>Year Joined School</th>
+          <th>Join Date</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for pupil in pupils %}
           <tr>
-            <td>{{ pupil.full_name }}</td>
+            <td>{{ ('Pupil ' ~ loop.index) if anon_mode else pupil.full_name }}</td>
             <td>{{ pupil.school_class.name }}</td>
             <td>{{ 'Active' if pupil.is_active else 'Archived' }}</td>
             <td>{{ pupil.gender }}</td>
             <td>{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
             <td>{{ 'Yes' if pupil.laps else 'No' }}</td>
-            <td>{{ 'Yes' if pupil.service_child else 'No' }}</td>
+            <td>{{ 'Yes' if pupil.service_child else 'No' }}</td><td>{{ 'Yes' if pupil.send else 'No' }}</td>
+            <td>
+              <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-flex gap-1">
+                <input type="hidden" name="pupil_id" value="{{ pupil.id }}">
+                <input type="hidden" name="action" value="update_profile">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <select name="join_year_group" class="form-select form-select-sm">
+                  <option value="" {% if pupil.join_year_group is none %}selected{% endif %}>Unknown</option>
+                  <option value="0" {% if pupil.join_year_group == 0 %}selected{% endif %}>Reception</option>
+                  {% for year in range(1, 7) %}<option value="{{ year }}" {% if pupil.join_year_group == year %}selected{% endif %}>Year {{ year }}</option>{% endfor %}
+                </select>
+            </td>
+            <td>
+                <input type="date" name="join_date" class="form-control form-control-sm" value="{{ pupil.join_date.isoformat() if pupil.join_date else '' }}">
+                <button class="btn btn-outline-primary btn-sm">Save</button>
+              </form>
+            </td>
             <td class="text-nowrap">
               <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
                 <input type="hidden" name="pupil_id" value="{{ pupil.id }}">
                 <input type="hidden" name="action" value="{{ 'archive' if pupil.is_active else 'restore' }}">
                 <input type="hidden" name="next" value="{{ request.full_path }}">
-                <button class="btn btn-outline-secondary btn-sm" onclick="return confirm('{{ 'Archive' if pupil.is_active else 'Restore' }} {{ pupil.full_name }}? {{ 'Archive keeps all historical data and hides the pupil from active lists.' if pupil.is_active else 'Restore returns the pupil to active lists.' }}');">{{ 'Archive' if pupil.is_active else 'Restore' }}</button>
-              </form>
-              <form method="post" action="{{ url_for('admin.manage_pupil') }}" class="d-inline">
-                <input type="hidden" name="pupil_id" value="{{ pupil.id }}">
-                <input type="hidden" name="action" value="delete">
-                <input type="hidden" name="next" value="{{ request.full_path }}">
-                <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanently delete {{ pupil.full_name }}? This cannot be undone. Delete only succeeds when no linked records exist; otherwise archive instead.');">Delete</button>
+                <button class="btn btn-outline-secondary btn-sm" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %} onclick="return confirm('{{ 'Archive' if pupil.is_active else 'Restore' }} {{ pupil.full_name }}? {{ 'Archive keeps all historical data and hides the pupil from active lists.' if pupil.is_active else 'Restore returns the pupil to active lists.' }}');">{{ 'Archive' if pupil.is_active else 'Restore' }}</button>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
+          <tr><td colspan="10" class="text-center py-4 text-muted">No pupils match the current filters.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 {% endblock %}
+
+<script>
+(function () {
+  const form = document.getElementById('adminQuickAddForm');
+  const status = document.getElementById('adminQuickAddStatus');
+  if (!form) return;
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    status.textContent = 'Saving...';
+    status.className = 'small text-muted';
+    const data = new FormData(form);
+    try {
+      const response = await fetch("{{ url_for('admin.admin_quick_add_api') }}", { method: 'POST', body: data });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        status.textContent = payload.error || 'Could not add pupil.';
+        status.className = 'small text-danger';
+        return;
+      }
+      status.textContent = `Added ${payload.name}. Reloading...`;
+      status.className = 'small text-success';
+      window.location.reload();
+    } catch (err) {
+      status.textContent = 'Network error while adding pupil.';
+      status.className = 'small text-danger';
+    }
+  });
+})();
+</script>

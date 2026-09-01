@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="h5">Executive users</h3>
+    <p class="text-muted mb-3">All accounts across all schools. Tracker data is intentionally not shown on this page.</p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>School</th>
+            <th>Status</th>
+            <th>Type</th>
+            <th>Created</th>
+            <th>Reset password</th>
+            <th>Owner controls</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>{{ user.username }}</td>
+              <td>{{ user.role }}</td>
+              <td>{{ user.school.name if user.school else '—' }}</td>
+              <td>{{ 'Active' if user.is_active else 'Inactive' }}</td>
+              <td>{{ 'Demo' if user.is_demo else 'Real' }}</td>
+              <td>{{ user.created_at.strftime('%Y-%m-%d') if user.created_at else '—' }}</td>
+              <td>
+                {% if user.role != 'executive_admin' %}
+                  <form method="post" action="{{ url_for('executive.reset_user_password', user_id=user.id) }}" class="d-flex gap-2">
+                    <input class="form-control form-control-sm" type="password" name="new_password" placeholder="New password" minlength="8" required>
+                    <label class="form-check-label small d-flex align-items-center gap-1">
+                      <input class="form-check-input" type="checkbox" name="require_password_change" checked>
+                      Force change
+                    </label>
+                    <button class="btn btn-sm btn-outline-primary">Reset</button>
+                  </form>
+                {% else %}
+                  <span class="text-muted small">Restricted</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex flex-wrap gap-2">
+                  {% if user.id == current_user.id %}
+                    <span class="text-muted small">Your account</span>
+                  {% elif user.is_active %}
+                    {% if user.role == 'executive_admin' and is_last_executive_admin(user) %}
+                      <span class="text-muted small">Last executive admin</span>
+                    {% else %}
+                      <a class="btn btn-sm btn-outline-warning" href="{{ url_for('executive.confirm_deactivate_user', user_id=user.id) }}">Deactivate</a>
+                    {% endif %}
+                  {% else %}
+                    <form method="post" action="{{ url_for('executive.reactivate_user', user_id=user.id) }}">
+                      <button class="btn btn-sm btn-outline-success">Reactivate</button>
+                    </form>
+                  {% endif %}
+
+                  {% set delete_state = user_delete_state.get(user.id) %}
+                  {% if delete_state and delete_state.can_delete %}
+                    <form method="post" action="{{ url_for('executive.delete_user', user_id=user.id) }}" onsubmit="return confirm('Delete this user permanently? This cannot be undone.');">
+                      <button class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                  {% elif delete_state and delete_state.reason %}
+                    <span class="text-muted small">{{ delete_state.reason }}</span>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

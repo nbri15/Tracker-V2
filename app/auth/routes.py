@@ -6,7 +6,8 @@ from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from app.extensions import db
-from app.models import User
+from app.models import School, User
+from app.utils import is_demo_mode_enabled
 
 from . import auth_bp
 from .forms import ChangePasswordForm, LoginForm
@@ -21,8 +22,21 @@ def login():
 
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data.strip()).first()
-        if user and user.is_active and user.check_password(form.password.data):
+        school_code = (form.school_code.data or '').strip().lower()
+        identifier = form.username.data.strip()
+        user = None
+        if school_code:
+            school = School.query.filter(School.slug == school_code).first()
+            if school:
+                user = User.query.filter(
+                    User.school_id == school.id,
+                    User.username.ilike(identifier),
+                ).first()
+        else:
+            user = User.query.filter(User.username.ilike(identifier)).first()
+        credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
+        school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
+        if credentials_valid and school_active_or_exec:
             login_user(user)
             if user.require_password_change:
                 flash('Please set a new password before continuing.', 'warning')
@@ -33,9 +47,40 @@ def login():
                 return redirect(next_page)
             return redirect(url_for('dashboards.index'))
 
-        flash('Invalid username or password.', 'danger')
+        if credentials_valid and not school_active_or_exec:
+            flash('Your school is inactive. Contact an executive administrator.', 'danger')
+        else:
+            flash('Invalid school code/username/password.', 'danger')
 
     return render_template('auth/login.html', form=form)
+
+
+@auth_bp.route('/demo-login')
+def demo_login():
+    """Shortcut login helpers for demo accounts when demo mode is enabled."""
+
+    if not is_demo_mode_enabled():
+        flash('Demo login is not available.', 'warning')
+        return redirect(url_for('auth.login'))
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboards.index'))
+
+    account = (request.args.get('account') or 'teacher').strip().lower()
+    username = 'demo_admin' if account == 'admin' else 'demo_teacher'
+    demo_school = School.query.filter_by(slug='demo-school').first()
+    user_query = User.query.filter(User.username.ilike(username), User.is_active.is_(True))
+    if demo_school:
+        user_query = user_query.filter(User.school_id == demo_school.id)
+    user = user_query.first()
+    if not user:
+        flash('Demo account is missing. Run seed_demo.py to create demo users.', 'danger')
+        return redirect(url_for('auth.login'))
+    if not user.is_executive_admin and user.school and (not user.school.is_active or user.school.is_archived):
+        flash('Demo school is inactive.', 'danger')
+        return redirect(url_for('auth.login'))
+    login_user(user)
+    flash(f'Signed in as {username}.', 'success')
+    return redirect(url_for('dashboards.index'))
 
 
 @auth_bp.route('/logout')

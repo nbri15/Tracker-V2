@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Start Maths Fundamentals{% endblock %}
+{% block content %}
+<h1>Start Maths Fundamentals session</h1>
+<form method="post" class="card card-body col-lg-6">
+  <label class="form-label">Class</label>
+  <select class="form-select mb-3" name="class_id" required>
+    {% for class in classes %}<option value="{{ class.id }}" {% if selected_class and selected_class.id==class.id %}selected{% endif %}>{{ class.name }} (Year {{ class.year_group }})</option>{% endfor %}
+  </select>
+  <label class="form-label">Strand</label>
+  <select class="form-select mb-3" id="strand_id" name="strand_id" required>
+    {% for strand in strands %}<option value="{{ strand.id }}" {% if selected_strand_id == strand.id %}selected{% endif %}>{{ strand.name }}</option>{% endfor %}
+  </select>
+  <label class="form-label">Start level</label>
+  <select class="form-select mb-3" id="start_level" name="start_level" required>
+    {% for strand in strands %}
+      {% for level_number in levels_by_strand.get(strand.id, []) %}
+        <option value="{{ level_number }}" data-strand-id="{{ strand.id }}" {% if selected_strand_id == strand.id and (default_level or 1) == level_number %}selected{% endif %}>Level {{ level_number }}</option>
+      {% endfor %}
+    {% endfor %}
+  </select>
+  <button class="btn btn-primary" type="submit">Start session</button>
+</form>
+<script>
+  const defaultLevelsByStrand = {{ defaults_by_strand|tojson }};
+  const strandSelect = document.getElementById('strand_id');
+  const levelSelect = document.getElementById('start_level');
+
+  function refreshLevels() {
+    const strandId = strandSelect.value;
+    const defaultLevel = String(defaultLevelsByStrand[strandId] || 1);
+    let selectedOptionVisible = false;
+    let firstVisibleOption = null;
+
+    Array.from(levelSelect.options).forEach((option) => {
+      const isVisible = option.dataset.strandId === strandId;
+      option.hidden = !isVisible;
+      option.disabled = !isVisible;
+      if (isVisible && !firstVisibleOption) {
+        firstVisibleOption = option;
+      }
+      if (isVisible && option.value === levelSelect.value) {
+        selectedOptionVisible = true;
+      }
+    });
+
+    if (!selectedOptionVisible) {
+      const defaultOption = Array.from(levelSelect.options).find((option) => option.dataset.strandId === strandId && option.value === defaultLevel);
+      const nextOption = defaultOption || firstVisibleOption;
+      if (nextOption) {
+        levelSelect.value = nextOption.value;
+      }
+    }
+  }
+
+  strandSelect.addEventListener('change', refreshLevels);
+  refreshLevels();
+</script>
+{% endblock %}

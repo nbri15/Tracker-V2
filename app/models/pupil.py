@@ -3,28 +3,42 @@
 from datetime import datetime, timezone
 
 from app.extensions import db
+from sqlalchemy.ext.hybrid import hybrid_property
 
 
 class Pupil(db.Model):
     """Stores a pupil's core demographic and class membership details."""
 
     __tablename__ = 'pupils'
+    __table_args__ = (
+        db.Index('ix_pupils_dashboard_scope', 'school_id', 'is_demo', 'is_active', 'class_id'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     first_name = db.Column(db.String(80), nullable=False, index=True)
     last_name = db.Column(db.String(80), nullable=False, index=True)
     gender = db.Column(db.String(20), nullable=False)
     pupil_premium = db.Column(db.Boolean, nullable=False, default=False, index=True)
     laps = db.Column(db.Boolean, nullable=False, default=False, index=True)
     service_child = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    send = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    join_year_group = db.Column(db.Integer, nullable=True)
+    join_date = db.Column(db.Date, nullable=True)
     class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    is_archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    archive_reason = db.Column(db.Text, nullable=True)
+    is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
     strengths_notes = db.Column(db.Text, nullable=True)
     next_steps_notes = db.Column(db.Text, nullable=True)
     general_notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     school_class = db.relationship('SchoolClass', back_populates='pupils')
+    archived_by_user = db.relationship('User')
     subject_results = db.relationship('SubjectResult', back_populates='pupil', cascade='all, delete-orphan')
     writing_results = db.relationship('WritingResult', back_populates='pupil', cascade='all, delete-orphan')
     interventions = db.relationship('Intervention', back_populates='pupil', cascade='all, delete-orphan')
@@ -38,9 +52,17 @@ class Pupil(db.Model):
     times_table_scores = db.relationship('TimesTableScore', back_populates='pupil', cascade='all, delete-orphan')
     foundation_results = db.relationship('FoundationResult', back_populates='pupil', cascade='all, delete-orphan')
 
+    @hybrid_property
+    def name(self) -> str:
+        return f'{self.first_name} {self.last_name}'
+
+    @name.expression
+    def name(cls):
+        return cls.first_name + ' ' + cls.last_name
+
     @property
     def full_name(self) -> str:
-        return f'{self.first_name} {self.last_name}'
+        return self.name
 
     def __repr__(self) -> str:
         return f'<Pupil {self.full_name}>'

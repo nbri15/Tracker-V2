@@ -2,10 +2,10 @@
 
 from functools import wraps
 
-from flask import abort, flash, redirect, url_for
+from flask import abort, current_app, flash, g, redirect, request, url_for
 from flask_login import current_user
 
-from app.models import SchoolClass
+from app.models import AuditLog, Pupil, SchoolClass
 
 
 def role_required(*roles):
@@ -27,9 +27,15 @@ def role_required(*roles):
 
 
 def admin_required(view_func):
-    """Require the current user to be an administrator."""
+    """Require the current user to be a school admin or executive admin."""
 
-    return role_required('admin')(view_func)
+    return role_required('school_admin', 'executive_admin', 'admin')(view_func)
+
+
+def executive_admin_required(view_func):
+    """Require executive admin role."""
+
+    return role_required('executive_admin')(view_func)
 
 
 def teacher_required(view_func):
@@ -39,30 +45,153 @@ def teacher_required(view_func):
 
 
 def teacher_or_admin_required(view_func):
-    """Allow teachers and admins to access a route."""
+    """Allow teachers and admin roles to access a route."""
 
-    return role_required('teacher', 'admin')(view_func)
+    return role_required('teacher', 'school_admin', 'executive_admin', 'admin')(view_func)
+
+
+def current_school_id() -> int | None:
+    """Return selected/current school id for the request."""
+
+    if not getattr(current_user, 'is_authenticated', False):
+        return None
+    if getattr(current_user, 'is_executive_admin', False):
+        selected = request.args.get('school_id') or request.form.get('school_id') or getattr(g, 'selected_school_id', None)
+        if selected and str(selected).isdigit():
+            return int(selected)
+        return None
+    return getattr(current_user, 'school_id', None)
+
+
+def user_can_access_school(user, school_id: int | None) -> bool:
+    """Return whether user can access a school boundary."""
+
+    if school_id is None:
+        return bool(getattr(user, 'is_executive_admin', False))
+    return bool(getattr(user, 'is_executive_admin', False) or getattr(user, 'school_id', None) == school_id)
+
+
+def require_same_school(obj) -> None:
+    """Abort if object belongs to another school."""
+
+    school_id = getattr(obj, 'school_id', None)
+    if getattr(current_user, 'role', None) == 'executive_admin':
+        selected_school_id = current_school_id()
+        if selected_school_id is None:
+            abort(403)
+        if school_id is not None and school_id != selected_school_id:
+            abort(403)
+        return
+    if school_id is not None and school_id != getattr(current_user, 'school_id', None):
+        abort(403)
+
+
+def require_exec_admin() -> None:
+    if not getattr(current_user, 'is_executive_admin', False):
+        abort(403)
+
+
+def require_school_admin() -> None:
+    if not (getattr(current_user, 'is_executive_admin', False) or getattr(current_user, 'is_school_admin', False)):
+        abort(403)
+
+
+def school_scoped_query(model_or_query, query_or_model=None):
+    """Apply school scoping to a model query that has a school_id column."""
+
+    if hasattr(model_or_query, 'filter') and query_or_model is not None and hasattr(query_or_model, '__table__'):
+        scoped = model_or_query
+        model = query_or_model
+    else:
+        model = model_or_query
+        scoped = query_or_model if query_or_model is not None else model.query
+    if not getattr(current_user, 'is_authenticated', False):
+        return scoped
+    if hasattr(model, 'school_id'):
+        school_id = current_school_id()
+        if school_id is not None:
+            return scoped.filter(model.school_id == school_id)
+        if not getattr(current_user, 'is_executive_admin', False):
+            return scoped.filter(model.school_id == getattr(current_user, 'school_id', None))
+    return scoped
+
+
+def restrict_to_current_school(query, model):
+    """Alias helper used across routes/services for school-aware query scoping."""
+
+    return school_scoped_query(model, query)
 
 
 def get_primary_class_for_user(user):
-    """Return the first active class assigned to the user, if one exists."""
-
     if not user.is_authenticated:
         return None
     return (
-        SchoolClass.query.filter_by(teacher_id=user.id, is_active=True)
+        school_scoped_query(SchoolClass, SchoolClass.query.filter_by(teacher_id=user.id, is_active=True))
         .order_by(SchoolClass.year_group, SchoolClass.name)
         .first()
     )
 
 
 def get_year_group_class_for_user(user, year_group: int):
-    """Return the first active class in a specific year group for the user."""
-
     if not user.is_authenticated:
         return None
     return (
-        SchoolClass.query.filter_by(teacher_id=user.id, is_active=True, year_group=year_group)
+        school_scoped_query(SchoolClass, SchoolClass.query.filter_by(teacher_id=user.id, is_active=True, year_group=year_group))
         .order_by(SchoolClass.name)
         .first()
+    )
+
+
+def is_demo_user(user=None) -> bool:
+    target_user = user if user is not None else current_user
+    if not getattr(target_user, 'is_authenticated', False):
+        return False
+    if getattr(target_user, 'is_executive_admin', False):
+        selected_school_id = current_school_id()
+        if selected_school_id is None:
+            return False
+        from app.models import School
+
+        selected_school = School.query.get(selected_school_id)
+        return bool(selected_school and selected_school.is_demo)
+    return bool(getattr(target_user, 'is_demo', False))
+
+
+def demo_filter_classes(query):
+    if not getattr(current_user, 'is_authenticated', False):
+        return query
+    scoped = school_scoped_query(SchoolClass, query)
+    if getattr(current_user, 'is_executive_admin', False) and current_school_id() is None:
+        return scoped.filter(False)
+    return scoped.filter(SchoolClass.is_demo.is_(is_demo_user()))
+
+
+def demo_filter_pupils(query):
+    if not getattr(current_user, 'is_authenticated', False):
+        return query
+    scoped = school_scoped_query(Pupil, query)
+    if getattr(current_user, 'is_executive_admin', False) and current_school_id() is None:
+        return scoped.filter(False)
+    return scoped.filter(Pupil.is_demo.is_(is_demo_user()))
+
+
+def is_demo_mode_enabled() -> bool:
+    return bool(current_app.config.get('DEMO_MODE', False))
+
+
+def log_audit_event(action: str, target_type: str, target_id: int, school_id: int | None = None, details: str | None = None) -> None:
+    """Persist an audit log record for critical archive/delete/export workflows."""
+
+    if not getattr(current_user, 'is_authenticated', False):
+        return
+    db = AuditLog.query.session
+    db.add(
+        AuditLog(
+            user_id=current_user.id,
+            school_id=school_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            details=details,
+        )
     )

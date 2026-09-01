@@ -8,6 +8,7 @@
   {% if can_archive %}
     <form method="post" action="{{ url_for('pupils.archive', pupil_id=pupil.id) }}" onsubmit="return confirm('Are you sure you want to archive this pupil? This will remove them from active lists but keep all historical data.');">
       <input type="hidden" name="next" value="{{ request.path }}">
+      <input type="hidden" name="archive_reason" value="Archived from pupil profile">
       <button type="submit" class="btn btn-outline-warning btn-sm">Archive pupil</button>
     </form>
   {% elif can_restore %}
@@ -19,16 +20,43 @@
   <button class="btn btn-outline-primary btn-sm js-download-pdf" data-pdf-target="#pupil-profile-pdf" data-pdf-filename="{{ pupil.full_name|replace(' ', '_')|lower }}-summary.pdf">Download Pupil Summary PDF</button>
 </div>
 
+
+<form method="get" class="card shadow-sm mb-3">
+  <div class="card-body d-flex flex-wrap gap-3 align-items-end">
+    <div>
+      <label class="form-label small text-muted" for="academic_year_id">Academic year</label>
+      <select class="form-select form-select-sm" id="academic_year_id" name="academic_year_id">
+        {% for year in academic_year_options %}
+          <option value="{{ year.id }}" {% if year.id|string == selected_year_id|string %}selected{% endif %}>{{ year.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label small text-muted" for="term">Term</label>
+      <select class="form-select form-select-sm" id="term" name="term">
+        <option value="" {% if not selected_term %}selected{% endif %}>Latest available</option>
+        {% for term_value, term_label in [('autumn','Autumn'), ('spring','Spring'), ('summer','Summer')] %}
+          <option value="{{ term_value }}" {% if selected_term == term_value %}selected{% endif %}>{{ term_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary btn-sm">Apply</button>
+    <span class="small text-muted">Showing {{ selected_academic_year }}{% if selected_term %} · {{ selected_term|title }}{% else %} · latest term{% endif %}</span>
+  </div>
+</form>
+
 <div id="pupil-profile-pdf">
   <div class="card shadow-sm mb-4">
     <div class="card-body">
-      <h4 class="mb-1">{{ pupil.full_name }} — Year {{ pupil.school_class.year_group }}</h4>
-      <p class="mb-2 text-muted">Class: {{ pupil.school_class.name }}</p>
+      <h4 class="mb-1">{{ pupil.full_name }} — {% if selected_profile_year_group == 0 %}Reception{% elif selected_profile_year_group is not none %}Year {{ selected_profile_year_group }}{% else %}Year —{% endif %}</h4>
+      <p class="mb-2 text-muted">Class: {{ selected_profile_class_name }}</p>
+      <p class="mb-2 text-muted">Year Joined School: {% if pupil.join_year_group == 0 %}Reception{% elif pupil.join_year_group is not none %}Year {{ pupil.join_year_group }}{% else %}Unknown{% endif %}</p>
+      <p class="mb-2 text-muted">Join Date: {{ pupil.join_date or '' }}</p>
       <div class="d-flex flex-wrap gap-2 mb-3">
         <span class="badge text-bg-secondary">PP: {{ 'Yes' if pupil.pupil_premium else 'No' }}</span>
         <span class="badge text-bg-secondary">LAPS: {{ 'Yes' if pupil.laps else 'No' }}</span>
         <span class="badge text-bg-secondary">Service: {{ 'Yes' if pupil.service_child else 'No' }}</span>
-        <span class="badge text-bg-secondary">SEND/EHCP: —</span>
+        <span class="badge text-bg-secondary">SEND: {{ 'Yes' if pupil.send else 'No' }}</span>
       </div>
       <div class="row g-2">
         {% for subject_key, label in [('reading','Reading'), ('maths','Maths'), ('spag','SPaG'), ('writing','Writing'), ('overall','Overall')] %}
@@ -37,8 +65,8 @@
             <div class="border rounded p-2 bg-light">
               <strong>{{ label }}:</strong>
               {% if item and item.band %}
-                <span class="badge text-bg-{{ item.band_theme }}">{{ item.band }}</span>
-                <span class="{% if item.progress_theme %}text-{{ item.progress_theme }}{% else %}text-muted{% endif %}">{{ item.progress_label or '—' }}</span>
+                <span class="badge text-bg-{{ item.band_theme }}">{{ short_band_label(item.band) }}</span>
+                <span>{{ item.display or '—' }}</span>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}
@@ -78,19 +106,25 @@
     <div class="card-header bg-white"><strong>Notes & report writing</strong></div>
     <div class="card-body">
       <form method="post">
+      {% if current_user.can_manage_school %}<div class="d-flex gap-3 mb-3">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="pupil_premium" id="p_pp" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="pupil_premium" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.pupil_premium %}checked{% endif %}><label class="form-check-label" for="p_pp">Pupil Premium</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="laps" id="p_laps" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="laps" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.laps %}checked{% endif %}><label class="form-check-label" for="p_laps">LAPS</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="service_child" id="p_service" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="service_child" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.service_child %}checked{% endif %}><label class="form-check-label" for="p_service">Service child</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="send" id="p_send" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="send" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" {% if pupil.send %}checked{% endif %}><label class="form-check-label" for="p_send">SEND</label></div>
+      </div>{% endif %}
         <div class="mb-3">
           <label class="form-label">Strengths</label>
-          <textarea class="form-control" name="strengths_notes" rows="3">{{ pupil.strengths_notes or '' }}</textarea>
+          <textarea class="form-control" name="strengths_notes" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="strengths_notes" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" rows="3">{{ pupil.strengths_notes or '' }}</textarea>
         </div>
         <div class="mb-3">
           <label class="form-label">Next steps</label>
-          <textarea class="form-control" name="next_steps_notes" rows="3">{{ pupil.next_steps_notes or '' }}</textarea>
+          <textarea class="form-control" name="next_steps_notes" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="next_steps_notes" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" rows="3">{{ pupil.next_steps_notes or '' }}</textarea>
         </div>
         <div class="mb-3">
           <label class="form-label">General notes</label>
-          <textarea class="form-control" name="general_notes" rows="4">{{ pupil.general_notes or '' }}</textarea>
+          <textarea class="form-control" name="general_notes" data-autosave="true" data-autosave-url="/pupils/api/pupil-profile/quick-save" data-field="general_notes" data-record-id="{{ pupil.id }}" data-autosave-status="#pupil-autosave-status" rows="4">{{ pupil.general_notes or '' }}</textarea>
         </div>
-        <button class="btn btn-primary btn-sm">Save notes</button>
+        <div class="autosave-status" id="pupil-autosave-status">Autosaves when changed</div><button class="btn btn-primary btn-sm">Save notes</button>
       </form>
     </div>
   </div>
@@ -114,7 +148,7 @@
                         <span>{{ row.percentage ~ '%' if row.percentage is not none else '—' }}</span>
                         <span class="mx-1">—</span>
                         {% if row.band %}
-                          <span class="badge text-bg-{{ row.band_theme }}">{{ row.band }}</span>
+                          <span class="badge text-bg-{{ row.band_theme }}">{{ row.band|short_band }}</span>
                         {% else %}
                           <span class="text-muted">—</span>
                         {% endif %}
@@ -139,75 +173,109 @@
         {% endfor %}
       </div>
 
-      <h6>Phonics / Times tables / Reception</h6>
-      <div class="row g-3">
-        <div class="col-md-4">
-          <ul class="list-group list-group-flush">
-            {% for row in phonics_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.column }}: {{ row.score if row.score is not none else '—' }}</li>{% else %}<li class="list-group-item px-0 text-muted">No phonics data.</li>{% endfor %}
-          </ul>
-        </div>
-        <div class="col-md-4">
-          <ul class="list-group list-group-flush">
-            {% for row in times_tables_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.column }}: {{ row.score if row.score is not none else '—' }}</li>{% else %}<li class="list-group-item px-0 text-muted">No times tables data.</li>{% endfor %}
-          </ul>
-        </div>
-        <div class="col-md-4">
-          <ul class="list-group list-group-flush">
-            {% for row in reception_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.tracking_point }} · {{ row.area_key }}: {{ row.status }}</li>{% else %}<li class="list-group-item px-0 text-muted">No reception data.</li>{% endfor %}
-          </ul>
-        </div>
-      </div>
-
-      <h6 class="mt-3">Foundation subjects</h6>
-      {% for year_block in foundation_history %}
-        <div class="mb-2">
-          <div class="fw-semibold">{{ year_block.academic_year }}</div>
-          <ul class="list-group list-group-flush">
-            {% for half_term in year_block.half_terms %}
-              <li class="list-group-item px-0">
-                <div class="small fw-semibold">{{ half_term.half_term_label }}</div>
-                <div class="small text-muted">
-                  {% for subject, judgement in half_term.subjects.items() %}
-                    {{ subject|replace('_', ' ')|title }}: {{ judgement or '—' }}{% if not loop.last %} · {% endif %}
+      <h6 class="mb-3">Year-specific assessments</h6>
+      <div class="row row-cols-1 row-cols-lg-2 row-cols-xxl-3 g-3 mb-3">
+        {% if pupil.school_class.year_group == 0 %}
+          <div class="col d-flex">
+            <div class="card border-light-subtle w-100 h-100">
+              <div class="card-header bg-light"><strong>Reception / EYFS</strong></div>
+              <div class="card-body">
+                <p class="small text-muted mb-2">GLD status: {{ gld_status }}</p>
+                <ul class="list-group list-group-flush">
+                  {% for row in reception_rows %}
+                    <li class="list-group-item px-0">{{ row.academic_year }} · {{ row.tracking_point }} · {{ row.area_key }}: {{ row.status }}</li>
+                  {% else %}
+                    <li class="list-group-item px-0 text-muted">No data.</li>
                   {% endfor %}
+                </ul>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+        {% if pupil.school_class.year_group in [1,2] %}
+          <div class="col d-flex">
+            <div class="card border-light-subtle w-100 h-100">
+              <div class="card-header bg-light"><strong>Phonics</strong></div>
+              <div class="card-body">
+                <ul class="list-group list-group-flush">
+                  {% for row in phonics_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.column }}: {{ row.score if row.score is not none else '—' }}</li>{% else %}<li class="list-group-item px-0 text-muted">No data.</li>{% endfor %}
+                </ul>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+        {% if pupil.school_class.year_group == 4 %}
+          <div class="col d-flex">
+            <div class="card border-light-subtle w-100 h-100">
+              <div class="card-header bg-light"><strong>Multiplication tables check</strong></div>
+              <div class="card-body">
+                <ul class="list-group list-group-flush">
+                  {% for row in times_tables_rows %}<li class="list-group-item px-0">{{ row.academic_year }} · {{ row.column }}: {{ row.score if row.score is not none else '—' }}</li>{% else %}<li class="list-group-item px-0 text-muted">No data.</li>{% endfor %}
+                </ul>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+        {% if pupil.school_class.year_group == 6 %}
+          <div class="col d-flex">
+            <div class="card border-light-subtle w-100 h-100">
+              <div class="card-header bg-light"><strong>SATs</strong></div>
+              <div class="card-body p-0">
+                <div class="table-responsive">
+                  <table class="table table-sm mb-0">
+                    <thead><tr><th>Year</th><th>Column</th><th>Score</th></tr></thead>
+                    <tbody>
+                      {% for row in sats_column_rows %}
+                        <tr><td>{{ row.academic_year }}</td><td>{{ row.column.name }}</td><td>{{ row.raw_score if row.raw_score is not none else '—' }}</td></tr>
+                      {% else %}
+                        <tr><td colspan="3" class="text-muted">No data.</td></tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
                 </div>
-              </li>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="card border-light-subtle mb-3">
+        <div class="card-header bg-light"><strong>Foundation subjects</strong></div>
+        <div class="card-body">
+          {% for year_block in foundation_history %}
+            <div class="mb-2">
+              <div class="fw-semibold">{{ year_block.academic_year }}</div>
+              <ul class="list-group list-group-flush">
+                {% for half_term in year_block.half_terms %}
+                  <li class="list-group-item px-0">
+                    <div class="small fw-semibold">{{ half_term.half_term_label }}</div>
+                    <div class="small text-muted">{% for subject, judgement in half_term.subjects.items() %}{{ subject|replace('_', ' ')|title }}: {{ judgement or '—' }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">No data.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card border-light-subtle mb-3">
+        <div class="card-header bg-light"><strong>Class history</strong></div>
+        <div class="card-body">
+          <ul class="list-group list-group-flush mb-0">
+            {% for row in history_rows %}
+              <li class="list-group-item px-0">{{ row.academic_year }} · {{ row.class_name }} (Year {{ row.year_group }})</li>
+            {% else %}
+              <li class="list-group-item px-0 text-muted">No archived class history entries.</li>
             {% endfor %}
           </ul>
         </div>
-      {% else %}
-        <p class="text-muted mb-3">No Foundation data.</p>
-      {% endfor %}
-
-      <h6 class="mt-3">SATs</h6>
-      <div class="table-responsive mb-3">
-        <table class="table table-sm">
-          <thead><tr><th>Year</th><th>Type</th><th>Detail</th></tr></thead>
-          <tbody>
-            {% for row in sats_rows %}
-              <tr><td>{{ row.academic_year }}</td><td>{{ row.subject|upper }} AP{{ row.assessment_point }}</td><td>Raw {{ row.raw_score if row.raw_score is not none else '—' }} / Scaled {{ row.scaled_score if row.scaled_score is not none else '—' }}</td></tr>
-            {% endfor %}
-            {% for row in sats_writing_rows %}
-              <tr><td>{{ row.academic_year }}</td><td>Writing AP{{ row.assessment_point }}</td><td>{{ row.band or '—' }}</td></tr>
-            {% endfor %}
-            {% for row in sats_column_rows %}
-              <tr><td>{{ row.academic_year }}</td><td>{{ row.column.name }}</td><td>{{ row.raw_score if row.raw_score is not none else '—' }}</td></tr>
-            {% endfor %}
-            {% if not sats_rows and not sats_writing_rows and not sats_column_rows %}
-              <tr><td colspan="3" class="text-muted">No SATs data.</td></tr>
-            {% endif %}
-          </tbody>
-        </table>
       </div>
 
-      <h6>Class history</h6>
-      <ul class="list-group list-group-flush mb-0">
-        {% for row in history_rows %}
-          <li class="list-group-item px-0">{{ row.academic_year }} · {{ row.class_name }} (Year {{ row.year_group }})</li>
-        {% else %}
-          <li class="list-group-item px-0 text-muted">No archived class history entries.</li>
-        {% endfor %}
-      </ul>
     </div>
   </div>
 </div>

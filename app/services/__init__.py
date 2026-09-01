@@ -22,19 +22,31 @@ from .assessments import (
     build_sort_indicator,
     build_table_sort_state,
     build_class_overview_row,
+    build_class_overview_rows,
     build_dashboard_summary,
     build_headline_report,
     build_subject_overview_cards,
     build_year6_sats_summary,
     compute_class_subject_summary,
     compute_subject_result_values,
+    calculate_band,
+    calculate_progress,
+    display_band_short,
+    short_band_label,
     format_progress_delta,
     format_subject_name,
     get_class_detail_context,
+    get_class_pupil_query,
     get_current_academic_year,
+    get_selected_current_academic_year,
+    get_school_working_academic_year,
+    get_selected_academic_year,
     get_current_term,
     get_next_sort_direction,
+    get_latest_previous_assessment,
     get_gender_filter_options,
+    get_dashboard_stats,
+    get_latest_result,
     get_latest_scaled_score,
     get_most_recent_term_with_data,
     get_or_create_assessment_setting,
@@ -45,7 +57,10 @@ from .assessments import (
     get_sats_writing_summary,
     get_setting_defaults,
     get_subject_setting,
+    get_subject_summary,
     get_term_label,
+    get_term_filtered_results,
+    get_tracker_results,
     get_writing_outcome_theme,
     get_writing_band_label,
     recalculate_subject_results_for_scope,
@@ -55,6 +70,11 @@ from .assessments import (
     sort_class_rows,
     update_assessment_setting,
     validate_setting_payload,
+)
+from .setup import (
+    ensure_default_academic_years,
+    generate_next_missing_academic_years,
+    get_or_create_academic_year,
 )
 from .admin_ops import (
     DEFAULT_ADMIN,
@@ -157,7 +177,18 @@ from .csv_tools import (
     import_sats_tracker_results,
     parse_uploaded_csv,
 )
-from .gap import build_gap_page_context, get_or_create_gap_template, parse_question_columns, save_gap_scores, sync_gap_totals_to_subject_results
-from .interventions import AUTO_REASON, build_intervention_filters, suggest_interventions_for_scope, sync_auto_interventions
+from .gap import build_gap_page_context, build_gap_totals_from_saved_scores, get_or_create_gap_template, parse_question_columns, save_gap_scores, sync_gap_totals_to_subject_results
+from .interventions import AUTO_REASON, build_intervention_filters, get_current_score_for_intervention, suggest_interventions_for_scope, sync_auto_interventions
+
+from .pupil_overview import (
+    build_pupil_overview_data,
+    get_eyfs_data,
+    get_latest_tracker_data,
+    get_mtc_data,
+    get_phonics_data,
+    get_sats_data,
+    get_y6_sats_data,
+    summarize_gld_status,
+)
 
 __all__ = [name for name in globals() if not name.startswith('_')]

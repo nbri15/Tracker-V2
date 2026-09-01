@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.extensions import db
 from app.models import Pupil, TimesTableScore, TimesTableTestColumn
+from app.utils import current_school_id
 
 TIMES_TABLES_YEAR_GROUP = 4
 DEFAULT_TIMES_TABLE_COLUMNS = ('Test 1', 'Test 2', 'Test 3', 'Test 4')
@@ -17,10 +18,13 @@ def is_times_tables_year_group(year_group: int | None) -> bool:
     return year_group == TIMES_TABLES_YEAR_GROUP
 
 
-def ensure_times_tables_columns(year_group: int) -> list[TimesTableTestColumn]:
+def ensure_times_tables_columns(year_group: int, school_id: int | None = None) -> list[TimesTableTestColumn]:
+    effective_school_id = school_id if school_id is not None else current_school_id()
+    query = TimesTableTestColumn.query.filter_by(year_group=year_group)
+    if effective_school_id is not None:
+        query = query.filter(TimesTableTestColumn.school_id == effective_school_id)
     columns = (
-        TimesTableTestColumn.query
-        .filter_by(year_group=year_group)
+        query
         .order_by(TimesTableTestColumn.display_order, TimesTableTestColumn.id)
         .all()
     )
@@ -30,6 +34,7 @@ def ensure_times_tables_columns(year_group: int) -> list[TimesTableTestColumn]:
     for display_order, name in enumerate(DEFAULT_TIMES_TABLE_COLUMNS, start=1):
         db.session.add(
             TimesTableTestColumn(
+                school_id=effective_school_id,
                 year_group=year_group,
                 name=name,
                 display_order=display_order,
@@ -37,9 +42,11 @@ def ensure_times_tables_columns(year_group: int) -> list[TimesTableTestColumn]:
             )
         )
     db.session.flush()
+    query = TimesTableTestColumn.query.filter_by(year_group=year_group)
+    if effective_school_id is not None:
+        query = query.filter(TimesTableTestColumn.school_id == effective_school_id)
     return (
-        TimesTableTestColumn.query
-        .filter_by(year_group=year_group)
+        query
         .order_by(TimesTableTestColumn.display_order, TimesTableTestColumn.id)
         .all()
     )

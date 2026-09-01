@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from flask import flash, redirect, render_template, request, url_for
+from datetime import date, datetime, timezone
+
+from flask import current_app, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
@@ -43,10 +45,13 @@ from app.services import (
     format_progress_delta,
     previous_term,
     progress_theme,
-    get_current_academic_year,
+    get_selected_current_academic_year,
+    get_selected_academic_year,
     get_current_term,
+    get_class_pupil_query,
     get_foundation_half_term,
     get_gender_filter_options,
+    get_latest_previous_assessment,
     get_next_sort_direction,
     get_or_create_gap_template,
     get_reception_class,
@@ -66,6 +71,7 @@ from app.services import (
     save_reception_tracker_entries,
     save_foundation_results,
     save_gap_scores,
+    sync_gap_totals_to_subject_results,
     save_phonics_columns,
     save_phonics_scores,
     sort_phonics_tracker_rows,
@@ -94,6 +100,7 @@ from app.services import (
     FoundationValidationError,
 )
 from app.utils import get_primary_class_for_user, get_year_group_class_for_user, teacher_required
+from app.services.pupil_quick_add import create_quick_add_pupil
 
 from . import teacher_bp
 
@@ -104,6 +111,7 @@ SUBJECT_META = {
     'spag': {'title': 'SPaG'},
     'writing': {'title': 'Writing'},
 }
+JOIN_YEAR_GROUP_CHOICES = [('', 'Unknown'), (0, 'Reception')] + [(year, f'Year {year}') for year in range(1, 7)]
 
 
 @teacher_bp.route('/maths', methods=['GET', 'POST'])
@@ -139,15 +147,15 @@ def writing():
 @teacher_required
 def phonics():
     school_class = get_primary_class_for_user(current_user)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
     if not school_class or not is_ks1_year_group(school_class.year_group):
         flash('The phonics tracker is only available for Year 1 and Year 2 classes.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
-    columns = ensure_phonics_columns(school_class.year_group)
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
     sort_state = build_table_sort_state(request.values, allowed_columns=sortable_columns, default_column='name')
@@ -164,22 +172,22 @@ def phonics():
         action = request.form.get('action', 'save_scores')
         try:
             if action == 'save_columns':
-                columns = save_phonics_columns(school_class.year_group, request.form)
+                columns = save_phonics_columns(school_class.year_group, school_class.school_id, request.form)
                 flash('Phonics test columns updated.', 'success')
             elif action == 'add_column':
-                column = add_phonics_column(school_class.year_group, request.form)
+                column = add_phonics_column(school_class.year_group, school_class.school_id, request.form)
                 flash(f'Added phonics column {column.name}.', 'success')
             else:
-                save_phonics_scores(pupils, columns, academic_year, request.form)
+                save_phonics_scores(pupils, columns, academic_year, school_class.school_id, request.form)
                 flash('Phonics scores saved.', 'success')
             db.session.commit()
             return redirect(url_for('teacher.phonics', academic_year=academic_year, search=filters['search'], gender=filters['gender'], pupil_premium=filters['pupil_premium'], laps=filters['laps'], service_child=filters['service_child'], sort=sort_state['column'], direction=sort_state['direction']))
         except ValueError as exc:
             db.session.rollback()
             flash(f'Phonics changes could not be saved: {exc}', 'danger')
-            columns = ensure_phonics_columns(school_class.year_group)
+            columns = ensure_phonics_columns(school_class.year_group, school_class.school_id)
 
-    rows = build_phonics_tracker_rows(pupils, columns, academic_year)
+    rows = build_phonics_tracker_rows(pupils, columns, academic_year, school_class.school_id)
     rows = sort_phonics_tracker_rows(rows, sort_state['column'], sort_state['direction'])
     return render_template(
         'teacher/phonics_tracker.html',
@@ -201,14 +209,14 @@ def phonics():
 @teacher_required
 def times_tables():
     school_class = get_primary_class_for_user(current_user)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     filters = build_admin_pupil_filter_state(request.values)
 
     if not school_class or not is_times_tables_year_group(school_class.year_group):
         flash('The times tables tracker is only available for Year 4 classes.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
     columns = ensure_times_tables_columns(school_class.year_group)
     active_columns = [column for column in columns if column.is_active]
     sortable_columns = {'name', *(f'column_{column.id}' for column in active_columns)}
@@ -267,10 +275,10 @@ def foundation():
         flash('No active class is assigned to your account.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     half_term = get_foundation_half_term(request.values.get('half_term'))
     filters = build_admin_pupil_filter_state(request.values)
-    pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         half_term = get_foundation_half_term(request.form.get('half_term'))
@@ -329,6 +337,10 @@ def gap_analysis(subject: str):
         return render_template('teacher/gap_analysis.html', rows=[], questions=[], template=None, max_total=0, papers=[], active_paper='paper_1', setting=None, **context)
 
     template = get_or_create_gap_template(school_class.year_group, subject, context['term'], context['academic_year'])
+    if template.school_id != school_class.school_id:
+        template.school_id = school_class.school_id
+        db.session.add(template)
+        db.session.flush()
     pupils = context['pupils']
     setting = get_subject_setting(school_class.year_group, subject, context['term'])
     paper_tabs = [
@@ -366,20 +378,39 @@ def gap_analysis(subject: str):
                     question_type=question_type,
                     max_score=max_score,
                     display_order=next_order,
+                    school_id=school_class.school_id,
                 )
                 db.session.add(question)
                 db.session.commit()
                 flash(f'Added question {label} to {dict((item["key"], item["label"]) for item in paper_tabs)[active_paper]}.', 'success')
+            elif action == 'sync_results':
+                questions = list(template.questions)
+                outcome = {'warnings': sync_gap_totals_to_subject_results(
+                    pupils,
+                    questions,
+                    school_id=school_class.school_id,
+                    assessment_year_group=school_class.year_group,
+                )}
+                db.session.commit()
+                flash(f'QLA saved and synced to {context["academic_year"]} results table.', 'success')
+                for warning in outcome['warnings']:
+                    flash(warning, 'warning')
             else:
                 template.paper_name = request.form.get('paper_name', '').strip() or None
                 questions = parse_question_columns(request.form, template)
                 db.session.flush()
-                outcome = save_gap_scores(pupils, questions, request.form)
+                outcome = save_gap_scores(
+                    pupils,
+                    questions,
+                    request.form,
+                    school_id=school_class.school_id,
+                    assessment_year_group=school_class.year_group,
+                )
                 db.session.commit()
-                flash(f'{format_subject_name(subject)} GAP analysis saved for {school_class.name}.', 'success')
+                flash(f'QLA saved and synced to {context["academic_year"]} results table.', 'success')
                 for warning in outcome['warnings']:
                     flash(warning, 'warning')
-            return redirect(url_for('teacher.gap_analysis', subject=subject, academic_year=context['academic_year'], term=context['term'], paper=active_paper))
+            return redirect(url_for('teacher.gap_analysis', subject=subject, year=context['selected_year'].id, academic_year=context['academic_year'], term=context['term'], paper=active_paper))
         except (ValueError, AssessmentValidationError) as exc:
             db.session.rollback()
             flash(f'GAP analysis could not be saved: {exc}', 'danger')
@@ -403,7 +434,7 @@ def gap_analysis(subject: str):
 @teacher_required
 def interventions():
     school_class = get_primary_class_for_user(current_user)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     term = request.values.get('term', get_current_term())
     subject = request.values.get('subject', 'maths')
 
@@ -419,11 +450,25 @@ def interventions():
         try:
             if action == 'add_manual':
                 pupil_id = int(request.form.get('pupil_id', '0'))
+                pupil = get_class_pupil_query(school_class, academic_year).filter(Pupil.id == pupil_id, Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).first()
+                if not pupil:
+                    raise ValueError('Choose a pupil from your assigned class.')
                 note = request.form.get('note', '').strip() or None
                 reason = request.form.get('reason', '').strip() or 'Teacher added manually'
-                record = Intervention.query.filter_by(pupil_id=pupil_id, subject=subject, term=term, academic_year=academic_year, is_active=True).first()
+                record = Intervention.query.join(Intervention.pupil).filter(Intervention.pupil_id == pupil_id, Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Intervention.is_active.is_(True), Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id).first()
                 if not record:
-                    record = Intervention(pupil_id=pupil_id, subject=subject, term=term, academic_year=academic_year, reason=reason, note=note, auto_flagged=False, is_active=True)
+                    record = Intervention(
+                        pupil_id=pupil_id,
+                        school_id=school_class.school_id,
+                        subject=subject,
+                        term=term,
+                        academic_year=academic_year,
+                        reason=reason,
+                        note=note,
+                        auto_flagged=False,
+                        is_active=True,
+                        is_demo=school_class.is_demo,
+                    )
                 else:
                     record.reason = reason
                     record.note = note
@@ -431,7 +476,7 @@ def interventions():
                 db.session.add(record)
                 flash('Manual intervention added.', 'success')
             else:
-                for record in Intervention.query.join(Intervention.pupil).filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True)).all():
+                for record in Intervention.query.join(Intervention.pupil).filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id, Pupil.is_active.is_(True)).all():
                     record.note = request.form.get(f'note_{record.id}', '').strip() or None
                     record.is_active = request.form.get(f'active_{record.id}') == 'on'
                     db.session.add(record)
@@ -444,11 +489,11 @@ def interventions():
 
     interventions = (
         Intervention.query.join(Intervention.pupil)
-        .filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.is_active.is_(True))
+        .filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id, Pupil.is_active.is_(True))
         .order_by(Intervention.is_active.desc(), Intervention.auto_flagged.desc(), Pupil.last_name, Pupil.first_name)
         .all()
     )
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
     return render_template(
         'teacher/interventions.html',
         school_class=school_class,
@@ -464,12 +509,44 @@ def interventions():
     )
 
 
+
+
+@teacher_bp.route('/api/interventions/quick-save', methods=['POST'])
+@login_required
+@teacher_required
+def interventions_quick_save():
+    data = request.get_json(silent=True) or {}
+    school_class = get_primary_class_for_user(current_user)
+    if not school_class:
+        return {'ok': False}, 400
+    try:
+        record_id = int(data.get('record_id') or 0)
+    except (TypeError, ValueError):
+        return {'ok': False}, 400
+    record = Intervention.query.join(Intervention.pupil).filter(Intervention.id == record_id, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id).first()
+    if not record:
+        return {'ok': False}, 404
+    field = (data.get('field') or '').strip()
+    if field not in {'note', 'is_active'}:
+        return {'ok': False}, 400
+    value = data.get('value')
+    if field == 'note':
+        record.note = (value or '').strip() or None
+    else:
+        record.is_active = bool(value)
+    db.session.add(record); db.session.commit()
+    return {'ok': True}
+
 @teacher_bp.route('/sats', methods=['GET', 'POST'])
 @login_required
 @teacher_required
 def sats_tracker():
+    return redirect(url_for('dashboards.sats_simple'))
+
+# legacy disabled
+def _legacy_sats_tracker_disabled():
     school_class = get_year_group_class_for_user(current_user, 6)
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     selected_tab_id_raw = request.values.get('exam_tab_id', '').strip()
 
     if not school_class:
@@ -477,7 +554,7 @@ def sats_tracker():
         return redirect(url_for('dashboards.teacher_dashboard'))
 
     tracker_mode = get_tracker_mode(6)
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         action = request.form.get('action', 'save_results')
@@ -562,6 +639,7 @@ def sats_tracker():
         overview=overview,
         sats_subject_choices=SATS_COLUMN_SUBJECTS,
         sats_score_type_choices=SATS_SCORE_TYPES,
+        join_year_group_choices=JOIN_YEAR_GROUP_CHOICES,
     )
 
 
@@ -575,12 +653,12 @@ def reception_tracker():
         flash('The Reception tracker is only available for the Reception teacher.', 'warning')
         return redirect(url_for('dashboards.teacher_dashboard'))
 
-    academic_year = request.values.get('academic_year', get_current_academic_year())
+    academic_year = request.values.get('academic_year', get_selected_current_academic_year())
     tracking_point = get_tracking_point_key(request.values.get('tracking_point'))
     view = (request.values.get('view', 'tracker') or 'tracker').strip().lower()
     if view not in {'tracker', 'overview'}:
         view = 'tracker'
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).order_by(Pupil.last_name, Pupil.first_name).all()
 
     if request.method == 'POST':
         tracking_point = get_tracking_point_key(request.form.get('tracking_point'))
@@ -689,45 +767,30 @@ def _handle_quick_add_pupil(school_class, *, redirect_endpoint: str, context: di
         flash('No active class is assigned to your account yet.', 'warning')
         return _quick_add_redirect(redirect_endpoint, context, **extra_params)
 
-    first_name = request.form.get('first_name', '').strip()
-    last_name = request.form.get('last_name', '').strip()
-    gender = request.form.get('gender', '').strip() or 'Unknown'
-    if not first_name or not last_name:
-        flash('Enter both first and last name before adding a pupil.', 'danger')
-        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
-
-    duplicate = Pupil.query.filter(
-        Pupil.class_id == school_class.id,
-        func.lower(Pupil.first_name) == first_name.lower(),
-        func.lower(Pupil.last_name) == last_name.lower(),
-    ).first()
-    if duplicate:
-        flash(
-            f'{duplicate.full_name} already exists in {school_class.name}. Check names before creating a duplicate record.',
-            'warning',
-        )
-        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
-
-    pupil = Pupil(
-        first_name=first_name,
-        last_name=last_name,
-        gender=gender,
+    pupil, error = create_quick_add_pupil(
+        school_class=school_class,
+        first_name=request.form.get('first_name', ''),
+        last_name=request.form.get('last_name', ''),
+        gender=request.form.get('gender', ''),
         pupil_premium=request.form.get('pupil_premium') == 'on',
         laps=request.form.get('laps') == 'on',
         service_child=request.form.get('service_child') == 'on',
-        class_id=school_class.id,
-        is_active=True,
+        send=request.form.get('send') == 'on',
+        join_year_group_raw=request.form.get('join_year_group', ''),
+        join_date_raw=request.form.get('join_date', ''),
     )
-    db.session.add(pupil)
-    db.session.commit()
+    if error:
+        flash(error, 'danger')
+        return _quick_add_redirect(redirect_endpoint, context, show_add_pupil='1', **extra_params)
     flash(f'Added {pupil.full_name} to {school_class.name}.', 'success')
     return _quick_add_redirect(redirect_endpoint, context, **extra_params)
 
 
 def _base_subject_context(subject_key: str) -> dict:
     school_class = get_primary_class_for_user(current_user)
-    current_year = get_current_academic_year()
-    academic_year = request.values.get('academic_year', current_year)
+    selected_year = get_selected_academic_year(request.values.get('year'), request.values.get('academic_year'))
+    current_year = get_selected_current_academic_year()
+    academic_year = selected_year.name
     term = request.values.get('term', get_current_term())
     filters = build_admin_pupil_filter_state(request.values)
     sort_state = build_table_sort_state(
@@ -737,13 +800,14 @@ def _base_subject_context(subject_key: str) -> dict:
     )
     pupils = []
     if school_class:
-        pupils = apply_admin_pupil_filters(school_class.pupils.filter_by(is_active=True), filters).all()
+        pupils = apply_admin_pupil_filters(get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)), filters).all()
     return {
         'subject_key': subject_key,
         'page_title': SUBJECT_META[subject_key]['title'],
         'school_class': school_class,
         'current_year': current_year,
         'academic_year': academic_year,
+        'selected_year': selected_year,
         'term': term,
         'filters': filters,
         'sort_state': sort_state,
@@ -780,6 +844,75 @@ def _build_subject_rows(pupils: list[Pupil], existing_by_pupil: dict[int, Subjec
     return rows
 
 
+def _pdf_redirect_url() -> str:
+    args = request.args.to_dict(flat=True)
+    args.pop('pdf', None)
+    if request.endpoint:
+        return url_for(request.endpoint, **args)
+    return request.referrer or url_for('dashboards.teacher_dashboard')
+
+
+def export_teacher_subject_pdf(subject_key: str, context: dict, rows: list[dict], anonymise: bool = False):
+    current_app.logger.info(
+        'PDF export requested subject=%s year=%s row_count=%s anonymise=%s',
+        subject_key,
+        context['selected_year'].id if context.get('selected_year') else context.get('academic_year'),
+        len(rows),
+        anonymise,
+    )
+    try:
+        from weasyprint import HTML
+
+        html = render_template(
+            'exports/teacher_subject_table_pdf.html',
+            subject_key=subject_key,
+            subject_label=context['page_title'],
+            pupils=context['pupils'],
+            rows=rows,
+            year=context['selected_year'],
+            filters=context['filters'],
+            anonymise=anonymise,
+            academic_year=context['academic_year'],
+            term=context['term'],
+            school_class=context['school_class'],
+            setting=context.get('setting'),
+            generated_at=datetime.now(timezone.utc),
+        )
+        pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf()
+    except Exception:
+        current_app.logger.exception(
+            'Teacher subject PDF generation failed subject=%s year=%s row_count=%s anonymise=%s',
+            subject_key,
+            context['selected_year'].id if context.get('selected_year') else context.get('academic_year'),
+            len(rows),
+            anonymise,
+        )
+        html = render_template(
+            'exports/teacher_subject_table_pdf.html',
+            subject_key=subject_key,
+            subject_label=context['page_title'],
+            pupils=context['pupils'],
+            rows=rows,
+            year=context['selected_year'],
+            filters=context['filters'],
+            anonymise=anonymise,
+            academic_year=context['academic_year'],
+            term=context['term'],
+            school_class=context['school_class'],
+            setting=context.get('setting'),
+            generated_at=datetime.now(timezone.utc),
+            pdf_error_message='PDF generation failed. Use browser print/save as PDF.',
+        )
+        response = make_response(html)
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        return response
+
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename={subject_key}-tracker.pdf'
+    return response
+
+
 def render_subject_page(subject_key: str):
     context = _base_subject_context(subject_key)
     school_class = context['school_class']
@@ -804,6 +937,7 @@ def render_subject_page(subject_key: str):
             return redirect(
                 url_for(
                     f'teacher.{subject_key}',
+                    year=context['selected_year'].id,
                     academic_year=context['academic_year'],
                     term=context['term'],
                     search=context['filters']['search'],
@@ -811,6 +945,7 @@ def render_subject_page(subject_key: str):
                     pupil_premium=context['filters']['pupil_premium'],
                     laps=context['filters']['laps'],
                     service_child=context['filters']['service_child'],
+                    send=context['filters']['send'],
                     sort=context['sort_state']['column'],
                     direction=context['sort_state']['direction'],
                 )
@@ -938,6 +1073,7 @@ def render_subject_page(subject_key: str):
             return redirect(
                 url_for(
                     f'teacher.{subject_key}',
+                    year=context['selected_year'].id,
                     academic_year=context['academic_year'],
                     term=context['term'],
                     search=context['filters']['search'],
@@ -945,6 +1081,7 @@ def render_subject_page(subject_key: str):
                     pupil_premium=context['filters']['pupil_premium'],
                     laps=context['filters']['laps'],
                     service_child=context['filters']['service_child'],
+                    send=context['filters']['send'],
                     sort=context['sort_state']['column'],
                     direction=context['sort_state']['direction'],
                 )
@@ -970,12 +1107,22 @@ def render_subject_page(subject_key: str):
     active_interventions = sync_auto_interventions(school_class, subject_key, context['term'], context['academic_year'], setting.below_are_threshold_percent)
     db.session.commit()
     rows = sort_subject_result_rows(rows, context['sort_state']['column'], context['sort_state']['direction'])
+    context['setting'] = setting
+    if request.args.get('pdf') == '1':
+        return export_teacher_subject_pdf(
+            subject_key=subject_key,
+            context=context,
+            rows=rows,
+            anonymise=request.args.get('anonymous') == '1' or request.args.get('anon') == '1',
+        )
+    context.pop('setting', None)
     return render_template(
         'teacher/subject_scores.html',
         rows=rows,
         setting=setting,
         active_interventions=active_interventions,
         header_state=_table_header_state(context['sort_state'], SUBJECT_SORTABLE_COLUMNS),
+        join_year_group_choices=JOIN_YEAR_GROUP_CHOICES,
         **context,
     )
 
@@ -993,6 +1140,19 @@ def render_writing_page():
         .all()
     )
     existing_by_pupil = {row.pupil_id: row for row in existing_rows}
+
+    ghost_by_pupil = {pupil.id: '' for pupil in context['pupils']}
+    for pupil in context['pupils']:
+        if pupil.id in existing_by_pupil:
+            continue
+        prior_band = get_latest_previous_assessment(
+            pupil_id=pupil.id,
+            subject='writing',
+            current_term=context['term'],
+            academic_year=context['academic_year'],
+        )
+        if prior_band:
+            ghost_by_pupil[pupil.id] = get_writing_band_label(prior_band)
 
     if request.method == 'POST':
         if request.form.get('form_name') == 'add_pupil':
@@ -1029,6 +1189,7 @@ def render_writing_page():
             return redirect(
                 url_for(
                     'teacher.writing',
+                    year=context['selected_year'].id,
                     academic_year=context['academic_year'],
                     term=context['term'],
                     search=context['filters']['search'],
@@ -1036,6 +1197,7 @@ def render_writing_page():
                     pupil_premium=context['filters']['pupil_premium'],
                     laps=context['filters']['laps'],
                     service_child=context['filters']['service_child'],
+                    send=context['filters']['send'],
                     sort=context['sort_state']['column'],
                     direction=context['sort_state']['direction'],
                 )
@@ -1048,14 +1210,23 @@ def render_writing_page():
             'pupil': pupil,
             'band': existing.band if existing else '',
             'band_label': get_writing_band_label(existing.band) if existing else '—',
+            'ghost_band_label': ghost_by_pupil.get(pupil.id, ''),
             'notes': existing.notes if existing else '',
             'outcome_theme': get_writing_outcome_theme(existing.band if existing else None),
         })
     rows = sort_writing_result_rows(rows, context['sort_state']['column'], context['sort_state']['direction'])
+    if request.args.get('pdf') == '1':
+        return export_teacher_subject_pdf(
+            subject_key='writing',
+            context=context,
+            rows=rows,
+            anonymise=request.args.get('anonymous') == '1' or request.args.get('anon') == '1',
+        )
     return render_template(
         'teacher/writing_results.html',
         rows=rows,
         writing_band_choices=WRITING_BAND_CHOICES,
         header_state=_table_header_state(context['sort_state'], WRITING_SORTABLE_COLUMNS),
+        join_year_group_choices=JOIN_YEAR_GROUP_CHOICES,
         **context,
     )

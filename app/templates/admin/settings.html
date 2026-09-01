@@ -99,6 +99,28 @@
           </div>
         </form>
         <div class="mt-3 small text-muted">Teachers should now use the subject pages for normal editing. This table remains available as an admin-only fallback.</div>
+        
+        <hr>
+        <form method="post" class="d-flex flex-wrap align-items-end gap-2">
+          <input type="hidden" name="action" value="set-active-academic-year">
+          <div>
+            <label class="form-label small mb-1">School working academic year: <strong>{{ selected_year.name }}</strong></label>
+            <select name="academic_year_id" class="form-select form-select-sm">
+              {% for year in academic_year_options %}
+                <option value="{{ year.id }}" {% if selected_year and selected_year.id == year.id %}selected{% endif %}>{{ year.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Set working year</button>
+          <span class="small text-muted">Promotion and academic-year history use this school-specific value. Viewing another year does not change it.</span>
+        </form>
+
+        <hr>
+        <form method="post" class="d-flex flex-wrap align-items-center gap-2">
+          <input type="hidden" name="action" value="generate-academic-years">
+          <button type="submit" class="btn btn-outline-primary btn-sm">Generate academic years</button>
+          <span class="small text-muted">Adds the next missing academic years, such as 2027/28 and 2028/29, without duplicates.</span>
+        </form>
       </div>
     </div>
   </div>
@@ -107,8 +129,8 @@
 <div class="card shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center gap-3">
     <strong>Fallback settings table</strong>
-    <span class="text-muted small">Inline edits save straight back to the selected row.</span>
-  </div>
+    <span class="text-muted small">Autosaves when changed. Save row remains as backup.</span>
+  <span id="autosave-settings-status" class="autosave-status"> </span></div>
   <div class="table-responsive">
     <table class="table table-sm align-middle mb-0 settings-table">
       <thead class="table-light sticky-top">
@@ -130,7 +152,7 @@
               <div class="row g-2 mt-2">
                 <div class="col-6">
                   <label class="form-label small">Year</label>
-                  <select name="year_group_{{ setting.id }}" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
+                  <select name="year_group_{{ setting.id }}" form="setting-form-{{ setting.id }}" class="form-select form-select-sm" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="year_group" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status">
                     {% for year in range(1, 7) %}
                       <option value="{{ year }}" {% if setting.year_group == year %}selected{% endif %}>Year {{ year }}</option>
                     {% endfor %}
@@ -138,7 +160,7 @@
                 </div>
                 <div class="col-6">
                   <label class="form-label small">Term</label>
-                  <select name="term_{{ setting.id }}" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
+                  <select name="term_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="term" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
                     {% for value, label in terms %}
                       <option value="{{ value }}" {% if setting.term == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
@@ -146,7 +168,7 @@
                 </div>
                 <div class="col-12">
                   <label class="form-label small">Subject</label>
-                  <select name="subject_{{ setting.id }}" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
+                  <select name="subject_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="subject" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" form="setting-form-{{ setting.id }}" class="form-select form-select-sm">
                     {% for value, label in filter_subject_choices[1:] %}
                       <option value="{{ value }}" {% if setting.subject == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
@@ -156,25 +178,25 @@
             </td>
             <td>
               <label class="form-label small">Name</label>
-              <input type="text" name="paper_1_name_{{ setting.id }}" value="{{ setting.paper_1_name }}" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
+              <input type="text" name="paper_1_name_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="paper_1_name" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" value="{{ setting.paper_1_name }}" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
               <label class="form-label small">Max</label>
-              <input type="number" name="paper_1_max_{{ setting.id }}" value="{{ setting.paper_1_max }}" min="0" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+              <input type="number" name="paper_1_max_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="paper_1_max" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" value="{{ setting.paper_1_max }}" min="0" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
             </td>
             <td>
               <label class="form-label small">Name</label>
-              <input type="text" name="paper_2_name_{{ setting.id }}" value="{{ setting.paper_2_name }}" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
+              <input type="text" name="paper_2_name_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="paper_2_name" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" value="{{ setting.paper_2_name }}" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
               <label class="form-label small">Max</label>
-              <input type="number" name="paper_2_max_{{ setting.id }}" value="{{ setting.paper_2_max }}" min="0" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+              <input type="number" name="paper_2_max_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="paper_2_max" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" value="{{ setting.paper_2_max }}" min="0" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
             </td>
             <td>
               <label class="form-label small">Combined max</label>
-              <input type="number" name="combined_max_{{ setting.id }}" value="{{ setting.combined_max }}" min="1" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+              <input type="number" name="combined_max_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="combined_max" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" value="{{ setting.combined_max }}" min="1" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
             </td>
             <td>
               <label class="form-label small">Working Towards %</label>
-              <input type="number" step="0.1" name="below_are_threshold_percent_{{ setting.id }}" value="{{ setting.below_are_threshold_percent }}" min="0" max="100" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
+              <input type="number" step="0.1" name="below_are_threshold_percent_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="working_towards_pct" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" value="{{ setting.below_are_threshold_percent }}" min="0" max="100" form="setting-form-{{ setting.id }}" class="form-control form-control-sm mb-2">
               <label class="form-label small">Exceeding %</label>
-              <input type="number" step="0.1" name="exceeding_threshold_percent_{{ setting.id }}" value="{{ setting.exceeding_threshold_percent }}" min="0" max="100" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
+              <input type="number" step="0.1" name="exceeding_threshold_percent_{{ setting.id }}" data-autosave="true" data-autosave-url="/admin/api/settings/quick-save" data-field="exceeding_pct" data-record-id="{{ setting.id }}" data-year-group="{{ setting.year_group }}" data-term="{{ setting.term }}" data-subject="{{ setting.subject }}" data-autosave-status="#autosave-settings-status" value="{{ setting.exceeding_threshold_percent }}" min="0" max="100" form="setting-form-{{ setting.id }}" class="form-control form-control-sm">
             </td>
             <td class="text-end align-bottom">
               <form id="setting-form-{{ setting.id }}" method="post">

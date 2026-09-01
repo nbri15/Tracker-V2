@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals Session{% endblock %}
+{% block content %}
+{% set pupil_join_path = url_for('fundamentals.join') %}
+{% set pupil_join_url = request.host_url.rstrip('/') ~ pupil_join_path %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h1>{{ session.strand.name }}</h1>
+    <p class="text-muted">{{ session.school_class.name }} · Start level {{ session.start_level }} · {% if session.is_active %}Active{% else %}Stopped{% endif %}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores', class_id=session.class_id, school_id=selected_school_id) if current_user.is_executive_admin and selected_school_id else url_for('fundamentals.scores', class_id=session.class_id) }}">Previous Scores</a><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels', class_id=session.class_id, strand_id=session.strand_id) }}">Level Overview</a><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions', class_id=session.class_id, strand_id=session.strand_id) }}">Intervention Dashboard</a>{% if session.is_active %}<form method="post" action="{{ url_for('fundamentals.stop_session', session_id=session.id) }}"><button class="btn btn-outline-danger">Stop session</button></form>{% endif %}</div>
+</div>
+<div class="card border-primary shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+      <div>
+        <h2 class="h4 mb-1">Open pupil assessment</h2>
+        <p class="mb-2 text-muted">Open this link on pupil iPads</p>
+        <a class="fs-5 fw-semibold" href="{{ pupil_join_path }}">{{ pupil_join_url }}</a>
+      </div>
+      <div class="text-center">
+        <img class="img-fluid border rounded p-2 bg-white" style="max-width: 180px;" src="{{ url_for('fundamentals.fundamentals_qr', session_id=session.id) }}" alt="Pupil join QR code">
+        <p class="mt-2 mb-0 fw-semibold">Scan this QR code on pupil iPads</p>
+      </div>
+      <a class="btn btn-primary btn-lg px-4" href="{{ pupil_join_path }}">Open pupil assessment</a>
+    </div>
+  </div>
+</div>
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h4">Pupil results</h2>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead><tr><th>Pupil</th><th>Status</th><th>Current level</th><th>Secure level</th><th>Intervention level</th><th>Answered questions</th><th>Completed at</th><th>Details</th></tr></thead>
+        <tbody>
+          {% for pupil in pupils %}
+            {% set attempt=attempts.get(pupil.id) %}
+            <tr>
+              <td>{{ pupil.full_name }}</td>
+              <td>{% if not attempt %}<span class="badge text-bg-secondary">Not started</span>{% elif attempt.is_complete %}<span class="badge text-bg-success">Complete</span>{% else %}<span class="badge text-bg-primary">In progress</span>{% endif %}</td>
+              <td>{{ attempt.current_level if attempt else '—' }}</td>
+              <td>{{ attempt.secure_level if attempt and attempt.secure_level else '—' }}</td>
+              <td>{{ attempt.intervention_level if attempt and attempt.intervention_level else '—' }}</td>
+              <td>{{ answered_counts.get(attempt.id, 0) if attempt else 0 }}</td>
+              <td>{{ attempt.completed_at.strftime('%d %b %Y %H:%M') if attempt and attempt.completed_at else '—' }}</td>
+              <td>{% if attempt %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('fundamentals.attempt_detail', attempt_id=attempt.id) }}">View responses</a>{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

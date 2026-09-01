@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import logging
 
 from app.extensions import db
 from app.models import GapQuestion, GapScore, GapTemplate, SubjectResult
-from .assessments import AssessmentValidationError, get_subject_setting
+from .assessments import (
+    AssessmentValidationError,
+    compute_subject_result_values,
+    get_subject_setting,
+    resolve_subject_band_label,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def get_or_create_gap_template(year_group: int, subject: str, term: str, academic_year: str) -> GapTemplate:
@@ -44,6 +52,7 @@ def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
         if max_score < 0:
             raise AssessmentValidationError(f'Question {label}: max score cannot be negative.')
         question = GapQuestion.query.get(int(question_id)) if question_id else GapQuestion(template_id=template.id)
+        question.school_id = template.school_id
         question.paper_key = paper_key
         question.question_label = label
         question.question_type = question_type
@@ -64,13 +73,16 @@ def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
     return questions
 
 
-def save_gap_scores(pupils, questions: list[GapQuestion], form) -> dict:
+def save_gap_scores(pupils, questions: list[GapQuestion], form, *, school_id: int | None = None, assessment_year_group: int | None = None) -> dict:
     warnings = []
     score_lookup = {(score.pupil_id, score.question_id): score for question in questions for score in question.scores}
     pupil_totals = {}
+    pupil_paper_totals = {}
 
     for pupil in pupils:
         total = 0.0
+        paper_totals = defaultdict(float)
+        paper_has_any = defaultdict(bool)
         has_any_value = False
         for question in questions:
             field_name = f'score_{pupil.id}_{question.id}'
@@ -89,55 +101,120 @@ def save_gap_scores(pupils, questions: list[GapQuestion], form) -> dict:
             if question.max_score is not None and score_value > question.max_score:
                 raise AssessmentValidationError(f'{pupil.full_name} question {question.question_label}: score cannot exceed {question.max_score}.')
             row = existing or GapScore(pupil_id=pupil.id, question_id=question.id)
+            row.school_id = school_id if school_id is not None else question.school_id
             row.score = score_value
             db.session.add(row)
             total += score_value
+            paper_key = question.paper_key or 'paper_1'
+            paper_totals[paper_key] += score_value
+            paper_has_any[paper_key] = True
             has_any_value = True
         pupil_totals[pupil.id] = total if has_any_value else None
+        pupil_paper_totals[pupil.id] = {paper_key: paper_totals[paper_key] for paper_key in paper_has_any}
 
-    warnings.extend(sync_gap_totals_to_subject_results(pupils, questions, pupil_totals))
-    return {'warnings': warnings, 'pupil_totals': pupil_totals}
+    warnings.extend(sync_gap_totals_to_subject_results(pupils, questions, pupil_totals, pupil_paper_totals, school_id=school_id, assessment_year_group=assessment_year_group))
+    return {'warnings': warnings, 'pupil_totals': pupil_totals, 'pupil_paper_totals': pupil_paper_totals}
 
 
-def sync_gap_totals_to_subject_results(pupils, questions: list[GapQuestion], pupil_totals: dict[int, float | None]) -> list[str]:
+def build_gap_totals_from_saved_scores(pupils, questions: list[GapQuestion]) -> tuple[dict[int, float | None], dict[int, dict[str, float]]]:
+    question_ids = [question.id for question in questions if question.id]
+    score_rows = GapScore.query.filter(GapScore.question_id.in_(question_ids)).all() if question_ids else []
+    question_by_id = {question.id: question for question in questions}
+    pupil_ids = {pupil.id for pupil in pupils}
+    pupil_totals: dict[int, float | None] = {pupil.id: None for pupil in pupils}
+    pupil_paper_totals: dict[int, dict[str, float]] = {pupil.id: {} for pupil in pupils}
+
+    for score_row in score_rows:
+        if score_row.pupil_id not in pupil_ids or score_row.score is None:
+            continue
+        question = question_by_id.get(score_row.question_id)
+        if question is None:
+            continue
+        paper_key = question.paper_key or 'paper_1'
+        pupil_totals[score_row.pupil_id] = (pupil_totals[score_row.pupil_id] or 0) + score_row.score
+        pupil_paper_totals[score_row.pupil_id][paper_key] = pupil_paper_totals[score_row.pupil_id].get(paper_key, 0) + score_row.score
+
+    return pupil_totals, pupil_paper_totals
+
+
+def _normalise_score(total: float) -> int | float:
+    return int(total) if float(total).is_integer() else total
+
+
+def sync_gap_totals_to_subject_results(
+    pupils,
+    questions: list[GapQuestion],
+    pupil_totals: dict[int, float | None] | None = None,
+    pupil_paper_totals: dict[int, dict[str, float]] | None = None,
+    *,
+    school_id: int | None = None,
+    assessment_year_group: int | None = None,
+) -> list[str]:
     warnings: list[str] = []
     if not questions:
         return warnings
+    if pupil_totals is None or pupil_paper_totals is None:
+        pupil_totals, pupil_paper_totals = build_gap_totals_from_saved_scores(pupils, questions)
+
     template = questions[0].template
-    template_max_total = sum(question.max_score or 0 for question in questions)
     setting = get_subject_setting(template.year_group, template.subject, template.term)
-    combined_max = template_max_total or setting.combined_max
+    effective_school_id = school_id if school_id is not None else template.school_id
+    pupil_ids = [pupil.id for pupil in pupils]
 
     existing_results = {
         result.pupil_id: result
-        for result in SubjectResult.query.filter_by(subject=template.subject, term=template.term, academic_year=template.academic_year).filter(SubjectResult.pupil_id.in_([pupil.id for pupil in pupils])).all()
+        for result in SubjectResult.query.filter_by(
+            subject=template.subject,
+            term=template.term,
+            academic_year=template.academic_year,
+        ).filter(SubjectResult.pupil_id.in_(pupil_ids)).all()
     }
 
+    updated = 0
+    total_scores_synced = 0
     for pupil in pupils:
-        total = pupil_totals.get(pupil.id)
+        per_paper = pupil_paper_totals.get(pupil.id, {})
+        if not per_paper:
+            continue
         result = existing_results.get(pupil.id)
-        if total is None:
-            continue
-        rounded_total = int(total) if float(total).is_integer() else total
         if result is None:
-            result = SubjectResult(pupil_id=pupil.id, academic_year=template.academic_year, term=template.term, subject=template.subject)
-            result.source = 'gap'
-            result.combined_score = rounded_total
-            result.combined_percent = SubjectResult.calculate_percent(rounded_total, combined_max)
-            result.band_label = SubjectResult.calculate_band_label(result.combined_percent, setting.below_are_threshold_percent, setting.exceeding_threshold_percent)
-            db.session.add(result)
-            continue
-        if result.source in {'manual', 'csv'} and result.combined_score is not None and result.combined_score != rounded_total:
-            warnings.append(f'{pupil.full_name}: GAP total {rounded_total} differs from saved {result.source} score {result.combined_score}.')
-            continue
-        if result.combined_score is None:
-            result.combined_score = rounded_total
-            result.combined_percent = SubjectResult.calculate_percent(rounded_total, combined_max)
-            result.band_label = SubjectResult.calculate_band_label(result.combined_percent, setting.below_are_threshold_percent, setting.exceeding_threshold_percent)
-            result.source = 'gap'
-            db.session.add(result)
-    return warnings
+            result = SubjectResult(
+                school_id=effective_school_id,
+                pupil_id=pupil.id,
+                academic_year=template.academic_year,
+                term=template.term,
+                subject=template.subject,
+            )
+        result.school_id = effective_school_id
+        result.assessment_year_group = assessment_year_group if assessment_year_group is not None else template.year_group
+        if 'paper_1' in per_paper:
+            result.paper_1_score = _normalise_score(per_paper['paper_1'])
+            total_scores_synced += 1
+        if 'paper_2' in per_paper:
+            result.paper_2_score = _normalise_score(per_paper['paper_2'])
+            total_scores_synced += 1
+        computed = compute_subject_result_values(setting, result.paper_1_score, result.paper_2_score, validate_scores=False)
+        result.combined_score = computed['combined_score']
+        result.combined_percent = computed['combined_percent']
+        result.band_label = resolve_subject_band_label(
+            percent=computed['combined_percent'],
+            setting=setting,
+            pupil_year_group=template.year_group,
+            assessment_year_group=result.assessment_year_group,
+        )
+        result.source = 'gap'
+        db.session.add(result)
+        updated += 1
 
+    logger.info(
+        'QLA/GAP totals synced to subject results: assessment_id=%s subject=%s paper=%s pupils_updated=%s total_scores_synced=%s',
+        template.id,
+        template.subject,
+        template.paper_name or 'all',
+        updated,
+        total_scores_synced,
+    )
+    return warnings
 
 def build_gap_page_context(pupils, template: GapTemplate) -> dict:
     questions = list(template.questions)

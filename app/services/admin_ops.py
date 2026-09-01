@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.extensions import db
-from app.models import AcademicYear, Pupil, PupilClassHistory, SchoolClass, User
-from .assessments import get_current_academic_year
+from app.models import AcademicYear, AssessmentSetting, Pupil, PupilClassHistory, School, SchoolClass, TrackerModeSetting, User
+from .assessments import get_current_academic_year, get_setting_defaults
 
 
 @dataclass(frozen=True)
@@ -18,15 +18,55 @@ class DefaultLogin:
 
 
 # NOTE: Default accounts below are for local development and test seeding only.
-DEFAULT_ADMIN = DefaultLogin(username='admin', password='admin123', role='admin')
+DEFAULT_ADMIN = DefaultLogin(username='admin', password='admin123', role='school_admin')
 DEFAULT_TEACHERS = [DefaultLogin(username=f'teacher{year}', password=f'teacher{year}', role='teacher', year_group=year) for year in range(1, 7)]
+
+
+def initialise_school_data(school_id: int) -> None:
+    # Tracker modes (Years 1–6)
+    for year in range(1, 7):
+        if not TrackerModeSetting.query.filter_by(school_id=school_id, year_group=year).first():
+            db.session.add(TrackerModeSetting(
+                school_id=school_id,
+                year_group=year,
+                tracker_mode='normal',
+            ))
+
+    # Assessment settings
+    for year in range(1, 7):
+        for subject in ['maths', 'reading', 'spag']:
+            for term in ['autumn', 'spring', 'summer']:
+                if not AssessmentSetting.query.filter_by(
+                    school_id=school_id,
+                    year_group=year,
+                    subject=subject,
+                    term=term,
+                ).first():
+                    db.session.add(AssessmentSetting(
+                        school_id=school_id,
+                        year_group=year,
+                        subject=subject,
+                        term=term,
+                        **get_setting_defaults(subject),
+                    ))
+
+    # Year 6 SATs default mode
+    sats_mode = TrackerModeSetting.query.filter_by(
+        school_id=school_id,
+        year_group=6,
+    ).first()
+
+    if sats_mode:
+        sats_mode.tracker_mode = 'sats'
+
+    db.session.commit()
 
 
 def sort_teacher_accounts(users: list[User]) -> list[User]:
     def sort_key(user: User):
         suffix = ''.join(char for char in user.username if char.isdigit())
         suffix_value = int(suffix) if suffix else 999
-        return (user.role != 'admin', suffix_value, user.username.lower())
+        return (user.role not in {'school_admin', 'admin', 'executive_admin'}, suffix_value, user.username.lower())
 
     return sorted(users, key=sort_key)
 
@@ -53,18 +93,33 @@ def build_next_academic_year(academic_year: str) -> str:
 
 def ensure_default_logins_and_classes() -> dict:
     ensure_academic_year(mark_current=True)
-    admin = User.query.filter_by(username=DEFAULT_ADMIN.username).first() or User(username=DEFAULT_ADMIN.username)
+    default_school = School.query.filter_by(slug='barrow-school').first()
+    if not default_school:
+        default_school = School(name='Barrow School', slug='barrow-school', is_active=True, is_demo=False)
+        db.session.add(default_school)
+        db.session.flush()
+    admin = User.query.filter(
+        User.school_id == default_school.id,
+        User.username.ilike(DEFAULT_ADMIN.username),
+    ).first() or User(username=DEFAULT_ADMIN.username)
     admin.role = DEFAULT_ADMIN.role
+    admin.legacy_is_admin = True
     admin.is_active = True
+    admin.school_id = default_school.id
     admin.set_password(DEFAULT_ADMIN.password)
     db.session.add(admin)
 
     teachers: dict[int, User] = {}
     for login in DEFAULT_TEACHERS:
-        teacher = User.query.filter_by(username=login.username).first() or User(username=login.username)
+        teacher = User.query.filter(
+            User.school_id == default_school.id,
+            User.username.ilike(login.username),
+        ).first() or User(username=login.username)
         teacher.username = login.username
         teacher.role = login.role
+        teacher.legacy_is_admin = False
         teacher.is_active = True
+        teacher.school_id = default_school.id
         teacher.set_password(login.password)
         db.session.add(teacher)
         db.session.flush()
@@ -73,34 +128,49 @@ def ensure_default_logins_and_classes() -> dict:
     class_lookup = {}
     for year_group, teacher in teachers.items():
         name = f'Year {year_group}'
-        school_class = SchoolClass.query.filter_by(name=name).first() or SchoolClass(name=name, year_group=year_group)
+        school_class = SchoolClass.query.filter_by(school_id=default_school.id, name=name).first() or SchoolClass(name=name, year_group=year_group, school_id=default_school.id)
         school_class.name = name
         school_class.year_group = year_group
         school_class.teacher_id = teacher.id
         school_class.is_active = True
+        school_class.school_id = default_school.id
         db.session.add(school_class)
         db.session.flush()
         class_lookup[year_group] = school_class
 
-    reception_class = SchoolClass.query.filter_by(name='Reception').first() or SchoolClass(name='Reception', year_group=0)
+    reception_class = SchoolClass.query.filter_by(school_id=default_school.id, name='Reception').first() or SchoolClass(name='Reception', year_group=0, school_id=default_school.id)
     reception_class.name = 'Reception'
     reception_class.year_group = 0
     reception_class.is_active = True
+    reception_class.school_id = default_school.id
     db.session.add(reception_class)
     db.session.flush()
 
     return {'admin': admin, 'teachers': teachers, 'classes': class_lookup, 'reception_class': reception_class}
 
 
-def snapshot_pupil_history(academic_year: str) -> int:
+def snapshot_pupil_history(academic_year: str, school_id: int | None) -> int:
+    if school_id is None:
+        return 0
     ensure_academic_year(academic_year)
     created = 0
-    pupils = Pupil.query.join(Pupil.school_class).filter(Pupil.is_active.is_(True), SchoolClass.is_active.is_(True)).all()
+    pupils = (
+        Pupil.query
+        .join(Pupil.school_class)
+        .filter(
+            Pupil.school_id == school_id,
+            Pupil.is_active.is_(True),
+            SchoolClass.school_id == school_id,
+            SchoolClass.is_active.is_(True),
+        )
+        .all()
+    )
     for pupil in pupils:
-        existing = PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=academic_year).first()
+        existing = PupilClassHistory.query.filter_by(school_id=school_id, pupil_id=pupil.id, academic_year=academic_year).first()
         if existing:
             continue
         db.session.add(PupilClassHistory(
+            school_id=pupil.school_id,
             pupil_id=pupil.id,
             academic_year=academic_year,
             class_name=pupil.school_class.name,
@@ -112,14 +182,27 @@ def snapshot_pupil_history(academic_year: str) -> int:
     return created
 
 
-def get_promotion_mapping_options() -> list[dict]:
+def get_promotion_mapping_options(school_id: int) -> list[dict]:
     """Build source-class rows and valid destination options for promotion UI."""
-    classes = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group, SchoolClass.name).all()
+    classes = (
+        SchoolClass.query
+        .filter(
+            SchoolClass.school_id == school_id,
+            SchoolClass.is_active.is_(True),
+        )
+        .order_by(SchoolClass.year_group, SchoolClass.name)
+        .all()
+    )
     options: list[dict] = []
     for school_class in classes:
         active_pupil_count = school_class.pupils.filter_by(is_active=True).count()
         destination_classes = (
-            SchoolClass.query.filter_by(is_active=True, year_group=school_class.year_group + 1)
+            SchoolClass.query
+            .filter(
+                SchoolClass.school_id == school_id,
+                SchoolClass.is_active.is_(True),
+                SchoolClass.year_group == school_class.year_group + 1,
+            )
             .order_by(SchoolClass.name)
             .all()
         )
@@ -133,14 +216,23 @@ def get_promotion_mapping_options() -> list[dict]:
     return options
 
 
-def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int | None] | None = None) -> dict:
-    snapshot_count = snapshot_pupil_history(source_year)
+def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_mapping: dict[int, int | None] | None = None) -> dict:
+    if school_id is None:
+        raise ValueError('A school must be selected before promoting pupils.')
+    snapshot_count = snapshot_pupil_history(source_year, school_id)
     target_year = build_next_academic_year(source_year)
+    if int(target_year.split('/')[0]) <= int(source_year.split('/')[0]):
+        raise ValueError('The promotion destination must be after the working academic year.')
     ensure_academic_year(source_year, archived=True)
-    ensure_academic_year(target_year, mark_current=True)
+    target_record = ensure_academic_year(target_year)
+    school = db.session.get(School, school_id)
+    if not school:
+        raise ValueError('The selected school could not be found.')
+    school.current_academic_year = target_record
+    db.session.add(school)
 
     normalized_mapping = class_mapping or {}
-    classes = SchoolClass.query.filter_by(is_active=True).order_by(SchoolClass.year_group.desc(), SchoolClass.name).all()
+    classes = SchoolClass.query.filter(SchoolClass.school_id == school_id, SchoolClass.is_active.is_(True)).order_by(SchoolClass.year_group.desc(), SchoolClass.name).all()
     moved = 0
     leavers = 0
     for school_class in classes:
@@ -148,13 +240,13 @@ def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int |
         selected_destination_id = normalized_mapping.get(school_class.id)
         selected_destination = None
         if selected_destination_id:
-            selected_destination = SchoolClass.query.filter_by(id=selected_destination_id, is_active=True).first()
+            selected_destination = SchoolClass.query.filter(SchoolClass.id == selected_destination_id, SchoolClass.school_id == school_id, SchoolClass.is_active.is_(True)).first()
             if not selected_destination:
                 raise ValueError(f'Invalid destination selected for {school_class.name}.')
             if selected_destination.year_group != school_class.year_group + 1:
                 raise ValueError(f'Invalid destination year group selected for {school_class.name}.')
         for pupil in pupils:
-            history = PupilClassHistory.query.filter_by(pupil_id=pupil.id, academic_year=source_year).first()
+            history = PupilClassHistory.query.filter_by(school_id=school_id, pupil_id=pupil.id, academic_year=source_year).first()
             if selected_destination is None and school_class.year_group >= 6:
                 pupil.is_active = False
                 leavers += 1
@@ -165,9 +257,9 @@ def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int |
                 continue
             next_class = selected_destination
             if not next_class:
-                next_class = SchoolClass.query.filter_by(year_group=school_class.year_group + 1, is_active=True).order_by(SchoolClass.name).first()
+                next_class = SchoolClass.query.filter(SchoolClass.school_id == school_id, SchoolClass.year_group == school_class.year_group + 1, SchoolClass.is_active.is_(True)).order_by(SchoolClass.name).first()
                 if not next_class:
-                    next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True)
+                    next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True, school_id=school_class.school_id, is_demo=school_class.is_demo)
                     db.session.add(next_class)
                     db.session.flush()
             pupil.class_id = next_class.id
@@ -180,10 +272,17 @@ def promote_pupils_to_next_year(source_year: str, class_mapping: dict[int, int |
     return {'snapshot_count': snapshot_count, 'moved': moved, 'leavers': leavers, 'target_year': target_year}
 
 
-def get_history_rows(academic_year: str) -> list[PupilClassHistory]:
+def get_history_rows(academic_year: str, school_id: int | None) -> list[PupilClassHistory]:
+    if school_id is None:
+        return []
     return (
-        PupilClassHistory.query.join(PupilClassHistory.pupil)
-        .filter(PupilClassHistory.academic_year == academic_year)
+        PupilClassHistory.query
+        .join(Pupil, Pupil.id == PupilClassHistory.pupil_id)
+        .filter(
+            PupilClassHistory.school_id == school_id,
+            Pupil.school_id == school_id,
+            PupilClassHistory.academic_year == academic_year,
+        )
         .order_by(PupilClassHistory.year_group, PupilClassHistory.class_name, Pupil.last_name, Pupil.first_name)
         .all()
     )

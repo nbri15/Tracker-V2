@@ -16,6 +16,11 @@ class AcademicYear(db.Model):
     is_archived = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+    @property
+    def label(self) -> str:
+        """Backward-compatible alias for templates still reading .label."""
+        return self.name
+
     def __repr__(self) -> str:
         return f'<AcademicYear {self.name}>'
 
@@ -25,11 +30,12 @@ class PupilClassHistory(db.Model):
 
     __tablename__ = 'pupil_class_history'
     __table_args__ = (
-        db.UniqueConstraint('pupil_id', 'academic_year', name='uq_pupil_class_history_scope'),
+        db.UniqueConstraint('school_id', 'pupil_id', 'academic_year', name='uq_pupil_class_history_school_scope'),
         db.Index('ix_pupil_class_history_year_group', 'academic_year', 'year_group'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False, index=True)
     class_name = db.Column(db.String(120), nullable=False)

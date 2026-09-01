@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Reports export centre{% endblock %}
+{% set page_heading = 'Reports export centre' %}
+{% block content %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <form method="get" action="{{ url_for('admin.report_class_overview') }}" class="form-grid">
+    <div class="col-md-3"><label class="form-label">Academic year</label><input class="form-control" name="academic_year" value="{{ request.args.get('academic_year','') }}"></div>
+    <div class="col-md-3"><label class="form-label">Class</label><select class="form-select" name="class_id"><option value="">All</option>{% for c in class_options %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Year group</label><select class="form-select" name="year_group"><option value="">All</option>{% for yg in year_groups %}<option value="{{ yg }}">Year {{ yg }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">SEND</label><select class="form-select" name="send"><option value="all">All</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+    <div class="col-md-2"><label class="form-label">PP</label><select class="form-select" name="pp"><option value="all">All</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+    <div class="col-md-2"><label class="form-label">Gender</label><select class="form-select" name="gender"><option value="">All</option><option value="female">Female</option><option value="male">Male</option></select></div>
+    <div class="col-md-2"><label class="form-label">LAPS</label><select class="form-select" name="laps"><option value="all">All</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+    <div class="col-md-2"><label class="form-label">Service child</label><select class="form-select" name="service_child"><option value="all">All</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+    <div class="col-md-2"><label class="form-label">Term</label><input class="form-control" name="term" placeholder="Autumn 1"></div>
+    <div class="form-actions">
+      <button class="btn btn-primary">Open class report</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin.report_class_overview', format='csv', **request.args) }}">CSV</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin.report_class_overview', format='xlsx', **request.args) }}">XLSX</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('admin.report_governor_summary', **request.args) }}">Governor summary</a>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

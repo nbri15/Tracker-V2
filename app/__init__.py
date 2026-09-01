@@ -9,7 +9,9 @@ from sqlalchemy import inspect, text
 
 from config import config_by_name
 from .extensions import db, login_manager, migrate
-from .services import format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label
+from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label, short_band_label
+from .services.gender import normalize_gender
+from .utils import current_school_id, is_demo_user
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -30,7 +32,11 @@ def create_app(config_name: str | None = None) -> Flask:
     register_shell_context(app)
     register_cli_commands(app)
     bootstrap_runtime_schema(app)
+    bootstrap_fundamentals(app)
+    bootstrap_academic_years(app)
+    bootstrap_gender_values(app)
     bootstrap_admin_from_env(app)
+    bootstrap_demo_data(app)
 
     return app
 
@@ -51,12 +57,18 @@ def register_blueprints(app: Flask) -> None:
     from .dashboards import dashboards_bp
     from .teacher import teacher_bp
     from .pupils import pupils_bp
+    from .executive import executive_bp
+    from .legal import legal_bp
+    from .fundamentals import fundamentals_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
     app.register_blueprint(teacher_bp)
     app.register_blueprint(pupils_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(executive_bp)
+    app.register_blueprint(legal_bp)
+    app.register_blueprint(fundamentals_bp)
 
 
 @login_manager.user_loader
@@ -86,6 +98,11 @@ def register_error_handlers(app: Flask) -> None:
 def register_request_guards(app: Flask) -> None:
     """Apply application-wide access guards."""
 
+    @app.teardown_appcontext
+    def shutdown_session(exception=None):
+        db.session.remove()
+
+
     @app.before_request
     def force_password_change():
         if not current_user.is_authenticated or not getattr(current_user, 'require_password_change', False):
@@ -98,12 +115,36 @@ def register_request_guards(app: Flask) -> None:
 def register_template_helpers(app: Flask) -> None:
     """Expose common formatting helpers to templates."""
 
+    app.jinja_env.filters['short_band'] = short_band_label
+
     app.jinja_env.globals.update(
         format_subject_name=format_subject_name,
         get_term_label=get_term_label,
         get_writing_band_label=get_writing_band_label,
+        display_band_short=display_band_short,
+        short_band_label=short_band_label,
         get_tracker_mode_label=get_tracker_mode_label,
+        demo_mode=app.config.get('DEMO_MODE', False),
+        is_demo_user=is_demo_user,
+        demo_credentials=(
+            ('demo_admin', 'demo123'),
+            ('demo_teacher', 'demo123'),
+        ),
     )
+
+    @app.context_processor
+    def inject_school_context():
+        from .models import School
+
+        if not current_user.is_authenticated:
+            return {'selected_school_id': None, 'accessible_schools': []}
+
+        if current_user.is_executive_admin:
+            schools = School.query.order_by(School.name).all()
+            return {'selected_school_id': current_school_id(), 'accessible_schools': schools}
+
+        school = current_user.school
+        return {'selected_school_id': school.id if school else None, 'accessible_schools': [school] if school else []}
 
 
 def register_shell_context(app: Flask) -> None:
@@ -131,14 +172,14 @@ def register_cli_commands(app: Flask) -> None:
 
         from .models import User
 
-        existing_admin = User.query.filter_by(role='admin').first()
+        existing_admin = User.query.filter(User.role.in_(['admin', 'executive_admin'])).first()
         if existing_admin:
             click.echo(f"Admin user already exists ({existing_admin.username}). No changes made.")
             return
         if len(password) < 8:
             raise click.ClickException('Admin password must be at least 8 characters long.')
 
-        user = User(username=username.strip(), role='admin', is_active=True, require_password_change=force_password_change)
+        user = User(username=username.strip(), role='executive_admin', legacy_is_admin=True, is_active=True, require_password_change=force_password_change)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -160,11 +201,11 @@ def bootstrap_admin_from_env(app: Flask) -> None:
         if not inspector.has_table(User.__tablename__):
             return
 
-        existing_admin = User.query.filter_by(role='admin').first()
+        existing_admin = User.query.filter(User.role.in_(['admin', 'executive_admin'])).first()
         if existing_admin:
             return
 
-        user = User(username=username, role='admin', is_active=True)
+        user = User(username=username, role='executive_admin', legacy_is_admin=True, is_active=True)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -185,13 +226,34 @@ def bootstrap_runtime_schema(app: Flask) -> None:
         inspector = inspect(db.engine)
 
         table_columns = {
+            'schools': {
+                'name': 'VARCHAR(140)',
+                'slug': 'VARCHAR(140)',
+                'is_active': 'BOOLEAN DEFAULT TRUE',
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+            },
             'pupils': {
                 'strengths_notes': 'TEXT',
                 'next_steps_notes': 'TEXT',
                 'general_notes': 'TEXT',
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
             },
             'subject_results': {
                 'assessment_year_group': 'INTEGER',
+                'school_id': 'INTEGER',
+            },
+            'users': {
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
+            },
+            'school_classes': {
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
+            },
+            'interventions': {
+                'is_demo': 'BOOLEAN DEFAULT FALSE',
+                'school_id': 'INTEGER',
             },
         }
 
@@ -226,3 +288,85 @@ def bootstrap_runtime_schema(app: Flask) -> None:
                             column_name,
                             exc_info=True,
                         )
+
+
+def ensure_fundamentals_tables() -> None:
+    """Create Maths Fundamentals tables if they do not already exist."""
+
+    from .models import (
+        FundamentalLevel,
+        FundamentalPupilAttempt,
+        FundamentalQuestion,
+        FundamentalResponse,
+        FundamentalSession,
+        FundamentalStrand,
+    )
+
+    for model in (
+        FundamentalStrand,
+        FundamentalLevel,
+        FundamentalQuestion,
+        FundamentalSession,
+        FundamentalPupilAttempt,
+        FundamentalResponse,
+    ):
+        model.__table__.create(bind=db.engine, checkfirst=True)
+
+
+def bootstrap_fundamentals(app: Flask) -> None:
+    """Safely create and seed Maths Fundamentals at startup."""
+
+    with app.app_context():
+        try:
+            ensure_fundamentals_tables()
+            from .fundamentals.seed import seed_fundamentals
+
+            seed_fundamentals()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('Maths Fundamentals bootstrap failed.', exc_info=True)
+
+
+def bootstrap_academic_years(app: Flask) -> None:
+    """Ensure baseline academic-year records exist at startup."""
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if not inspector.has_table('academic_years'):
+            return
+        try:
+            from .services.setup import ensure_default_academic_years
+
+            ensure_default_academic_years()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('Academic year bootstrap failed.', exc_info=True)
+
+def bootstrap_demo_data(app: Flask) -> None:
+    """Seed demo data at startup only when explicit demo mode is enabled."""
+
+    if not app.config.get('DEMO_MODE', False):
+        return
+    with app.app_context():
+        try:
+            from seed_demo import seed_demo_data
+
+            seed_demo_data()
+        except Exception:
+            app.logger.warning('Demo data bootstrap failed.', exc_info=True)
+
+
+def bootstrap_gender_values(app: Flask) -> None:
+    """Normalize historical pupil gender values to canonical labels."""
+
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if not inspector.has_table('pupils'):
+            return
+        try:
+            db.session.execute(text("UPDATE pupils SET gender = 'Male' WHERE LOWER(TRIM(gender)) IN ('m','male')"))
+            db.session.execute(text("UPDATE pupils SET gender = 'Female' WHERE LOWER(TRIM(gender)) IN ('f','female')"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.warning('Gender normalization bootstrap failed.', exc_info=True)

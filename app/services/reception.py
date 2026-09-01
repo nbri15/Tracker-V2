@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.extensions import db
 from app.models import ReceptionTrackerEntry, SchoolClass
+from app.utils import school_scoped_query
 
 RECEPTION_YEAR_GROUP = 0
 RECEPTION_CLASS_NAME = 'Reception'
@@ -41,13 +42,16 @@ class ReceptionTrackerValidationError(ValueError):
 def get_reception_class() -> SchoolClass | None:
     """Return the active reception class record if it exists."""
 
-    return SchoolClass.query.filter_by(is_active=True, year_group=RECEPTION_YEAR_GROUP).order_by(SchoolClass.name).first()
+    return school_scoped_query(
+        SchoolClass.query.filter_by(is_active=True, year_group=RECEPTION_YEAR_GROUP),
+        SchoolClass,
+    ).order_by(SchoolClass.name).first()
 
 
 def ensure_reception_class() -> SchoolClass:
     """Create/refresh the reception class row if needed."""
 
-    school_class = SchoolClass.query.filter_by(name=RECEPTION_CLASS_NAME).first()
+    school_class = school_scoped_query(SchoolClass.query.filter_by(name=RECEPTION_CLASS_NAME), SchoolClass).first()
     if not school_class:
         school_class = SchoolClass(name=RECEPTION_CLASS_NAME, year_group=RECEPTION_YEAR_GROUP, is_active=True)
     school_class.name = RECEPTION_CLASS_NAME
@@ -88,6 +92,17 @@ def save_reception_tracker_entries(pupils: list, academic_year: str, tracking_po
 
     valid_statuses = {choice[0] for choice in RECEPTION_STATUS_CHOICES}
     area_keys = [area_key for area_key, _ in RECEPTION_AREAS]
+    pupil_ids = [pupil.id for pupil in pupils]
+    existing_entries = (
+        ReceptionTrackerEntry.query.filter(
+            ReceptionTrackerEntry.pupil_id.in_(pupil_ids),
+            ReceptionTrackerEntry.academic_year == academic_year,
+            ReceptionTrackerEntry.tracking_point == tracking_point,
+            ReceptionTrackerEntry.area_key.in_(area_keys),
+        ).all()
+        if pupil_ids else []
+    )
+    entry_lookup = {(entry.pupil_id, entry.area_key): entry for entry in existing_entries}
 
     for pupil in pupils:
         for area_key in area_keys:
@@ -95,19 +110,16 @@ def save_reception_tracker_entries(pupils: list, academic_year: str, tracking_po
             status = (form_data.get(field_key, 'not_on_track') or 'not_on_track').strip().lower()
             if status not in valid_statuses:
                 raise ReceptionTrackerValidationError(f'Invalid status for {pupil.full_name} ({area_key}).')
-            entry = ReceptionTrackerEntry.query.filter_by(
-                pupil_id=pupil.id,
-                academic_year=academic_year,
-                tracking_point=tracking_point,
-                area_key=area_key,
-            ).first()
+            entry = entry_lookup.get((pupil.id, area_key))
             if not entry:
                 entry = ReceptionTrackerEntry(
+                    school_id=pupil.school_id,
                     pupil_id=pupil.id,
                     academic_year=academic_year,
                     tracking_point=tracking_point,
                     area_key=area_key,
                 )
+                entry_lookup[(pupil.id, area_key)] = entry
             entry.status = status
             db.session.add(entry)
 

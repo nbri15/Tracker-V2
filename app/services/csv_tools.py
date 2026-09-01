@@ -5,6 +5,9 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass, field
+from datetime import date
+from sqlalchemy import or_
+from flask_login import current_user
 
 from app.extensions import db
 from app.models import (
@@ -15,24 +18,39 @@ from app.models import (
     SatsColumnResult,
     SatsColumnSetting,
     SatsExamTab,
+    SatsResult,
+    PhonicsScore,
+    PhonicsTestColumn,
     SchoolClass,
+    SimpleSatsExamTab,
     SubjectResult,
+    TimesTableScore,
+    TimesTableTestColumn,
+    FoundationResult,
     WritingResult,
 )
-from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting
+from app.utils import current_school_id, school_scoped_query
+from .assessments import get_selected_current_academic_year
+from .setup import get_or_create_academic_year
+from .assessments import CsvImportError, WRITING_BAND_LABELS, build_class_overview_row, compute_subject_result_values, get_subject_setting, short_band_label
 from .reception import RECEPTION_STATUS_CHOICES, RECEPTION_TRACKING_POINTS, RECEPTION_YEAR_GROUP
+from .pupil_overview import build_pupil_overview_data, summarize_gld_status
 from .sats_tracker import CALCULATION_KEY_MAP, build_sats_tracker_rows, get_sats_columns, get_sats_exam_tabs
+from .gender import normalize_gender
 
 COMBINED_PUPIL_COLUMNS = [
-    'first_name',
-    'last_name',
+    'pupil',
+    'class_name',
+    'year_group',
+    'academic_year',
     'gender',
     'pupil_premium',
+    'send',
     'laps',
     'service_child',
-    'class_name',
-    'academic_year',
 ]
+# Backwards-compatible columns accepted on upload, but not prioritised in the template.
+COMBINED_LEGACY_PUPIL_COLUMNS = ['first_name', 'last_name']
 COMBINED_SUBJECT_SCORE_COLUMNS = {
     'maths': {
         'autumn': ('maths_autumn_paper1', 'maths_autumn_paper2'),
@@ -55,32 +73,24 @@ COMBINED_WRITING_COLUMNS = {
     'spring': ('writing_spring_band', 'writing_spring_notes'),
     'summer': ('writing_summer_band', 'writing_summer_notes'),
 }
-COMBINED_TEMPLATE_COLUMNS = COMBINED_PUPIL_COLUMNS + [
-    'maths_autumn_paper1',
-    'maths_autumn_paper2',
-    'maths_spring_paper1',
-    'maths_spring_paper2',
-    'maths_summer_paper1',
-    'maths_summer_paper2',
-    'reading_autumn_paper1',
-    'reading_autumn_paper2',
-    'reading_spring_paper1',
-    'reading_spring_paper2',
-    'reading_summer_paper1',
-    'reading_summer_paper2',
-    'spag_autumn_paper1',
-    'spag_autumn_paper2',
-    'spag_spring_paper1',
-    'spag_spring_paper2',
-    'spag_summer_paper1',
-    'spag_summer_paper2',
-    'writing_autumn_band',
-    'writing_autumn_notes',
-    'writing_spring_band',
-    'writing_spring_notes',
-    'writing_summer_band',
-    'writing_summer_notes',
-]
+COMBINED_RECEPTION_COLUMNS = ['reception_autumn_score', 'reception_spring_score', 'reception_summer_score', 'reception_notes']
+COMBINED_PHONICS_COLUMNS = ['phonics_y1_score', 'phonics_y2_retake_score', 'phonics_passed']
+COMBINED_TIMES_TABLES_COLUMNS = ['times_tables_score', 'times_tables_date']
+SATS_COMBINED_FIELDS = ['arithmetic', 'reasoning1', 'reasoning2', 'maths_scaled', 'reading', 'reading_scaled', 'spelling', 'grammar', 'spag_scaled']
+COMBINED_SATS_COLUMNS = [f'sats_exam{exam}_{field}' for exam in range(1, 5) for field in SATS_COMBINED_FIELDS]
+FOUNDATION_COMBINED_SUBJECTS = ['art', 'computing', 'dt', 'geography', 'history', 'music', 'pe', 're', 'science']
+COMBINED_FOUNDATION_COLUMNS = [f'foundation_{term}_{subject}' for term in ('autumn', 'spring', 'summer') for subject in FOUNDATION_COMBINED_SUBJECTS]
+COMBINED_TEMPLATE_COLUMNS = (
+    COMBINED_PUPIL_COLUMNS
+    + [column for terms in COMBINED_SUBJECT_SCORE_COLUMNS.values() for pair in terms.values() for column in pair]
+    + [column for pair in COMBINED_WRITING_COLUMNS.values() for column in pair]
+    + COMBINED_RECEPTION_COLUMNS
+    + COMBINED_PHONICS_COLUMNS
+    + COMBINED_TIMES_TABLES_COLUMNS
+    + COMBINED_SATS_COLUMNS
+    + COMBINED_FOUNDATION_COLUMNS
+    + COMBINED_LEGACY_PUPIL_COLUMNS
+)
 RECEPTION_TEMPLATE_COLUMNS = [
     'pupil_first_name',
     'pupil_last_name',
@@ -100,14 +110,13 @@ SATS_STANDARD_COLUMN_MAP = {
     'arithmetic': 'maths_arithmetic',
     'reasoning_1': 'maths_reasoning_1',
     'reasoning_2': 'maths_reasoning_2',
-    'maths_raw_score': 'maths_raw_total',
+    'maths_combined_score': 'maths_raw_total',
     'maths_scaled_score': 'maths_scaled',
-    'reading_paper': 'reading_paper',
-    'reading_raw_score': 'reading_raw_total',
-    'reading_scaled_score': 'reading_scaled',
-    'spag_paper_1': 'spag_paper_1',
-    'spag_paper_2': 'spag_paper_2',
-    'spag_raw_score': 'spag_raw_total',
+    'reading': 'reading_paper',
+        'reading_scaled_score': 'reading_scaled',
+    'spelling': 'spag_spelling',
+    'grammar': 'spag_grammar',
+    'spag_combined_score': 'spag_raw_total',
     'spag_scaled_score': 'spag_scaled',
 }
 SATS_TEMPLATE_COLUMNS = [
@@ -115,7 +124,7 @@ SATS_TEMPLATE_COLUMNS = [
     'pupil_last_name',
     'class_name',
     'academic_year',
-    'exam_tab',
+    'exam_number',
     *SATS_STANDARD_COLUMN_MAP.keys(),
 ]
 RECEPTION_AREA_IMPORT_MAP = {
@@ -176,13 +185,7 @@ def generate_csv(template_type: str) -> str:
     template_rows = {
         'combined': [
             COMBINED_TEMPLATE_COLUMNS,
-            [
-                'Ava', 'Brown', 'Female', 'false', 'false', 'false', 'Year 1', '2025/26',
-                '18', '17', '', '', '', '',
-                '22', '18', '', '', '', '',
-                '', '', '', '', '', '',
-                'expected', 'Autumn moderation complete', '', '', '', '',
-            ],
+            ['Example Pupil', 'Example Class', 'Year 4', '2025/26', 'Male', 'No', 'No', 'No', 'No'] + [''] * (len(COMBINED_TEMPLATE_COLUMNS) - len(COMBINED_PUPIL_COLUMNS)),
         ],
         'reception': [
             RECEPTION_TEMPLATE_COLUMNS,
@@ -235,8 +238,83 @@ def _require_value(row: dict, column: str, *, label: str | None = None) -> str:
     return value
 
 
+
+def _split_pupil_name(row: dict) -> tuple[str, str, str]:
+    pupil_name = _clean_value(row.get('pupil'))
+    first_name = _clean_value(row.get('first_name'))
+    last_name = _clean_value(row.get('last_name'))
+    if not pupil_name and (first_name or last_name):
+        pupil_name = f'{first_name} {last_name}'.strip()
+    if not pupil_name:
+        raise CsvImportError('pupil is required.')
+    parts = pupil_name.split()
+    if not first_name:
+        first_name = parts[0]
+    if not last_name:
+        last_name = ' '.join(parts[1:]) or parts[0]
+    return pupil_name, first_name, last_name
+
+
+def _parse_year_group(value: str | None) -> int:
+    raw = _clean_value(value).lower().replace(' ', '')
+    aliases = {'reception': 0, 'rec': 0, 'r': 0, 'yearr': 0}
+    for year in range(1, 7):
+        aliases[str(year)] = year
+        aliases[f'y{year}'] = year
+        aliases[f'year{year}'] = year
+    if raw not in aliases:
+        raise CsvImportError('Unknown year group.')
+    return aliases[raw]
+
+
+def _get_or_create_class(class_name: str, year_group: int) -> tuple[SchoolClass, bool]:
+    school_id = current_school_id()
+    if school_id is None:
+        raise CsvImportError('Select a school before importing CSV data.')
+    school_class = SchoolClass.query.filter_by(school_id=school_id, name=class_name).first()
+    if school_class:
+        if school_class.year_group != year_group:
+            school_class.year_group = year_group
+        school_class.is_active = True
+        db.session.add(school_class)
+        return school_class, False
+    school_class = SchoolClass(name=class_name, year_group=year_group, school_id=school_id, is_active=True, is_demo=getattr(current_user, 'is_demo', False))
+    db.session.add(school_class)
+    db.session.flush()
+    return school_class, True
+
+
+def _find_combined_pupil(row: dict, first_name: str, last_name: str, pupil_name: str, school_class: SchoolClass) -> Pupil | None:
+    school_id = current_school_id()
+    pupil_id = _clean_value(row.get('pupil_id'))
+    if pupil_id.isdigit():
+        found = Pupil.query.filter_by(id=int(pupil_id), school_id=school_id).first()
+        if found:
+            return found
+    found = Pupil.query.filter_by(first_name=first_name, last_name=last_name, class_id=school_class.id, school_id=school_id).first()
+    if found:
+        return found
+    return Pupil.query.filter(Pupil.school_id == school_id, Pupil.class_id == school_class.id, (Pupil.first_name + ' ' + Pupil.last_name) == pupil_name).first()
+
+
+def _save_class_history(pupil: Pupil, school_class: SchoolClass, academic_year: str) -> None:
+    history = PupilClassHistory.query.filter_by(school_id=school_class.school_id, pupil_id=pupil.id, academic_year=academic_year).first()
+    if not history:
+        history = PupilClassHistory(school_id=school_class.school_id, pupil_id=pupil.id, academic_year=academic_year)
+    history.class_name = school_class.name
+    history.year_group = school_class.year_group
+    history.teacher_username = school_class.teacher.username if school_class.teacher else None
+    db.session.add(history)
+
+
+def _normalize_foundation(value: str | None) -> str | None:
+    raw = _clean_value(value).lower()
+    if not raw or raw == 'not_assessed':
+        return None
+    return {'working_towards': 'Working Towards', 'expected': 'On Track', 'working_at': 'On Track', 'exceeding': 'Exceeding'}.get(raw)
+
 def _find_class(class_name: str) -> SchoolClass:
-    school_class = SchoolClass.query.filter_by(name=class_name.strip()).first()
+    school_class = school_scoped_query(SchoolClass.query.filter_by(name=class_name.strip()), SchoolClass).first()
     if not school_class:
         raise CsvImportError(f'Class not found: {class_name}.')
     return school_class
@@ -244,7 +322,10 @@ def _find_class(class_name: str) -> SchoolClass:
 
 def _find_pupil(first_name: str, last_name: str, class_name: str) -> Pupil:
     school_class = _find_class(class_name)
-    pupil = Pupil.query.filter_by(first_name=first_name.strip(), last_name=last_name.strip(), class_id=school_class.id).first()
+    pupil = school_scoped_query(
+        Pupil.query.filter_by(first_name=first_name.strip(), last_name=last_name.strip(), class_id=school_class.id),
+        Pupil,
+    ).first()
     if not pupil:
         raise CsvImportError(f'Pupil not found: {first_name} {last_name} in {class_name}.')
     return pupil
@@ -254,20 +335,67 @@ def _has_any_subject_data(row: dict) -> bool:
     return any(_clean_value(row.get(column)) for columns_by_term in COMBINED_SUBJECT_SCORE_COLUMNS.values() for columns in columns_by_term.values() for column in columns)
 
 
+
+
+def _get_send_value(row: dict) -> str | None:
+    for key in ('send', 'SEND', 'sen', 'SEN', 'special_educational_needs', 'special educational needs'):
+        if key in row:
+            return row.get(key)
+    return None
+
 def _has_any_writing_data(row: dict) -> bool:
     return any(_clean_value(row.get(column)) for columns in COMBINED_WRITING_COLUMNS.values() for column in columns)
+
+
+def _parse_join_year_group(row: dict) -> int | None:
+    join_year_group_key = next((key for key in ('join_year_group', 'year_joined', 'joined_year_group') if key in row), None)
+    if join_year_group_key is None:
+        return None
+    raw = _clean_value(row.get(join_year_group_key))
+    if raw is None:
+        return None
+    normalized = raw.lower().replace(' ', '')
+    aliases = {'reception': 0, 'rec': 0, 'r': 0}
+    for year in range(1, 7):
+        aliases[str(year)] = year
+        aliases[f'y{year}'] = year
+        aliases[f'year{year}'] = year
+    if normalized in aliases:
+        value = aliases[normalized]
+    else:
+        raise CsvImportError('join_year_group must be a year from Reception to Year 6.')
+    if value < 0 or value > 6:
+        raise CsvImportError('join_year_group must be a year from Reception to Year 6.')
+    return value
+
+
+def _parse_join_date(row: dict) -> date | None:
+    if 'join_date' not in row:
+        return None
+    raw = _clean_value(row.get('join_date'))
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise CsvImportError('join_date must be in YYYY-MM-DD format.') from exc
 
 
 def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> bool:
     changed = False
     updates = {
-        'gender': _clean_value(row.get('gender')) or pupil.gender or 'Unknown',
+        'gender': normalize_gender(_clean_value(row.get('gender'))) or pupil.gender or '',
         'pupil_premium': _parse_bool(row.get('pupil_premium')),
         'laps': _parse_bool(row.get('laps')),
         'service_child': _parse_bool(row.get('service_child')),
+        'send': _parse_bool(_get_send_value(row)),
         'class_id': school_class.id,
         'is_active': True,
     }
+    if any(key in row for key in ('join_year_group', 'year_joined', 'joined_year_group')):
+        updates['join_year_group'] = _parse_join_year_group(row)
+    if 'join_date' in row:
+        updates['join_date'] = _parse_join_date(row)
     for field, value in updates.items():
         if getattr(pupil, field) != value:
             setattr(pupil, field, value)
@@ -312,6 +440,20 @@ def _write_subject_result(existing: SubjectResult | None, *, pupil: Pupil, acade
     return result, None
 
 
+
+
+def _normalize_writing_band(value: str | None) -> str | None:
+    raw = _clean_value(value)
+    if not raw:
+        return None
+    text = raw.strip().lower()
+    if any(token in text for token in ('working towards','working toward','wts','wt','below')):
+        return 'working_towards'
+    if text in {'expected', 'working_at'} or any(token in text for token in ('on track','working at','working at are','ot')):
+        return 'expected'
+    if text in {'exceeding', 'greater_depth'} or any(token in text for token in ('exceeding','greater depth','gds','exs','exc')):
+        return 'greater_depth'
+    return text
 def _is_writing_result_incomplete(result: WritingResult) -> bool:
     return not _clean_value(result.band)
 
@@ -347,110 +489,138 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
     for index, row in enumerate(rows, start=2):
         summary.rows_processed += 1
         try:
-            with db.session.begin_nested():
-                school_class = _find_class(_require_value(row, 'class_name', label='class_name'))
-                first_name = _require_value(row, 'first_name', label='first_name')
-                last_name = _require_value(row, 'last_name', label='last_name')
-                academic_year = _require_value(row, 'academic_year', label='academic_year')
+            pupil_name, first_name, last_name = _split_pupil_name(row)
+            if pupil_name.lower().startswith('example'):
+                summary.rows_skipped += 1
+                summary.skipped += 1
+                continue
+            class_name = _require_value(row, 'class_name', label='class_name')
+            year_group = _parse_year_group(row.get('year_group'))
+            academic_year = _require_value(row, 'academic_year', label='academic_year')
+            get_or_create_academic_year(academic_year)
 
-                pupil = Pupil.query.filter_by(first_name=first_name, last_name=last_name, class_id=school_class.id).first()
-                progress = RowProgress()
-                if pupil is None:
-                    pupil = Pupil(
-                        first_name=first_name,
-                        last_name=last_name,
-                        gender=_clean_value(row.get('gender')) or 'Unknown',
-                        pupil_premium=_parse_bool(row.get('pupil_premium')),
-                        laps=_parse_bool(row.get('laps')),
-                        service_child=_parse_bool(row.get('service_child')),
-                        class_id=school_class.id,
-                        is_active=True,
-                    )
-                    db.session.add(pupil)
-                    db.session.flush()
-                    progress.pupil_created = True
-                else:
-                    progress.pupil_updated = _update_pupil_fields(pupil, row, school_class)
-                    db.session.add(pupil)
+            school_class, class_created = _get_or_create_class(class_name, year_group)
+            pupil = _find_combined_pupil(row, first_name, last_name, pupil_name, school_class)
+            progress = RowProgress()
+            if class_created:
+                summary.add_message(f'Row {index}: class to create/imported: {class_name}.')
+            if pupil is None:
+                pupil = Pupil(
+                    first_name=first_name,
+                    last_name=last_name,
+                    gender=normalize_gender(_clean_value(row.get('gender'))) or '',
+                    pupil_premium=_parse_bool(row.get('pupil_premium')),
+                    laps=_parse_bool(row.get('laps')),
+                    service_child=_parse_bool(row.get('service_child')),
+                    send=_parse_bool(_get_send_value(row)),
+                    class_id=school_class.id,
+                    join_year_group=year_group,
+                    join_date=_parse_join_date(row),
+                    school_id=school_class.school_id,
+                    is_active=True,
+                    is_demo=getattr(current_user, 'is_demo', False),
+                )
+                db.session.add(pupil)
+                db.session.flush()
+                progress.pupil_created = True
+            else:
+                progress.pupil_updated = _update_pupil_fields(pupil, row, school_class)
+                pupil.first_name = first_name
+                pupil.last_name = last_name
+                pupil.school_id = school_class.school_id
+                db.session.add(pupil)
+            _save_class_history(pupil, school_class, academic_year)
 
-                if not _has_any_subject_data(row) and not _has_any_writing_data(row):
-                    progress.skipped = True
-
+            if year_group in {1, 2, 3, 4, 5}:
                 for subject, terms in COMBINED_SUBJECT_SCORE_COLUMNS.items():
                     for term, (paper_1_column, paper_2_column) in terms.items():
                         paper_1_score = _parse_optional_int(row.get(paper_1_column), paper_1_column)
                         paper_2_score = _parse_optional_int(row.get(paper_2_column), paper_2_column)
                         if paper_1_score is None and paper_2_score is None:
                             continue
-                        existing = SubjectResult.query.filter_by(
-                            pupil_id=pupil.id,
-                            academic_year=academic_year,
-                            term=term,
-                            subject=subject,
-                        ).first()
-                        result, reason = _write_subject_result(
-                            existing,
-                            pupil=pupil,
-                            academic_year=academic_year,
-                            term=term,
-                            subject=subject,
-                            paper_1_score=paper_1_score,
-                            paper_2_score=paper_2_score,
-                        )
+                        existing = SubjectResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, term=term, subject=subject).first()
+                        result, reason = _write_subject_result(existing, pupil=pupil, academic_year=academic_year, term=term, subject=subject, paper_1_score=paper_1_score, paper_2_score=paper_2_score)
                         if result is None and reason:
                             progress.manual_skips += 1
-                            summary.add_message(
-                                f'Row {index}: skipped {subject} {term} for {pupil.full_name} because the existing result source is {reason}.'
-                            )
-                            continue
-                        if result is not None:
-                            if existing is None:
-                                progress.subject_created += 1
-                            else:
-                                progress.subject_updated += 1
-
+                            summary.add_message(f'Row {index}: skipped {subject} {term} for {pupil.full_name} because existing result source is {reason}.')
+                        elif result is not None:
+                            progress.subject_created += 1 if existing is None else 0
+                            progress.subject_updated += 1 if existing is not None else 0
                 for term, (band_column, notes_column) in COMBINED_WRITING_COLUMNS.items():
-                    band = _clean_value(row.get(band_column)).lower()
-                    notes = _clean_value(row.get(notes_column)) or None
-                    if not band:
+                    raw_band = _clean_value(row.get(band_column))
+                    if not raw_band:
                         continue
+                    band = _normalize_writing_band(raw_band)
+                    notes = _clean_value(row.get(notes_column)) or None
                     existing = WritingResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, term=term).first()
-                    result, reason = _write_writing_result(
-                        existing,
-                        pupil=pupil,
-                        academic_year=academic_year,
-                        term=term,
-                        band=band,
-                        notes=notes,
-                    )
+                    result, reason = _write_writing_result(existing, pupil=pupil, academic_year=academic_year, term=term, band=band, notes=notes)
                     if result is None and reason:
                         progress.manual_skips += 1
-                        summary.add_message(
-                            f'Row {index}: skipped writing {term} for {pupil.full_name} because the existing result source is {reason}.'
-                        )
-                        continue
-                    if result is not None:
-                        if existing is None:
-                            progress.writing_created += 1
-                        else:
-                            progress.writing_updated += 1
+                    elif result is not None:
+                        progress.writing_created += 1 if existing is None else 0
+                        progress.writing_updated += 1 if existing is not None else 0
 
-                summary.pupils_created += 1 if progress.pupil_created else 0
-                summary.created += 1 if progress.pupil_created else 0
-                summary.pupils_updated += 1 if progress.pupil_updated else 0
-                summary.updated += 1 if progress.pupil_updated else 0
-                summary.subject_results_created += progress.subject_created
-                summary.subject_results_updated += progress.subject_updated
-                summary.writing_results_created += progress.writing_created
-                summary.writing_results_updated += progress.writing_updated
-                summary.manual_results_skipped += progress.manual_skips
-                if progress.skipped and not any((progress.pupil_created, progress.pupil_updated, progress.subject_created, progress.subject_updated, progress.writing_created, progress.writing_updated)):
-                    summary.rows_skipped += 1
-                    summary.skipped += 1
+            if year_group == 0:
+                for term in ('autumn', 'spring', 'summer'):
+                    score = _clean_value(row.get(f'reception_{term}_score'))
+                    if score:
+                        entry = ReceptionTrackerEntry.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, tracking_point=term, area_key='overall').first() or ReceptionTrackerEntry(pupil_id=pupil.id, academic_year=academic_year, tracking_point=term, area_key='overall')
+                        entry.status = score
+                        entry.school_id = school_class.school_id
+                        db.session.add(entry)
+                        summary.tracker_entries_created += 1
+            elif year_group in {1, 2}:
+                score_col = 'phonics_y1_score' if year_group == 1 else 'phonics_y2_retake_score'
+                score = _parse_optional_int(row.get(score_col), score_col)
+                if score is not None:
+                    column = PhonicsTestColumn.query.filter_by(school_id=school_class.school_id, year_group=year_group, name=score_col).first() or PhonicsTestColumn(school_id=school_class.school_id, year_group=year_group, name=score_col, display_order=1, is_active=True)
+                    db.session.add(column); db.session.flush()
+                    rec = PhonicsScore.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, phonics_test_column_id=column.id).first() or PhonicsScore(pupil_id=pupil.id, academic_year=academic_year, phonics_test_column_id=column.id, school_id=school_class.school_id)
+                    rec.score = score; db.session.add(rec); summary.tracker_entries_created += 1
+            elif year_group == 4:
+                score = _parse_optional_int(row.get('times_tables_score'), 'times_tables_score')
+                if score is not None:
+                    column = TimesTableTestColumn.query.filter_by(year_group=4, name='Combined CSV').first() or TimesTableTestColumn(year_group=4, name='Combined CSV', display_order=1, is_active=True)
+                    db.session.add(column); db.session.flush()
+                    rec = TimesTableScore.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, times_table_test_column_id=column.id).first() or TimesTableScore(pupil_id=pupil.id, academic_year=academic_year, times_table_test_column_id=column.id, school_id=school_class.school_id)
+                    rec.score = score; db.session.add(rec); summary.tracker_entries_created += 1
+            elif year_group == 6:
+                for exam in range(1, 5):
+                    vals = {field: _parse_optional_int(row.get(f'sats_exam{exam}_{field}'), f'sats_exam{exam}_{field}') for field in SATS_COMBINED_FIELDS}
+                    if any(value is not None for value in vals.values()):
+                        rec = SatsResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, exam_number=exam).first() or SatsResult(pupil_id=pupil.id, academic_year=academic_year, exam_number=exam, subject='combined', assessment_point=exam, school_id=school_class.school_id)
+                        rec.arithmetic_score = vals['arithmetic']; rec.reasoning_1_score = vals['reasoning1']; rec.reasoning_2_score = vals['reasoning2']; rec.maths_scaled_score = vals['maths_scaled']
+                        rec.reading_score = vals['reading']; rec.reading_scaled_score = vals['reading_scaled']; rec.spelling_score = vals['spelling']; rec.grammar_score = vals['grammar']; rec.spag_scaled_score = vals['spag_scaled']
+                        db.session.add(rec); summary.tracker_entries_created += 1
+
+            if year_group in {1, 2, 3, 4, 5}:
+                for term in ('autumn', 'spring', 'summer'):
+                    for subject in FOUNDATION_COMBINED_SUBJECTS:
+                        judgement = _normalize_foundation(row.get(f'foundation_{term}_{subject}'))
+                        if judgement is None:
+                            continue
+                        rec = FoundationResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, half_term=term, subject=subject).first() or FoundationResult(pupil_id=pupil.id, academic_year=academic_year, half_term=term, subject=subject, school_id=school_class.school_id)
+                        rec.judgement = judgement
+                        rec.updated_by_user_id = getattr(current_user, 'id', None)
+                        db.session.add(rec); summary.tracker_entries_created += 1
+
+            summary.pupils_created += 1 if progress.pupil_created else 0
+            summary.created += 1 if progress.pupil_created else 0
+            summary.pupils_updated += 1 if progress.pupil_updated else 0
+            summary.updated += 1 if progress.pupil_updated else 0
+            summary.pupils_matched += 0 if progress.pupil_created else 1
+            summary.subject_results_created += progress.subject_created
+            summary.subject_results_updated += progress.subject_updated
+            summary.writing_results_created += progress.writing_created
+            summary.writing_results_updated += progress.writing_updated
+            summary.manual_results_skipped += progress.manual_skips
+            if summary.rows_processed % 100 == 0:
+                db.session.flush()
         except Exception as exc:
             summary.rows_skipped += 1
             summary.skipped += 1
             summary.add_error(f'Row {index}: {exc}')
+    db.session.flush()
     return summary
 
 
@@ -458,7 +628,10 @@ def _find_exam_tab_by_name(tab_name: str) -> SatsExamTab:
     clean_name = tab_name.strip().lower()
     if not clean_name:
         raise CsvImportError('exam_tab is required.')
-    tab = SatsExamTab.query.filter(SatsExamTab.year_group == 6, db.func.lower(SatsExamTab.name) == clean_name).first()
+    tab = school_scoped_query(
+        SatsExamTab.query.filter(SatsExamTab.year_group == 6, db.func.lower(SatsExamTab.name) == clean_name),
+        SatsExamTab,
+    ).first()
     if not tab:
         raise CsvImportError(f'Year 6 exam tab not found: {tab_name}.')
     return tab
@@ -472,12 +645,15 @@ def import_reception_tracker(rows: list[dict]) -> CsvImportSummary:
 
     for index, row in enumerate(rows, start=2):
         summary.rows_processed += 1
+        if summary.rows_processed % 100 == 0:
+            db.session.flush()
         try:
             pupil = _find_pupil(row.get('pupil_first_name', ''), row.get('pupil_last_name', ''), row.get('class_name', ''))
             if pupil.school_class.year_group != RECEPTION_YEAR_GROUP:
                 raise CsvImportError(f'{pupil.full_name} is not in Reception.')
             processed_pupil_ids.add(pupil.id)
             academic_year = _require_value(row, 'academic_year', label='academic_year')
+            get_or_create_academic_year(academic_year)
             tracking_point = _require_value(row, 'tracking_point', label='tracking_point').lower()
             if tracking_point not in valid_tracking_points:
                 raise CsvImportError(f'tracking_point must be one of {", ".join(sorted(valid_tracking_points))}.')
@@ -528,75 +704,37 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
 
     for index, row in enumerate(rows, start=2):
         summary.rows_processed += 1
+        if summary.rows_processed % 100 == 0:
+            db.session.flush()
         try:
             pupil = _find_pupil(row.get('pupil_first_name', ''), row.get('pupil_last_name', ''), row.get('class_name', ''))
             if pupil.school_class.year_group != 6:
                 raise CsvImportError(f'{pupil.full_name} is not in Year 6.')
             processed_pupil_ids.add(pupil.id)
             academic_year = _require_value(row, 'academic_year', label='academic_year')
-            tab = _find_exam_tab_by_name(_require_value(row, 'exam_tab', label='exam_tab'))
-            columns = get_sats_columns(6, exam_tab_id=tab.id, active_only=False)
-            column_by_key = {column.column_key: column for column in columns if column.column_key}
-
+            get_or_create_academic_year(academic_year)
+            exam_number = int(_require_value(row, 'exam_number', label='exam_number'))
             per_row_changes = 0
-            provided_column_ids: set[int] = set()
-            for csv_column, key in SATS_STANDARD_COLUMN_MAP.items():
-                column = column_by_key.get(key)
-                if not column:
-                    continue
+            rec = SatsResult.query.filter_by(
+                school_id=pupil.school_id, pupil_id=pupil.id, academic_year=academic_year, exam_number=exam_number
+            ).first()
+            if rec is None:
+                rec = SatsResult(school_id=pupil.school_id, pupil_id=pupil.id, academic_year=academic_year, exam_number=exam_number, subject='maths', assessment_point=exam_number)
+                summary.created += 1
+            else:
+                summary.updated += 1
+            for csv_column, field in [('arithmetic', 'arithmetic_score'), ('reasoning_1', 'reasoning_1_score'), ('reasoning_2', 'reasoning_2_score'), ('maths_scaled_score', 'maths_scaled_score'), ('reading', 'reading_score'), ('reading_scaled_score', 'reading_scaled_score'), ('spelling', 'spelling_score'), ('grammar', 'grammar_score'), ('spag_scaled_score', 'spag_scaled_score')]:
                 raw_value = _clean_value(row.get(csv_column))
                 if raw_value == '':
                     continue
                 score = _parse_optional_int(raw_value, csv_column)
                 if score is None:
                     continue
-                if score < 0 or score > column.max_marks:
-                    raise CsvImportError(f'{column.name} must be between 0 and {column.max_marks}.')
-                existing = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year).first()
-                if existing is None:
-                    existing = SatsColumnResult(pupil_id=pupil.id, column_id=column.id, academic_year=academic_year)
-                    summary.tracker_entries_created += 1
-                    summary.created += 1
-                else:
-                    summary.tracker_entries_updated += 1
-                    summary.updated += 1
-                existing.raw_score = score
-                db.session.add(existing)
-                provided_column_ids.add(column.id)
+                setattr(rec, field, score)
                 per_row_changes += 1
-
-            for raw_key, source_keys in CALCULATION_KEY_MAP.items():
-                raw_column = column_by_key.get(raw_key)
-                source_columns = [column_by_key.get(source_key) for source_key in source_keys if column_by_key.get(source_key)]
-                if not raw_column or not source_columns:
-                    continue
-                if not any(column.id in provided_column_ids for column in source_columns):
-                    continue
-                source_values: list[int] = []
-                for source_column in source_columns:
-                    row_value = SatsColumnResult.query.filter_by(
-                        pupil_id=pupil.id,
-                        column_id=source_column.id,
-                        academic_year=academic_year,
-                    ).first()
-                    if row_value and row_value.raw_score is not None:
-                        source_values.append(row_value.raw_score)
-                if not source_values:
-                    continue
-                raw_total = sum(source_values)
-                if raw_total > raw_column.max_marks:
-                    raise CsvImportError(f'{raw_column.name} total exceeds max mark {raw_column.max_marks}.')
-                existing_raw = SatsColumnResult.query.filter_by(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year).first()
-                if existing_raw is None:
-                    existing_raw = SatsColumnResult(pupil_id=pupil.id, column_id=raw_column.id, academic_year=academic_year)
-                    summary.tracker_entries_created += 1
-                    summary.created += 1
-                elif raw_column.id not in provided_column_ids:
-                    summary.tracker_entries_updated += 1
-                    summary.updated += 1
-                existing_raw.raw_score = raw_total
-                db.session.add(existing_raw)
-                per_row_changes += 1
+            rec.maths_combined_score = (rec.arithmetic_score or 0) + (rec.reasoning_1_score or 0) + (rec.reasoning_2_score or 0)
+            rec.spag_combined_score = (rec.spelling_score or 0) + (rec.grammar_score or 0)
+            db.session.add(rec)
 
             if per_row_changes == 0:
                 summary.rows_skipped += 1
@@ -615,7 +753,7 @@ def export_subject_results_csv(class_id: int | None = None, subject: str | None 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'academic_year', 'term', 'subject', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'source', 'notes'])
-    query = SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)
+    query = school_scoped_query(SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class), Pupil)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     if subject:
@@ -625,7 +763,7 @@ def export_subject_results_csv(class_id: int | None = None, subject: str | None 
     if term:
         query = query.filter(SubjectResult.term == term)
     for row in query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, row.subject, row.paper_1_score, row.paper_2_score, row.combined_score, row.combined_percent, row.band_label, row.source, row.notes])
+        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, row.subject, row.paper_1_score, row.paper_2_score, row.combined_score, row.combined_percent, short_band_label(row.band_label), row.source, row.notes])
     return output.getvalue()
 
 
@@ -633,7 +771,7 @@ def export_writing_results_csv(class_id: int | None = None, academic_year: str |
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'academic_year', 'term', 'band', 'notes', 'source'])
-    query = WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class)
+    query = school_scoped_query(WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class), Pupil)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     if academic_year:
@@ -641,7 +779,7 @@ def export_writing_results_csv(class_id: int | None = None, academic_year: str |
     if term:
         query = query.filter(WritingResult.term == term)
     for row in query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, row.band, row.notes, getattr(row, 'source', None)])
+        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.academic_year, row.term, short_band_label(row.band), row.notes, getattr(row, 'source', None)])
     return output.getvalue()
 
 
@@ -649,7 +787,7 @@ def export_class_overview_csv(academic_year: str, class_id: int | None = None) -
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['class_name', 'year_group', 'teacher', 'pupil_count', 'active_interventions', 'maths_on_track_plus', 'reading_on_track_plus', 'spag_on_track_plus', 'writing_on_track_plus'])
-    query = SchoolClass.query.filter_by(is_active=True)
+    query = school_scoped_query(SchoolClass.query.filter_by(is_active=True), SchoolClass)
     if class_id:
         query = query.filter(SchoolClass.id == class_id)
     for school_class in query.order_by(SchoolClass.year_group, SchoolClass.name).all():
@@ -668,15 +806,26 @@ def export_class_overview_csv(academic_year: str, class_id: int | None = None) -
     return output.getvalue()
 
 
-def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None) -> str:
+def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None, send: str = 'all', anonymised: bool = False) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'academic_year'])
-    query = Pupil.query.join(Pupil.school_class)
+    writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'send', 'academic_year', 'gld', 'phonics', 'mtc', 'y6_sats_entries'])
+    query = school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
-    for pupil in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([pupil.full_name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, academic_year or 'current'])
+    if send == 'yes':
+        query = query.filter(Pupil.send.is_(True))
+    elif send == 'no':
+        query = query.filter(or_(Pupil.send.is_(False), Pupil.send.is_(None)))
+    selected_year = academic_year or get_selected_current_academic_year()
+    for idx, pupil in enumerate(query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
+        overview = build_pupil_overview_data(pupil, selected_year)
+        gld = summarize_gld_status(overview['eyfs']['reception_rows']) if pupil.school_class.year_group == 0 else ''
+        phonics = max((row.score for row in overview['phonics'] if row.score is not None), default='') if pupil.school_class.year_group in {1, 2} else ''
+        mtc = max((row.score for row in overview['mtc'] if row.score is not None), default='') if pupil.school_class.year_group == 4 else ''
+        sats_entries = len(overview['sats']) if pupil.school_class.year_group == 6 else ''
+        name = f'Pupil {idx}' if anonymised else pupil.full_name
+        writer.writerow([name, pupil.school_class.name, pupil.school_class.year_group, pupil.is_active, pupil.pupil_premium, pupil.laps, pupil.service_child, pupil.send, selected_year, gld, phonics, mtc, sats_entries])
     return output.getvalue()
 
 
@@ -685,7 +834,7 @@ def export_reception_tracker_csv(academic_year: str, tracking_point: str) -> str
     writer = csv.writer(output)
     writer.writerow(RECEPTION_TEMPLATE_COLUMNS)
     pupils = (
-        Pupil.query.join(Pupil.school_class)
+        school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
         .filter(SchoolClass.year_group == RECEPTION_YEAR_GROUP, Pupil.is_active.is_(True))
         .order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name)
         .all()
@@ -705,33 +854,23 @@ def export_reception_tracker_csv(academic_year: str, tracking_point: str) -> str
 
 
 def export_sats_tracker_csv(academic_year: str, exam_tab: str) -> str:
-    tab = _find_exam_tab_by_name(exam_tab)
-    columns = get_sats_columns(6, exam_tab_id=tab.id, active_only=False)
-    column_by_key = {column.column_key: column for column in columns if column.column_key}
+    exam_number = int(exam_tab.split(' ')[1]) if exam_tab.lower().startswith('exam ') else 1
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(SATS_TEMPLATE_COLUMNS)
     pupils = (
-        Pupil.query.join(Pupil.school_class)
+        school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
         .filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True))
         .order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name)
         .all()
     )
-    results = (
-        SatsColumnResult.query.filter(
-            SatsColumnResult.academic_year == academic_year,
-            SatsColumnResult.pupil_id.in_([pupil.id for pupil in pupils] or [0]),
-            SatsColumnResult.column_id.in_([column.id for column in columns] or [0]),
-        ).all()
-        if columns
-        else []
-    )
-    lookup = {(result.pupil_id, result.column_id): result.raw_score for result in results}
+    results = SatsResult.query.filter_by(academic_year=academic_year, exam_number=exam_number).filter(SatsResult.pupil_id.in_([pupil.id for pupil in pupils] or [0])).all()
+    lookup = {result.pupil_id: result for result in results}
     for pupil in pupils:
-        row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, tab.name]
-        for csv_column, key in SATS_STANDARD_COLUMN_MAP.items():
-            column = column_by_key.get(key)
-            value = lookup.get((pupil.id, column.id)) if column else None
+        row = [pupil.first_name, pupil.last_name, pupil.school_class.name, academic_year, exam_number]
+        rec = lookup.get(pupil.id)
+        for field in ['arithmetic_score', 'reasoning_1_score', 'reasoning_2_score', 'maths_combined_score', 'maths_scaled_score', 'reading_score', 'reading_scaled_score', 'spelling_score', 'grammar_score', 'spag_combined_score', 'spag_scaled_score']:
+            value = getattr(rec, field) if rec else None
             row.append('' if value is None else value)
         writer.writerow(row)
     return output.getvalue()
@@ -747,7 +886,10 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
     header = ['pupil_name', 'class_name', 'exam_tab'] + [column.name for column in columns]
     writer = csv.writer(output)
     writer.writerow(header)
-    query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True))
+    query = school_scoped_query(
+        Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True)),
+        Pupil,
+    )
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     pupils = query.order_by(SchoolClass.name, Pupil.last_name, Pupil.first_name).all()
@@ -757,15 +899,16 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
     return output.getvalue()
 
 
-def export_interventions_csv(academic_year: str, class_id: int | None = None) -> str:
+def export_interventions_csv(academic_year: str, class_id: int | None = None, anonymised: bool = False, current_scores: dict[int, str] | None = None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'is_active', 'auto_flagged', 'reason', 'note'])
-    query = Intervention.query.join(Intervention.pupil).join(Pupil.school_class).filter(Intervention.academic_year == academic_year)
+    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note'])
+    query = school_scoped_query(Intervention.query.join(Intervention.pupil).join(Pupil.school_class), Pupil).filter(Intervention.academic_year == academic_year)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
-    for row in query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all():
-        writer.writerow([row.pupil.full_name, row.pupil.school_class.name, row.subject, row.term, row.is_active, row.auto_flagged, row.reason, row.note])
+    for idx, row in enumerate(query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
+        name = f'Pupil {idx}' if anonymised else row.pupil.full_name
+        writer.writerow([name, row.pupil.school_class.name, row.subject, row.term, (current_scores or {}).get(row.id, '—'), row.is_active, row.auto_flagged, row.reason, row.note])
     return output.getvalue()
 
 
@@ -774,7 +917,7 @@ def export_history_csv(academic_year: str) -> str:
     writer = csv.writer(output)
     writer.writerow(['pupil_name', 'academic_year', 'class_name', 'year_group', 'teacher_username', 'promoted_to_year_group'])
     rows = (
-        PupilClassHistory.query.join(PupilClassHistory.pupil)
+        school_scoped_query(PupilClassHistory.query.join(PupilClassHistory.pupil), PupilClassHistory)
         .filter(PupilClassHistory.academic_year == academic_year)
         .order_by(PupilClassHistory.year_group, PupilClassHistory.class_name, Pupil.last_name, Pupil.first_name)
         .all()

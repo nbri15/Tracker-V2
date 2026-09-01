@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals Intervention Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+  <div>
+    <h1>Intervention Dashboard</h1>
+    <p class="text-muted mb-0">Groups pupils by their first failed Maths Fundamentals level.</p>
+  </div>
+  <div class="btn-group" role="group" aria-label="Maths Fundamentals navigation">
+    <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.home') }}">Current Sessions</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores') }}">Previous Scores</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels') }}">Level Overview</a>
+    <a class="btn btn-primary" href="{{ url_for('fundamentals.interventions') }}">Intervention Dashboard</a>
+  </div>
+</div>
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" class="row g-3 align-items-end">
+      {% if current_user.is_executive_admin and selected_school_id %}<input type="hidden" name="school_id" value="{{ selected_school_id }}">{% endif %}
+      <div class="col-md-4">
+        <label class="form-label" for="class_id">Class</label>
+        <select class="form-select" id="class_id" name="class_id">
+          <option value="">All classes</option>
+          {% for school_class in classes %}<option value="{{ school_class.id }}" {% if selected_class_id == school_class.id %}selected{% endif %}>{{ school_class.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="strand_id">Strand</label>
+        <select class="form-select" id="strand_id" name="strand_id">
+          {% for strand in strands %}<option value="{{ strand.id }}" {% if selected_strand_id == strand.id %}selected{% endif %}>{{ strand.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 d-grid"><button class="btn btn-primary" type="submit">Filter</button></div>
+      <div class="col-md-2 d-grid">
+        <a class="btn btn-outline-secondary" href="{{ url_for('fundamentals.interventions_print', class_id=selected_class_id, strand_id=selected_strand_id, school_id=selected_school_id) if selected_school_id else url_for('fundamentals.interventions_print', class_id=selected_class_id, strand_id=selected_strand_id) }}">Print</a>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="row g-3">
+{% for group in groups %}
+  <div class="col-lg-6">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        {% if group.intervention_level %}
+          <h2 class="h4">Level {{ group.intervention_level }}: {{ group.level.skill if group.level else 'Skill not found' }}</h2>
+          <p class="text-muted">Expected: {{ group.level.expected_year if group.level and group.level.expected_year else '—' }}</p>
+        {% else %}
+          <h2 class="h4">No intervention identified</h2>
+          <p class="text-muted">Pupils with no first failed/intervention level.</p>
+        {% endif %}
+        <p><strong>{{ group.attempts|length }} pupil{{ '' if group.attempts|length == 1 else 's' }}</strong></p>
+        <p><strong>Pupils:</strong> {% for attempt in group.attempts %}{{ attempt.pupil.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+        <p><strong>Suggested focus:</strong> {{ group.suggested_focus }}</p>
+        {% if group.intervention_level %}<a class="btn btn-outline-primary" href="{{ url_for('fundamentals.level_pupils', level_number=group.intervention_level, class_id=selected_class_id, strand_id=selected_strand_id) }}">View pupils</a>{% endif %}
+      </div>
+    </div>
+  </div>
+{% else %}
+  <div class="col-12"><div class="alert alert-info">No completed attempts found for these filters.</div></div>
+{% endfor %}
+</div>
+{% endblock %}

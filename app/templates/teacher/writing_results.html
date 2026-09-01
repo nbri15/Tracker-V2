@@ -5,7 +5,7 @@
 {% macro sort_link(column, label) -%}
   {% set state = header_state[column] %}
   <a
-    href="{{ url_for('teacher.writing', academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, sort=column, direction=state.next_direction) }}"
+    href="{{ url_for('teacher.writing', year=selected_year.id, academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, sort=column, direction=state.next_direction) }}"
     class="table-sort-link{% if state.active %} active{% endif %}"
   >
     <span>{{ label }}</span>
@@ -20,28 +20,28 @@
     <p class="text-muted mb-0">Bulk entry for teacher-assessed writing bands.</p>
   </div>
   <div class="d-flex flex-wrap gap-2 subject-nav-tabs">
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.maths') }}">Maths</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.reading') }}">Reading</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.spag') }}">SPaG</a>
-    <a class="btn btn-sm btn-primary" href="{{ url_for('teacher.writing') }}">Writing</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.maths', year=selected_year.id) }}">Maths</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.reading', year=selected_year.id) }}">Reading</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.spag', year=selected_year.id) }}">SPaG</a>
+    <a class="btn btn-sm btn-primary" href="{{ url_for('teacher.writing', year=selected_year.id) }}">Writing</a>
     {% if school_class and school_class.year_group in [1, 2] %}
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.phonics') }}">Phonics</a>
     {% endif %}
     {% if school_class and school_class.year_group == 4 %}
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.times_tables') }}">Times tables</a>
     {% endif %}
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.foundation') }}">Foundation</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('teacher.foundation', academic_year=academic_year) }}">Foundation</a>
   </div>
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-body py-3">
-    <form method="get" class="row g-2 align-items-end compact-filter-row">
+  <div class="card-body tracker-filter-card">
+    <form method="get" class="tracker-filter-grid compact-filter-row">
       <div class="col-sm-6 col-lg-2">
         <label class="form-label">Academic year</label>
-        <select name="academic_year" class="form-select form-select-sm">
+        <select name="year" class="form-select form-select-sm">
           {% for option in academic_year_options %}
-            <option value="{{ option }}" {% if option == academic_year %}selected{% endif %}>{{ option }}</option>
+            <option value="{{ option.id }}" {% if option.name == academic_year %}selected{% endif %}>{{ option.name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -92,9 +92,9 @@
       </div>
       <input type="hidden" name="sort" value="{{ sort_state.column }}">
       <input type="hidden" name="direction" value="{{ sort_state.direction }}">
-      <div class="col-lg-2 d-flex gap-2">
+      <div class="tracker-filter-actions">
         <button class="btn btn-primary btn-sm flex-grow-1">Apply</button>
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.writing') }}">Clear</a>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.writing', year=selected_year.id) }}">Clear</a>
       </div>
     </form>
   </div>
@@ -108,12 +108,12 @@
     </div>
     <div class="d-flex align-items-center gap-2">
       <span class="text-muted small">{{ rows|length }} pupils shown</span>
-      <button type="button" class="btn btn-outline-secondary btn-sm js-download-pdf" data-pdf-target="#writing-results-export" data-pdf-filename="writing-{{ term }}-{{ academic_year }}-results.pdf">Download PDF</button>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('teacher.writing', year=selected_year.id, academic_year=academic_year, term=term, search=filters.search, gender=filters.gender, pupil_premium=filters.pupil_premium, laps=filters.laps, service_child=filters.service_child, send=filters.send, sort=sort_state.column, direction=sort_state.direction, pdf=1) }}">Download PDF</a>
     </div>
   </div>
   <div class="card-body p-0">
     <form method="post">
-      <input type="hidden" name="academic_year" value="{{ academic_year }}">
+      <input type="hidden" name="year" value="{{ selected_year.id }}">
       <input type="hidden" name="term" value="{{ term }}">
       <input type="hidden" name="search" value="{{ filters.search }}">
       <input type="hidden" name="gender" value="{{ filters.gender }}">
@@ -128,7 +128,7 @@
       </div>
 
       <div class="table-responsive spreadsheet-wrap mt-3">
-        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table">
+        <table class="table table-sm table-hover align-middle mb-0 subject-table spreadsheet-table data-table">
           <thead class="table-light sticky-top">
             <tr>
               <th>{{ sort_link('name', 'Pupil') }}</th>
@@ -144,8 +144,11 @@
                   <div class="small text-muted">{{ row.pupil.gender }}{% if row.pupil.pupil_premium %} · PP{% endif %}{% if row.pupil.laps %} · LAPS{% endif %}{% if row.pupil.service_child %} · Service{% endif %}</div>
                 </td>
                 <td class="{% if row.outcome_theme %}result-cell result-cell-{{ row.outcome_theme }}{% endif %}">
-                  <select name="band_{{ row.pupil.id }}" class="form-select form-select-sm">
-                    <option value="">— Select band —</option>
+                  <select name="band_{{ row.pupil.id }}" class="form-select form-select-sm js-ghost-select{% if not row.band and row.ghost_band_label %} has-ghost-value{% endif %}" {% if not row.band and row.ghost_band_label %}title="Previous term value — not counted until saved"{% endif %} data-ghost-label="{{ 'WT' if row.ghost_band_label == 'Working Towards' else 'OT' if row.ghost_band_label == 'Expected' else 'EXC' if row.ghost_band_label == 'Greater Depth' else row.ghost_band_label }}">
+                    {% if not row.band and row.ghost_band_label %}
+                      <option value="" selected disabled>Previous: {{ 'WT' if row.ghost_band_label == 'Working Towards' else 'OT' if row.ghost_band_label == 'Expected' else 'EXC' if row.ghost_band_label == 'Greater Depth' else row.ghost_band_label }}</option>
+                    {% endif %}
+                    <option value="" {% if not row.band and not row.ghost_band_label %}selected{% endif %}>—</option>
                     {% for value, label in writing_band_choices %}
                       <option value="{{ value }}" {% if row.band == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
@@ -181,10 +184,13 @@
         <input type="hidden" name="form_name" value="add_pupil">
         <div class="col-md-2"><label class="form-label">First name</label><input type="text" name="first_name" class="form-control form-control-sm" required></div>
         <div class="col-md-2"><label class="form-label">Last name</label><input type="text" name="last_name" class="form-control form-control-sm" required></div>
-        <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="Female">Female</option><option value="Male">Male</option><option value="Non-binary">Non-binary</option><option value="Unknown">Unknown</option></select></div>
+        <div class="col-md-2"><label class="form-label">Gender</label><select name="gender" class="form-select form-select-sm"><option value="">—</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
         <div class="col-md-1 form-check mt-4"><input class="form-check-input" type="checkbox" name="pupil_premium" id="quick_w_pp"><label class="form-check-label small" for="quick_w_pp">PP</label></div>
         <div class="col-md-1 form-check mt-4"><input class="form-check-input" type="checkbox" name="laps" id="quick_w_laps"><label class="form-check-label small" for="quick_w_laps">LAPS</label></div>
         <div class="col-md-2 form-check mt-4"><input class="form-check-input" type="checkbox" name="service_child" id="quick_w_service"><label class="form-check-label small" for="quick_w_service">Service child</label></div>
+        <div class="col-md-1 form-check mt-4"><input class="form-check-input" type="checkbox" name="send" id="quick_w_send"><label class="form-check-label small" for="quick_w_send">SEND</label></div>
+        <div class="col-md-2"><label class="form-label">Year Joined School</label><select name="join_year_group" class="form-select form-select-sm">{% for value, label in join_year_group_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><label class="form-label">Join Date</label><input type="date" name="join_date" class="form-control form-control-sm"></div>
         <div class="col-md-2 text-md-end"><button type="submit" class="btn btn-primary btn-sm">Save new pupil</button></div>
       </form>
     </div>

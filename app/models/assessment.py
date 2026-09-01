@@ -17,6 +17,7 @@ class AssessmentSetting(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
     subject = db.Column(db.String(20), nullable=False, index=True)
     term = db.Column(db.String(20), nullable=False, index=True)
@@ -40,9 +41,11 @@ class SubjectResult(db.Model):
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'academic_year', 'term', 'subject', name='uq_subject_result_scope'),
         db.Index('ix_subject_results_lookup', 'academic_year', 'term', 'subject'),
+        db.Index('ix_subject_results_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False)
     term = db.Column(db.String(20), nullable=False)
@@ -105,6 +108,7 @@ class GapTemplate(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
     subject = db.Column(db.String(20), nullable=False, index=True)
     term = db.Column(db.String(20), nullable=False, index=True)
@@ -136,6 +140,7 @@ class GapQuestion(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     template_id = db.Column(db.Integer, db.ForeignKey('gap_templates.id'), nullable=False)
     paper_key = db.Column(db.String(20), nullable=False, default='paper_1', server_default='paper_1')
     question_label = db.Column(db.String(20), nullable=False)
@@ -160,6 +165,7 @@ class GapScore(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     question_id = db.Column(db.Integer, db.ForeignKey('gap_questions.id'), nullable=False, index=True)
     score = db.Column(db.Float, nullable=True)
@@ -182,6 +188,7 @@ class PhonicsTestColumn(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
     display_order = db.Column(db.Integer, nullable=False, default=0)
@@ -203,6 +210,7 @@ class PhonicsScore(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False, index=True)
     phonics_test_column_id = db.Column(db.Integer, db.ForeignKey('phonics_test_columns.id'), nullable=False, index=True)
@@ -226,6 +234,7 @@ class TimesTableTestColumn(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     year_group = db.Column(db.Integer, nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
     display_order = db.Column(db.Integer, nullable=False, default=0)
@@ -247,6 +256,7 @@ class TimesTableScore(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False, index=True)
     times_table_test_column_id = db.Column(db.Integer, db.ForeignKey('times_table_test_columns.id'), nullable=False, index=True)
@@ -267,9 +277,11 @@ class FoundationResult(db.Model):
     __table_args__ = (
         db.UniqueConstraint('pupil_id', 'academic_year', 'half_term', 'subject', name='uq_foundation_result_scope'),
         db.Index('ix_foundation_results_lookup', 'academic_year', 'half_term', 'subject'),
+        db.Index('ix_foundation_results_school_year_pupil', 'school_id', 'academic_year', 'pupil_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     academic_year = db.Column(db.String(20), nullable=False, index=True)
     half_term = db.Column(db.String(20), nullable=False, index=True)

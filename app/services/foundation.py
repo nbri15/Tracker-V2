@@ -6,6 +6,7 @@ from collections import Counter
 
 from app.extensions import db
 from app.models import FoundationResult, Pupil
+from app.services.assessments import get_latest_previous_assessment
 
 FOUNDATION_SUBJECTS = (
     ('re', 'RE'),
@@ -36,7 +37,6 @@ FOUNDATION_JUDGEMENT_THEMES = {
     'Exceeding': 'band-gds',
 }
 
-
 class FoundationValidationError(ValueError):
     """Raised when foundation tracker input is invalid."""
 
@@ -66,11 +66,20 @@ def build_foundation_tracker_rows(pupils: list[Pupil], academic_year: str, half_
     for pupil in pupils:
         judgements = {}
         notes = {}
+        ghost_judgements = {}
         for subject_key, _subject_label in FOUNDATION_SUBJECTS:
             record = lookup.get((pupil.id, subject_key))
             judgements[subject_key] = record.judgement if record else ''
             notes[subject_key] = record.note if record else ''
-        rows.append({'pupil': pupil, 'judgements': judgements, 'notes': notes})
+            ghost_judgements[subject_key] = '' if record else (
+                get_latest_previous_assessment(
+                    pupil_id=pupil.id,
+                    subject=subject_key,
+                    current_term=half_term,
+                    academic_year=academic_year,
+                ) or ''
+            )
+        rows.append({'pupil': pupil, 'judgements': judgements, 'ghost_judgements': ghost_judgements, 'notes': notes})
     return rows
 
 

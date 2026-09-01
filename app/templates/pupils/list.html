@@ -62,14 +62,14 @@
           <option value="no" {% if filters.service_child == 'no' %}selected{% endif %}>No</option>
         </select>
       </div>
-      {% if current_user.is_admin %}
+      {% if current_user.can_manage_school %}
         <div class="col-md-2">
           <label class="form-label">Pupil status</label>
           <select name="status" class="form-select form-select-sm">
             <option value="current" {% if filters.status == 'current' %}selected{% endif %}>Current / active</option>
             <option value="previous" {% if filters.status == 'previous' %}selected{% endif %}>Previous</option>
-            <option value="archived" {% if filters.status == 'archived' %}selected{% endif %}>Archived</option>
-            <option value="all" {% if filters.status == 'all' %}selected{% endif %}>All</option>
+            <option value="archived" {% if filters.status == 'archived' %}selected{% endif %}>Show archived</option>
+            <option value="all" {% if filters.status == 'all' %}selected{% endif %}>Show all</option>
           </select>
         </div>
       {% endif %}
@@ -81,23 +81,31 @@
   </div>
 </div>
 
+<!-- ADMIN ADD PUPIL BUTTON INSERTED HERE -->
+{% if current_user.role in ['school_admin', 'admin'] %}
+  <div class="page-actions" style="margin: 16px 0;">
+    <a class="btn btn-primary" href="{{ url_for('admin.admin_pupil_new') }}">+ Add pupil</a>
+  </div>
+{% endif %}
+
 <div class="card shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center">
     <strong>Pupil list</strong>
     <span class="small text-muted">{{ pupils|length }} pupil(s)</span>
   </div>
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
+    <table class="table table-hover align-middle mb-0 table-sticky">
       <thead>
         <tr>
           <th>Name</th>
           <th>Class</th>
           <th>Year</th>
           <th>Gender</th>
-          <th>PP</th>
-          <th>LAPS</th>
-          <th>Service</th>
-          <th>SEND/EHCP</th>
+          <th class="checkbox-cell">PP</th>
+          <th class="checkbox-cell">LAPS</th>
+          <th class="checkbox-cell">Service</th>
+          <th>Year Joined School</th>
+          <th class="checkbox-cell">SEND/EHCP</th>
           <th>Reading</th>
           <th>Writing</th>
           <th>Maths</th>
@@ -112,21 +120,22 @@
             <td>{{ pupil.school_class.name }}</td>
             <td>Year {{ pupil.school_class.year_group }}</td>
             <td>{{ pupil.gender }}</td>
-            <td>{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
-            <td>{{ 'Yes' if pupil.laps else 'No' }}</td>
-            <td>{{ 'Yes' if pupil.service_child else 'No' }}</td>
-            <td><span class="text-muted">—</span></td>
-            <td>{{ latest.get('reading') or '—' }}</td>
-            <td>{{ latest.get('writing') or '—' }}</td>
-            <td>{{ latest.get('maths') or '—' }}</td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.pupil_premium else 'No' }}</td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.laps else 'No' }}</td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.service_child else 'No' }}</td>
+            <td>{% if pupil.join_year_group == 0 %}Reception{% elif pupil.join_year_group is not none %}Year {{ pupil.join_year_group }}{% else %}Unknown{% endif %}</td>
+            <td class="checkbox-cell">{{ 'Yes' if pupil.send else 'No' }}</td>
+            <td>{{ (latest.get('reading') or '—')|short_band }}</td>
+            <td>{{ (latest.get('writing') or '—')|short_band }}</td>
+            <td>{{ (latest.get('maths') or '—')|short_band }}</td>
             <td class="text-end">
               <div class="d-inline-flex gap-1">
-                {% if pupil.is_active and (current_user.is_admin or current_user.is_teacher) %}
+                {% if pupil.is_active and current_user.can_manage_school %}
                   <form method="post" action="{{ url_for('pupils.archive', pupil_id=pupil.id) }}" onsubmit="return confirm('Are you sure you want to archive this pupil? This will remove them from active lists but keep all historical data.');">
                     <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
                     <button type="submit" class="btn btn-outline-warning btn-sm">Archive</button>
                   </form>
-                {% elif current_user.is_admin %}
+                {% elif current_user.can_manage_school %}
                   <form method="post" action="{{ url_for('pupils.restore', pupil_id=pupil.id) }}">
                     <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
                     <button type="submit" class="btn btn-outline-success btn-sm">Restore</button>

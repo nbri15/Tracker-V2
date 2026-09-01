@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header bg-white"><strong>Audit log (latest 500)</strong></div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0 align-middle">
+      <thead><tr><th>When (UTC)</th><th>User ID</th><th>School ID</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+      <tbody>
+        {% for row in records %}
+          <tr>
+            <td>{{ row.created_at.strftime('%Y-%m-%d %H:%M:%S') if row.created_at else '—' }}</td>
+            <td>{{ row.user_id }}</td>
+            <td>{{ row.school_id or '—' }}</td>
+            <td>{{ row.action }}</td>
+            <td>{{ row.target_type }} #{{ row.target_id }}</td>
+            <td class="small text-muted">{{ row.details or '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-center py-4 text-muted">No audit events.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

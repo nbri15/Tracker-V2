@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="h5">Executive data export</h3>
+    <div class="alert alert-warning" role="alert">
+      Exports may contain pupil personal data. Only download when required for support, transfer, or data access requests.
+    </div>
+
+    <form method="post" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Export scope</label>
+        <select class="form-select" name="scope" id="scopeSelect" onchange="document.getElementById('schoolSelectWrap').style.display = this.value === 'school' ? 'block' : 'none';">
+          <option value="all">All schools</option>
+          <option value="school">One school</option>
+        </select>
+      </div>
+
+      <div class="col-md-4" id="schoolSelectWrap" style="display: none;">
+        <label class="form-label">School</label>
+        <select class="form-select" name="school_id" id="schoolSelect">
+          {% for school in schools %}
+            <option value="{{ school.id }}">{{ school.name }} ({{ school.slug }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">File format</label>
+        <select class="form-select" name="format">
+          <option value="zip">ZIP (separate CSV files)</option>
+          <option value="csv">CSV (combined export)</option>
+        </select>
+      </div>
+
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">Download export</button>
+      </div>
+    </form>
+
+    <hr>
+    <p class="small text-muted mb-0">Included tables: schools, users, school_classes, pupils, subject_results, writing_results, interventions, foundation_results, phonics_scores, times_table_scores, reception_tracker_entries, tracker_mode_settings, sats_exam_tabs, sats_column_settings, sats_column_results, sats_results, sats_writing_results.</p>
+  </div>
+</div>
+{% endblock %}

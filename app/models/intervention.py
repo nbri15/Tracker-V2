@@ -14,6 +14,7 @@ class Intervention(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('schools.id'), nullable=True, index=True)
     pupil_id = db.Column(db.Integer, db.ForeignKey('pupils.id'), nullable=False, index=True)
     subject = db.Column(db.String(20), nullable=False)
     term = db.Column(db.String(20), nullable=False)
@@ -22,6 +23,7 @@ class Intervention(db.Model):
     note = db.Column(db.Text, nullable=True)
     auto_flagged = db.Column(db.Boolean, nullable=False, default=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     pupil = db.relationship('Pupil', back_populates='interventions')

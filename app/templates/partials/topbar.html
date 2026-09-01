@@ -1,12 +1,28 @@
-<header class="topbar border-bottom bg-white px-4 py-3 d-flex justify-content-between align-items-center">
+<header class="topbar border-bottom bg-white px-3 px-md-4 py-3 d-flex justify-content-between align-items-center responsive-toolbar">
   <div>
+    <button class="btn btn-outline-secondary touch-button menu-toggle-btn mb-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#appSidebar" aria-controls="appSidebar">Menu</button>
     <p class="topbar-kicker mb-1">Class Compass</p>
     <h2 class="h4 mb-0">{{ page_heading|default('Dashboard') }}</h2>
   </div>
   <div class="d-flex align-items-center gap-3">
+    {% if current_user.is_executive_admin and accessible_schools %}
+      <form method="get" class="d-flex align-items-center gap-2">
+        <label for="school_id" class="small text-muted mb-0">School</label>
+        <select id="school_id" name="school_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All schools</option>
+          {% for school in accessible_schools %}
+            <option value="{{ school.id }}" {% if selected_school_id == school.id %}selected{% endif %}>{{ school.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    {% endif %}
+    {% if is_demo_user() %}
+      <span class="badge text-bg-warning text-uppercase">Demo Mode</span>
+    {% endif %}
     <span class="badge text-bg-secondary text-uppercase">{{ current_user.role }}</span>
     <div class="text-end">
       <div class="fw-semibold">{{ current_user.username }}</div>
+      {% if current_user.school %}<div class="small text-muted">{{ current_user.school.name }}</div>{% endif %}
       <a href="{{ url_for('auth.logout') }}" class="small text-decoration-none">Sign out</a>
     </div>
   </div>

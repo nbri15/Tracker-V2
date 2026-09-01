@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+  <div><h1>Maths Fundamentals</h1><p class="text-muted mb-0">Start and monitor quick fundamentals checks.</p></div>
+  <div class="d-flex flex-wrap gap-2">
+    <div class="btn-group" role="group" aria-label="Maths Fundamentals navigation">
+      <a class="btn btn-primary" href="{{ url_for('fundamentals.home') }}">Current Sessions</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores') }}">Previous Scores</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels') }}">Level Overview</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions') }}">Intervention Dashboard</a>
+    </div>
+    <a class="btn btn-success" href="{{ url_for('fundamentals.start') }}">Start a session</a>
+  </div>
+</div>
+<h2 class="h4">Available strands</h2>
+<div class="row g-3 mb-4">{% for strand in strands %}<div class="col-md-6"><div class="card h-100"><div class="card-body"><h3 class="h5">{{ strand.name }}</h3><p>{{ strand.description }}</p></div></div></div>{% endfor %}</div>
+<h2 class="h4">Your classes</h2><ul>{% for class in classes %}<li>{{ class.name }} (Year {{ class.year_group }})</li>{% else %}<li>No active classes available.</li>{% endfor %}</ul>
+<h2 class="h4">Active sessions</h2>
+<div class="list-group">{% for session in active_sessions %}<a class="list-group-item list-group-item-action" href="{{ url_for('fundamentals.session_detail', session_id=session.id) }}">{{ session.school_class.name }} — {{ session.strand.name }} (start level {{ session.start_level }})</a>{% else %}<div class="text-muted">No active sessions.</div>{% endfor %}</div>
+{% endblock %}

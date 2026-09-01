@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from flask import has_request_context, request, session
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from app.extensions import db
 from app.models import (
+    AcademicYear,
     AssessmentSetting,
+    FoundationResult,
     Intervention,
     PhonicsScore,
     PhonicsTestColumn,
     Pupil,
+    PupilClassHistory,
     ReceptionTrackerEntry,
     SatsColumnResult,
     SatsColumnSetting,
@@ -27,6 +32,8 @@ from app.models import (
     TimesTableTestColumn,
     WritingResult,
 )
+from app.services.gender import CANONICAL_GENDERS, gender_filter_clause, normalize_gender
+from app.utils import current_school_id, school_scoped_query
 
 TERMS = [
     ('autumn', 'Autumn'),
@@ -80,6 +87,7 @@ SUBGROUP_FILTERS = {
     'pp': 'Pupil Premium',
     'laps': 'LAPS',
     'service_child': 'Service child',
+    'send': 'SEND',
 }
 BOOLEAN_FILTER_CHOICES = {
     'all': 'All',
@@ -88,6 +96,25 @@ BOOLEAN_FILTER_CHOICES = {
 }
 SATS_SUBJECTS = ('reading', 'maths', 'spag')
 SATS_ASSESSMENT_POINTS = (1, 2, 3, 4)
+
+
+@dataclass(frozen=True)
+class AcademicYearOption:
+    id: int | str
+    name: str
+
+    @property
+    def label(self) -> str:
+        return self.name
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return self.name == other
+        return super().__eq__(other)
+
 
 SUBJECT_DEFAULTS = {
     'maths': {
@@ -136,6 +163,37 @@ def get_term_label(term: str) -> str:
     return dict(TERMS).get(term, term.title())
 
 
+
+
+def short_band_label(value: str | None) -> str:
+    if value is None:
+        return '—'
+    text = str(value).strip()
+    if not text:
+        return '—'
+
+    normalized = text.lower().replace('_', ' ')
+
+    if normalized in {'working towards', 'wt', 'wts', 'below', 'not on track'}:
+        return 'WT'
+    if normalized in {'expected', 'on track', 'working at', 'ot'}:
+        return 'OT'
+    if normalized in {'exs', 'exc', 'exceeding', 'exceed', 'greater depth', 'gds'}:
+        return 'EXC'
+
+    if any(token in normalized for token in ('working towards', 'towards')):
+        return 'WT'
+    if any(token in normalized for token in ('on track', 'expected', 'working at')):
+        return 'OT'
+    if any(token in normalized for token in ('exceeding', 'exceed', 'greater depth', 'gds', 'exs', 'exc')):
+        return 'EXC'
+    return text
+
+
+def display_band_short(value: str | None) -> str:
+    return short_band_label(value)
+
+
 def get_writing_band_label(band: str | None) -> str:
     if not band:
         return '—'
@@ -168,12 +226,139 @@ def get_current_term(today: datetime | None = None) -> str:
     return 'summer'
 
 
-def build_academic_year_options(current_year: str, total_years: int = 4) -> list[str]:
+def build_academic_year_options(current_year: str | None = None, total_years: int = 4) -> list:
+    """Return AcademicYear rows for selectors, falling back to generated names."""
+    rows = AcademicYear.query.order_by(AcademicYear.name.desc()).all()
+    if rows:
+        return [AcademicYearOption(row.id, row.name) for row in rows]
+    current_year = current_year or get_current_academic_year()
     start_year = int(current_year.split('/')[0])
     years = [f'{year}/{str(year + 1)[-2:]}' for year in range(start_year - 1, start_year - 1 + total_years)]
     if current_year not in years:
         years.append(current_year)
-    return sorted(set(years), reverse=True)
+    return [AcademicYearOption(name, name) for name in sorted(set(years), reverse=True)]
+
+
+def get_selected_academic_year(raw_year_id: str | None = None, raw_academic_year: str | None = None) -> AcademicYear:
+    """Resolve and persist the selected academic year for the current request.
+
+    Priority: explicit query/form year, session selection, school/global current year,
+    then latest available academic year. `year` is treated as an AcademicYear id;
+    `academic_year` is kept for legacy links that pass the display name.
+    """
+    selected = None
+    explicit_selection = False
+
+    if has_request_context():
+        raw_year_id = raw_year_id or request.values.get('year') or request.values.get('academic_year_id')
+        raw_academic_year = raw_academic_year or request.values.get('academic_year')
+
+    if raw_year_id:
+        try:
+            selected = AcademicYear.query.get(int(raw_year_id))
+            explicit_selection = selected is not None
+        except (TypeError, ValueError):
+            selected = None
+    if selected is None and raw_academic_year:
+        selected = AcademicYear.query.filter_by(name=raw_academic_year).first()
+        explicit_selection = selected is not None
+
+    if selected is None and has_request_context():
+        session_year_id = session.get('selected_academic_year_id')
+        if session_year_id:
+            try:
+                selected = AcademicYear.query.get(int(session_year_id))
+            except (TypeError, ValueError):
+                selected = None
+
+    if selected is None:
+        selected = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
+    if selected is None:
+        selected = AcademicYear.query.order_by(AcademicYear.name.desc()).first()
+    if selected is None:
+        selected = AcademicYear(name=get_current_academic_year(), is_current=True)
+
+    if has_request_context() and (explicit_selection or not session.get('selected_academic_year_id')) and getattr(selected, 'id', None):
+        session['selected_academic_year_id'] = selected.id
+    return selected
+
+
+
+
+def get_selected_current_academic_year() -> str:
+    """Return the globally selected current academic year, falling back to date-derived value."""
+
+    current = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
+    return current.name if current else get_current_academic_year()
+
+
+def get_school_working_academic_year(school_id: int | None) -> AcademicYear:
+    """Resolve a school's operational year without consulting the viewing session.
+
+    A school's explicit setting is authoritative. The legacy global current flag is
+    retained as a migration fallback, followed by the calendar-derived year. In
+    particular, the newest database row and dashboard/report selection are never
+    treated as the school's working year.
+    """
+    from app.models import School
+
+    school = db.session.get(School, school_id) if school_id is not None else None
+    if school and school.current_academic_year:
+        return school.current_academic_year
+
+    current = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
+    if current:
+        return current
+
+    fallback_name = get_current_academic_year()
+    fallback = AcademicYear.query.filter_by(name=fallback_name).first()
+    return fallback or AcademicYear(name=fallback_name, is_current=False)
+
+
+def is_current_academic_year(academic_year: str | None) -> bool:
+    return (academic_year or get_selected_current_academic_year()) == get_selected_current_academic_year()
+
+
+def get_class_pupil_query(school_class: SchoolClass, academic_year: str | None = None):
+    """Return pupils belonging to a class in the selected academic year.
+
+    Current-year views use the pupil's live class assignment. Historical views use
+    PupilClassHistory so a later promotion or import does not move past records.
+    """
+
+    current_membership_query = Pupil.query.filter(
+        Pupil.class_id == school_class.id,
+        Pupil.school_id == school_class.school_id,
+    )
+    if not academic_year or is_current_academic_year(academic_year):
+        return current_membership_query
+
+    history_exists = PupilClassHistory.query.filter(
+        PupilClassHistory.school_id == school_class.school_id,
+        PupilClassHistory.academic_year == academic_year,
+        PupilClassHistory.class_name == school_class.name,
+        PupilClassHistory.year_group == school_class.year_group,
+    ).first() is not None
+    if not history_exists:
+        return current_membership_query
+
+    return (
+        Pupil.query
+        .join(PupilClassHistory, PupilClassHistory.pupil_id == Pupil.id)
+        .filter(
+            PupilClassHistory.school_id == school_class.school_id,
+            PupilClassHistory.academic_year == academic_year,
+            PupilClassHistory.class_name == school_class.name,
+            PupilClassHistory.year_group == school_class.year_group,
+            Pupil.school_id == school_class.school_id,
+        )
+    )
+
+
+def get_class_pupil_ids(school_class: SchoolClass, academic_year: str | None = None, filters: dict | None = None, subgroup: str = 'all') -> list[int]:
+    query = get_class_pupil_query(school_class, academic_year)
+    query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
+    return [pupil.id for pupil in query.all()]
 
 
 def get_setting_defaults(subject: str) -> dict:
@@ -316,6 +501,54 @@ def previous_term(term: str) -> str | None:
     return mapping.get((term or '').strip().lower())
 
 
+def get_latest_previous_assessment(
+    pupil_id: int,
+    subject: str,
+    current_term: str,
+    academic_year: str,
+) -> str | None:
+    normalized_subject = (subject or '').strip().lower()
+    normalized_term = (current_term or '').strip().lower()
+    invalid_values = {'', 'not_assessed', 'not assessed'}
+    orders = (
+        ['autumn', 'spring', 'summer'],
+        ['autumn_1', 'autumn_2', 'spring_1', 'spring_2', 'summer_1', 'summer_2'],
+    )
+    sequence = next((order for order in orders if normalized_term in order), None)
+    if not sequence:
+        return None
+    current_index = sequence.index(normalized_term)
+    if current_index <= 0:
+        return None
+    lookback_terms = list(reversed(sequence[:current_index]))
+
+    if normalized_subject == 'writing':
+        prior_rows = WritingResult.query.filter(
+            WritingResult.pupil_id == pupil_id,
+            WritingResult.academic_year == academic_year,
+            WritingResult.term.in_(lookback_terms),
+        ).all()
+        by_term = {(row.term or '').strip().lower(): row.band for row in prior_rows}
+    else:
+        prior_rows = FoundationResult.query.filter(
+            FoundationResult.pupil_id == pupil_id,
+            FoundationResult.academic_year == academic_year,
+            FoundationResult.subject == normalized_subject,
+            FoundationResult.half_term.in_(lookback_terms),
+        ).all()
+        by_term = {(row.half_term or '').strip().lower(): row.judgement for row in prior_rows}
+
+    for term in lookback_terms:
+        value = by_term.get(term)
+        if value is None:
+            continue
+        cleaned = str(value).strip()
+        if cleaned.lower() in invalid_values:
+            continue
+        return cleaned
+    return None
+
+
 def recalculate_subject_results_for_scope(year_group: int, subject: str, term: str, *, academic_year: str | None = None, class_id: int | None = None) -> int:
     setting = get_subject_setting(year_group, subject, term)
     query = (
@@ -340,6 +573,23 @@ def recalculate_subject_results_for_scope(year_group: int, subject: str, term: s
     return len(results)
 
 
+
+
+def pupil_send_value(pupil: Pupil) -> bool | None:
+    profile = getattr(pupil, 'profile', None)
+    profile_send = getattr(profile, 'send', None) if profile is not None else None
+    if pupil.send is True or profile_send is True:
+        return True
+    if pupil.send is False and profile_send in (False, None):
+        return False
+    if pupil.send is None and profile_send is False:
+        return False
+    return None
+
+
+def pupil_has_send(pupil: Pupil) -> bool:
+    return pupil_send_value(pupil) is True
+
 def apply_pupil_subgroup(query, subgroup: str):
     if subgroup == 'pp':
         return query.filter(Pupil.pupil_premium.is_(True))
@@ -347,6 +597,8 @@ def apply_pupil_subgroup(query, subgroup: str):
         return query.filter(Pupil.laps.is_(True))
     if subgroup == 'service_child':
         return query.filter(Pupil.service_child.is_(True))
+    if subgroup == 'send':
+        return query.filter(Pupil.send.is_(True))
     return query
 
 
@@ -361,7 +613,9 @@ def apply_admin_pupil_filters(query, filters: dict | None = None):
 
     gender = (filters.get('gender') or '').strip()
     if gender and gender != 'all':
-        query = query.filter(Pupil.gender == gender)
+        clause = gender_filter_clause(gender)
+        if clause is not None:
+            query = query.filter(clause)
 
     for filter_name, field in (
         ('pupil_premium', Pupil.pupil_premium),
@@ -373,6 +627,12 @@ def apply_admin_pupil_filters(query, filters: dict | None = None):
             query = query.filter(field.is_(True))
         elif value == 'no':
             query = query.filter(field.is_(False))
+
+    send_value = (filters.get('send') or '').strip()
+    if send_value == 'yes':
+        query = query.filter(Pupil.send.is_(True))
+    elif send_value == 'no':
+        query = query.filter(Pupil.send.is_(False))
 
     search = (filters.get('search') or '').strip()
     if search:
@@ -394,6 +654,7 @@ def build_admin_pupil_filter_state(args) -> dict:
         'pupil_premium': (args.get('pupil_premium', 'all') or 'all').strip() or 'all',
         'laps': (args.get('laps', 'all') or 'all').strip() or 'all',
         'service_child': (args.get('service_child', 'all') or 'all').strip() or 'all',
+        'send': (args.get('send', 'all') or 'all').strip() or 'all',
         'search': (args.get('search', '') or '').strip(),
     }
 
@@ -515,8 +776,8 @@ def get_gender_filter_options(*, class_id: int | None = None, include_inactive: 
         query = query.filter(Pupil.is_active.is_(True))
     if class_id is not None:
         query = query.filter(Pupil.class_id == class_id)
-    genders = [value for (value,) in query.distinct().order_by(Pupil.gender).all() if value]
-    return genders
+    normalized = {normalize_gender(value) for (value,) in query.distinct().all()}
+    return [gender for gender in CANONICAL_GENDERS if gender in normalized]
 
 
 def _empty_subject_summary(subject: str) -> dict:
@@ -609,23 +870,49 @@ def get_most_recent_term_with_data(
     subgroup: str = 'all',
     filters: dict | None = None,
 ) -> str | None:
+    school_class = SchoolClass.query.get(class_id)
+    if school_class is None:
+        return None
+    pupil_ids = get_class_pupil_ids(school_class, academic_year, filters, subgroup)
     if subject in CORE_SUBJECTS:
-        query = SubjectResult.query.join(SubjectResult.pupil).filter(
+        rows = SubjectResult.query.filter(
             SubjectResult.subject == subject,
             SubjectResult.academic_year == academic_year,
             SubjectResult.combined_percent.isnot(None),
-            Pupil.class_id == class_id,
-        )
+            SubjectResult.pupil_id.in_(pupil_ids or [0]),
+        ).all()
     else:
-        query = WritingResult.query.join(WritingResult.pupil).filter(
+        rows = WritingResult.query.filter(
             WritingResult.academic_year == academic_year,
             WritingResult.band.isnot(None),
-            Pupil.class_id == class_id,
-        )
-    rows = apply_pupil_filters(query, subgroup=subgroup, filters=filters).all()
+            WritingResult.pupil_id.in_(pupil_ids or [0]),
+        ).all()
     if not rows:
         return None
     return max(rows, key=lambda item: TERM_SEQUENCE.get(item.term, 0)).term
+
+
+def filter_results_by_term(rows: list, term: str | None = None) -> list:
+    """Return rows constrained to the chosen term when provided."""
+    if not term or term == 'all':
+        return rows
+    return [row for row in rows if getattr(row, 'term', None) == term]
+
+
+def get_latest_term_results(rows: list, term: str | None = None) -> tuple[str | None, list]:
+    """Return latest term and rows for that term, constrained by selected term."""
+    scoped_rows = filter_results_by_term(rows, term)
+    if not scoped_rows:
+        return None, []
+    latest_term = max((getattr(row, 'term', None) for row in scoped_rows if getattr(row, 'term', None)), key=lambda item: TERM_SEQUENCE.get(item, 0), default=None)
+    if not latest_term:
+        return None, []
+    return latest_term, [row for row in scoped_rows if getattr(row, 'term', None) == latest_term]
+
+
+def get_dashboard_results(query, term: str | None = None):
+    """Materialize query and constrain records to selected term."""
+    return filter_results_by_term(query.all(), term)
 
 
 def compute_class_subject_summary(
@@ -637,33 +924,36 @@ def compute_class_subject_summary(
     filters: dict | None = None,
     term: str | None = None,
 ) -> dict:
-    filtered_pupil_count = apply_admin_pupil_filters(
-        Pupil.query.filter(Pupil.class_id == class_id, Pupil.is_active.is_(True)),
-        filters,
-    ).count()
-    latest_term = term or get_most_recent_term_with_data(class_id, subject, academic_year, subgroup, filters)
+    school_class = SchoolClass.query.get(class_id)
+    if school_class is None:
+        return _empty_subject_summary(subject)
+
+    pupil_ids = get_class_pupil_ids(school_class, academic_year, filters, subgroup)
+    filtered_pupil_count = len([pupil_id for pupil_id in pupil_ids])
+    if term and term != 'all':
+        latest_term = term
+    else:
+        latest_term = get_most_recent_term_with_data(class_id, subject, academic_year, subgroup, filters)
     if not latest_term:
         summary = _empty_subject_summary(subject)
         summary['filtered_pupil_count'] = filtered_pupil_count
         return summary
 
     if subject in CORE_SUBJECTS:
-        query = SubjectResult.query.join(SubjectResult.pupil).filter(
+        latest_rows = SubjectResult.query.filter(
             SubjectResult.subject == subject,
             SubjectResult.academic_year == academic_year,
             SubjectResult.term == latest_term,
-            Pupil.class_id == class_id,
-        )
-        latest_rows = apply_pupil_filters(query, subgroup=subgroup, filters=filters).all()
+            SubjectResult.pupil_id.in_(pupil_ids or [0]),
+        ).all()
         counts = _counts_from_band_labels(latest_rows)
         percents = [row.combined_percent for row in latest_rows if row.combined_percent is not None]
     else:
-        query = WritingResult.query.join(WritingResult.pupil).filter(
+        latest_rows = WritingResult.query.filter(
             WritingResult.academic_year == academic_year,
             WritingResult.term == latest_term,
-            Pupil.class_id == class_id,
-        )
-        latest_rows = apply_pupil_filters(query, subgroup=subgroup, filters=filters).all()
+            WritingResult.pupil_id.in_(pupil_ids or [0]),
+        ).all()
         counts = _counts_from_writing_bands(latest_rows)
         percents = []
 
@@ -683,19 +973,96 @@ def build_dashboard_summary(class_id: int | None, academic_year: str, subgroup: 
     return [compute_class_subject_summary(class_id, subject, academic_year, subgroup, filters=filters) for subject in ALL_SUBJECTS]
 
 
-def build_class_overview_row(school_class: SchoolClass, academic_year: str, subgroup: str = 'all', filters: dict | None = None) -> dict:
-    pupil_query = school_class.pupils.filter_by(is_active=True)
+def _summary_from_grouped_rows(
+    *,
+    subject: str,
+    latest_term: str | None,
+    rows: list,
+    filtered_pupil_count: int,
+    setting_cache: dict[tuple[int, str, str], AssessmentSetting],
+    class_year_groups: dict[int, int],
+) -> dict:
+    if not latest_term:
+        summary = _empty_subject_summary(subject)
+        summary['filtered_pupil_count'] = filtered_pupil_count
+        return summary
+
+    latest_rows = [row for row in rows if getattr(row, 'term', None) == latest_term]
+    if subject in CORE_SUBJECTS:
+        counts = {'Working Towards': 0, 'On Track': 0, 'Exceeding': 0}
+        percents = []
+        for row in latest_rows:
+            if row.combined_percent is None:
+                continue
+            class_id = getattr(row.pupil, 'class_id', None)
+            year_group = class_year_groups.get(class_id)
+            if year_group is None:
+                band_label = row.band_label
+            else:
+                cache_key = (year_group, row.subject, row.term)
+                setting = setting_cache.get(cache_key)
+                if setting is None:
+                    setting = get_subject_setting(year_group, row.subject, row.term)
+                    setting_cache[cache_key] = setting
+                band_label = resolve_subject_band_label(
+                    percent=row.combined_percent,
+                    setting=setting,
+                    pupil_year_group=year_group,
+                    assessment_year_group=row.assessment_year_group,
+                )
+            if band_label in counts:
+                counts[band_label] += 1
+            percents.append(row.combined_percent)
+        average_percent = round(sum(percents) / len(percents), 1) if percents else None
+    else:
+        counts = _counts_from_writing_bands(latest_rows)
+        average_percent = None
+
+    return _build_summary_payload(
+        subject,
+        latest_term,
+        counts,
+        len(latest_rows),
+        average_percent=average_percent,
+        filtered_pupil_count=filtered_pupil_count,
+    )
+
+
+def build_class_overview_rows(
+    classes: list[SchoolClass],
+    academic_year: str,
+    subgroup: str = 'all',
+    filters: dict | None = None,
+    term: str | None = None,
+) -> list[dict]:
+    """Build admin dashboard class rows for the selected historical year."""
+    return [
+        build_class_overview_row(
+            school_class,
+            academic_year,
+            subgroup=subgroup,
+            filters=filters,
+            term=term,
+        )
+        for school_class in classes
+    ]
+
+def build_class_overview_row(school_class: SchoolClass, academic_year: str, subgroup: str = 'all', filters: dict | None = None, term: str | None = None) -> dict:
+    pupil_query = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True))
     pupil_query = apply_pupil_filters(pupil_query, subgroup=subgroup, filters=filters)
-    pupil_count = pupil_query.count()
+    pupil_ids = [pupil.id for pupil in pupil_query.all()]
+    pupil_count = len(pupil_ids)
     subject_summaries = {
-        subject: compute_class_subject_summary(school_class.id, subject, academic_year, subgroup, filters=filters)
+        subject: compute_class_subject_summary(school_class.id, subject, academic_year, subgroup, filters=filters, term=term)
         for subject in ALL_SUBJECTS
     }
     active_interventions = (
         Intervention.query.join(Intervention.pupil)
-        .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.class_id == school_class.id)
+        .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.id.in_(pupil_ids or [0]))
         .filter(Pupil.is_active.is_(True))
     )
+    if term and term != 'all':
+        active_interventions = active_interventions.filter(Intervention.term == term)
     active_interventions = apply_admin_pupil_filters(active_interventions, filters).count()
     return {
         'class': school_class,
@@ -834,30 +1201,56 @@ def build_headline_report(
     subgroup: str = 'all',
     filters: dict | None = None,
     tracker_key: str | None = None,
+    school_id: int | None = None,
 ) -> dict:
     additional_subjects = {'eyfs', 'phonics', 'times_tables', 'sats'}
     if subject not in ALL_SUBJECTS and subject not in additional_subjects:
         subject = 'maths'
     filters = filters or {}
+    effective_school_id = school_id if school_id is not None else current_school_id()
+    included_pupil_ids: set[int] = set()
+    included_result_count = 0
+
+    def scoped_class_filter(query):
+        query = query.filter(SchoolClass.is_active.is_(True))
+        if effective_school_id is not None:
+            query = query.filter(SchoolClass.school_id == effective_school_id)
+        return query
+
+    def scoped_model_filter(query, model):
+        if effective_school_id is not None and hasattr(model, 'school_id'):
+            query = query.filter(model.school_id == effective_school_id)
+        return query
+
+    def finalize_with_debug(payload: dict) -> dict:
+        payload['debug'] = {
+            'effective_school_id': effective_school_id,
+            'pupil_count': len(included_pupil_ids),
+            'result_count': included_result_count,
+        }
+        return payload
+
     measure_labels = {'working_towards': 'Working Towards', 'on_track_plus': 'On Track+', 'exceeding': 'Exceeding'}
 
     if subject in ALL_SUBJECTS:
         years = [year_group] if year_group in {1, 2, 3, 4, 5, 6} else [1, 2, 3, 4, 5, 6]
         terms = [term for term, _ in TERMS]
         query = (
-            SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class).filter(
+            scoped_class_filter(SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)).filter(
                 SubjectResult.subject == subject,
                 SubjectResult.academic_year == academic_year,
                 SchoolClass.year_group.in_(years),
             )
         )
         if subject == 'writing':
-            query = WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class).filter(
+            query = scoped_class_filter(WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class)).filter(
                 WritingResult.academic_year == academic_year,
                 SchoolClass.year_group.in_(years),
             )
         query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
         score_rows = query.all()
+        included_result_count = len(score_rows)
+        included_pupil_ids.update(row.pupil_id for row in score_rows)
         year_term_counts = defaultdict(lambda: defaultdict(lambda: {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0}))
         for row in score_rows:
             if row.term not in terms:
@@ -893,7 +1286,7 @@ def build_headline_report(
                 for term in terms
             }
             rows.append({'label': f'Year {year}', 'year_group': year, 'cells': cells, 'bucket_totals': bucket_totals, 'terms': cells})
-        return _finalize_headline_payload(
+        return finalize_with_debug(_finalize_headline_payload(
             subject=subject,
             subject_label=format_subject_name(subject),
             academic_year=academic_year,
@@ -904,7 +1297,7 @@ def build_headline_report(
             measure_labels=measure_labels,
             row_header_label='Year group',
             rows=rows,
-        )
+        ))
 
     if subject == 'eyfs':
         tracking_points = ['baseline', 'autumn_2', 'spring_1', 'spring_2', 'summer_1', 'elg']
@@ -920,7 +1313,7 @@ def build_headline_report(
         }
         eyfs_measures = {'not_on_track': 'Not on track', 'on_track': 'On Track'}
         query = (
-            ReceptionTrackerEntry.query.join(ReceptionTrackerEntry.pupil).join(Pupil.school_class).filter(
+            scoped_class_filter(ReceptionTrackerEntry.query.join(ReceptionTrackerEntry.pupil).join(Pupil.school_class)).filter(
                 ReceptionTrackerEntry.academic_year == academic_year,
                 SchoolClass.year_group == 0,
                 ReceptionTrackerEntry.tracking_point.in_(bucket_keys),
@@ -928,6 +1321,8 @@ def build_headline_report(
         )
         query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
         entries = query.all()
+        included_result_count = len(entries)
+        included_pupil_ids.update(entry.pupil_id for entry in entries)
         bucket_totals = {point: {'total': 0, 'not_on_track': 0, 'on_track': 0} for point in bucket_keys}
         for entry in entries:
             totals = bucket_totals[entry.tracking_point]
@@ -941,7 +1336,7 @@ def build_headline_report(
             for point in bucket_keys
         }
         row = {'label': 'Reception', 'year_group': 0, 'cells': cells, 'bucket_totals': bucket_totals, 'terms': cells}
-        return _finalize_headline_payload(
+        return finalize_with_debug(_finalize_headline_payload(
             subject=subject,
             subject_label='EYFS',
             academic_year=academic_year,
@@ -952,12 +1347,12 @@ def build_headline_report(
             measure_labels=eyfs_measures,
             row_header_label='Year group',
             rows=[row],
-        ) | {'selected_tracker_key': selected_point}
+        ) | {'selected_tracker_key': selected_point})
 
     if subject == 'phonics':
         years = [year_group] if year_group in {1, 2} else [1, 2]
         columns = (
-            PhonicsTestColumn.query.filter(PhonicsTestColumn.year_group.in_(years), PhonicsTestColumn.is_active.is_(True))
+            scoped_model_filter(PhonicsTestColumn.query, PhonicsTestColumn).filter(PhonicsTestColumn.year_group.in_(years), PhonicsTestColumn.is_active.is_(True))
             .order_by(PhonicsTestColumn.year_group, PhonicsTestColumn.display_order, PhonicsTestColumn.id)
             .all()
         )
@@ -967,15 +1362,17 @@ def build_headline_report(
         band_labels = {'working_towards': 'Working Towards (<30)', 'on_track_plus': 'On Track+ (30-33)', 'exceeding': 'Exceeding (34+)'}
         rows = []
         for year in years:
-            pupils_query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == year)
+            pupils_query = scoped_class_filter(Pupil.query.join(Pupil.school_class)).filter(SchoolClass.year_group == year)
             pupils_query = apply_pupil_filters(pupils_query, subgroup=subgroup, filters=filters)
             pupils = pupils_query.all()
+            included_pupil_ids.update(pupil.id for pupil in pupils)
             pupil_ids = [pupil.id for pupil in pupils]
             year_columns = [column for column in columns if column.year_group == year]
             target_column = selected_column if selected_column and selected_column.year_group == year else (year_columns[-1] if year_columns else None)
             counts = {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0}
             if target_column and pupil_ids:
                 scores = PhonicsScore.query.filter_by(academic_year=academic_year, phonics_test_column_id=target_column.id).filter(PhonicsScore.pupil_id.in_(pupil_ids)).all()
+                included_result_count += len(scores)
                 for score in scores:
                     if score.score is None:
                         continue
@@ -988,7 +1385,7 @@ def build_headline_report(
                         counts['working_towards'] += 1
             cells = {bucket_key: {measure: _headline_measure_cell(count=counts[measure], total=counts['total']) for measure in band_labels}}
             rows.append({'label': f'Year {year}', 'year_group': year, 'cells': cells, 'bucket_totals': {bucket_key: counts}, 'terms': cells})
-        return _finalize_headline_payload(
+        return finalize_with_debug(_finalize_headline_payload(
             subject=subject,
             subject_label='Phonics',
             academic_year=academic_year,
@@ -999,12 +1396,12 @@ def build_headline_report(
             measure_labels=band_labels,
             row_header_label='Year group',
             rows=rows,
-        ) | {'selected_tracker_key': bucket_key}
+        ) | {'selected_tracker_key': bucket_key})
 
     if subject == 'times_tables':
         years = [4]
         columns = (
-            TimesTableTestColumn.query.filter_by(year_group=4, is_active=True)
+            scoped_model_filter(TimesTableTestColumn.query, TimesTableTestColumn).filter_by(year_group=4, is_active=True)
             .order_by(TimesTableTestColumn.display_order, TimesTableTestColumn.id)
             .all()
         )
@@ -1014,13 +1411,15 @@ def build_headline_report(
         bucket_labels = {bucket_key: target_column.name if target_column else 'Latest test'}
         band_labels = {'working_towards': 'Working Towards (<20)', 'on_track_plus': 'On Track+ (20-24)', 'exceeding': 'Exceeding (25)'}
 
-        pupils_query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 4)
+        pupils_query = scoped_class_filter(Pupil.query.join(Pupil.school_class)).filter(SchoolClass.year_group == 4)
         pupils_query = apply_pupil_filters(pupils_query, subgroup=subgroup, filters=filters)
         pupils = pupils_query.all()
+        included_pupil_ids.update(pupil.id for pupil in pupils)
         pupil_ids = [pupil.id for pupil in pupils]
         counts = {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0}
         if target_column and pupil_ids:
             scores = TimesTableScore.query.filter_by(academic_year=academic_year, times_table_test_column_id=target_column.id).filter(TimesTableScore.pupil_id.in_(pupil_ids)).all()
+            included_result_count += len(scores)
             for score in scores:
                 if score.score is None:
                     continue
@@ -1034,7 +1433,7 @@ def build_headline_report(
 
         cells = {bucket_key: {measure: _headline_measure_cell(count=counts[measure], total=counts['total']) for measure in band_labels}}
         row = {'label': 'Year 4', 'year_group': 4, 'cells': cells, 'bucket_totals': {bucket_key: counts}, 'terms': cells}
-        return _finalize_headline_payload(
+        return finalize_with_debug(_finalize_headline_payload(
             subject=subject,
             subject_label='Times Tables',
             academic_year=academic_year,
@@ -1045,24 +1444,32 @@ def build_headline_report(
             measure_labels=band_labels,
             row_header_label='Year group',
             rows=[row],
-        ) | {'selected_tracker_key': bucket_key}
+        ) | {'selected_tracker_key': bucket_key})
 
     # SATs (Year 6 scaled score headlines).
-    tabs = SatsExamTab.query.filter_by(year_group=6).order_by(SatsExamTab.display_order, SatsExamTab.id).all()
+    tabs = (
+        scoped_model_filter(SatsExamTab.query.filter_by(year_group=6), SatsExamTab)
+        .order_by(SatsExamTab.display_order, SatsExamTab.id)
+        .all()
+    )
     selected_tab = next((tab for tab in tabs if str(tab.id) == str(tracker_key)), None) if tracker_key else None
     if not selected_tab:
         selected_tab = next((tab for tab in tabs if tab.is_active), tabs[-1] if tabs else None)
     scaled_columns = []
     if selected_tab:
         scaled_columns = (
-            SatsColumnSetting.query.filter_by(year_group=6, exam_tab_id=selected_tab.id, score_type='scaled', is_active=True)
+            scoped_model_filter(
+                SatsColumnSetting.query.filter_by(year_group=6, exam_tab_id=selected_tab.id, score_type='scaled', is_active=True),
+                SatsColumnSetting,
+            )
             .filter(SatsColumnSetting.column_key.in_(['maths_scaled', 'reading_scaled', 'spag_scaled']))
             .order_by(SatsColumnSetting.display_order, SatsColumnSetting.id)
             .all()
         )
-    pupils_query = Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6)
+    pupils_query = scoped_class_filter(Pupil.query.join(Pupil.school_class)).filter(SchoolClass.year_group == 6)
     pupils_query = apply_pupil_filters(pupils_query, subgroup=subgroup, filters=filters)
     pupils = pupils_query.all()
+    included_pupil_ids.update(pupil.id for pupil in pupils)
     pupil_ids = [pupil.id for pupil in pupils]
     measure_labels = {'working_towards': 'Working Towards (<100)', 'on_track_plus': 'On Track+ (100-109)', 'exceeding': 'Exceeding (110+)'}
     bucket_keys = [column.column_key for column in scaled_columns] or ['maths_scaled', 'reading_scaled', 'spag_scaled']
@@ -1070,10 +1477,11 @@ def build_headline_report(
     bucket_totals = {bucket: {'total': 0, 'working_towards': 0, 'on_track_plus': 0, 'exceeding': 0} for bucket in bucket_keys}
     if pupil_ids and scaled_columns:
         results = (
-            SatsColumnResult.query.filter_by(academic_year=academic_year)
+            scoped_model_filter(SatsColumnResult.query.filter_by(academic_year=academic_year), SatsColumnResult)
             .filter(SatsColumnResult.pupil_id.in_(pupil_ids), SatsColumnResult.column_id.in_([column.id for column in scaled_columns]))
             .all()
         )
+        included_result_count += len(results)
         column_key_by_id = {column.id: column.column_key for column in scaled_columns}
         for result in results:
             score_value = result.raw_score
@@ -1098,7 +1506,7 @@ def build_headline_report(
         for bucket in bucket_keys
     }
     row = {'label': 'Year 6', 'year_group': 6, 'cells': cells, 'bucket_totals': bucket_totals, 'terms': cells}
-    return _finalize_headline_payload(
+    return finalize_with_debug(_finalize_headline_payload(
         subject='sats',
         subject_label='SATs',
         academic_year=academic_year,
@@ -1109,7 +1517,7 @@ def build_headline_report(
         measure_labels=measure_labels,
         row_header_label='Year group',
         rows=[row],
-    ) | {'selected_tracker_key': str(selected_tab.id) if selected_tab else ''}
+    ) | {'selected_tracker_key': str(selected_tab.id) if selected_tab else ''})
 
 
 def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_year: str) -> tuple[str, list[dict]]:
@@ -1176,6 +1584,8 @@ def _build_pupil_flag_summary(pupil: Pupil) -> str:
         flags.append('LAPS')
     if pupil.service_child:
         flags.append('Service')
+    if pupil_has_send(pupil):
+        flags.append('SEND')
     return ' · '.join(flags) if flags else '—'
 
 
@@ -1190,47 +1600,36 @@ def _build_class_detail_subject_rows(
     sort_direction: str = 'asc',
 ) -> tuple[list[Pupil], list[dict]]:
     pupils = apply_admin_pupil_filters(
-        school_class.pupils,
+        get_class_pupil_query(school_class, academic_year),
         filters,
     ).order_by(Pupil.last_name, Pupil.first_name).all()
 
+    pupil_ids = [pupil.id for pupil in pupils]
     if subject in CORE_SUBJECTS:
         setting = get_subject_setting(school_class.year_group, subject, term)
         prev_term = previous_term(term)
-        result_rows = (
-            SubjectResult.query.join(SubjectResult.pupil)
-            .filter(
-                SubjectResult.subject == subject,
-                SubjectResult.academic_year == academic_year,
-                SubjectResult.term == term,
-                Pupil.class_id == school_class.id,
-            )
-        )
-        result_rows = apply_admin_pupil_filters(result_rows, filters).all()
+        result_rows = SubjectResult.query.filter(
+            SubjectResult.subject == subject,
+            SubjectResult.academic_year == academic_year,
+            SubjectResult.term == term,
+            SubjectResult.pupil_id.in_(pupil_ids or [0]),
+        ).all()
         result_lookup = {row.pupil_id: row for row in result_rows}
         previous_lookup: dict[int, SubjectResult] = {}
         if prev_term:
-            previous_rows = (
-                SubjectResult.query.join(SubjectResult.pupil)
-                .filter(
-                    SubjectResult.subject == subject,
-                    SubjectResult.academic_year == academic_year,
-                    SubjectResult.term == prev_term,
-                    Pupil.class_id == school_class.id,
-                )
-            )
-            previous_rows = apply_admin_pupil_filters(previous_rows, filters).all()
+            previous_rows = SubjectResult.query.filter(
+                SubjectResult.subject == subject,
+                SubjectResult.academic_year == academic_year,
+                SubjectResult.term == prev_term,
+                SubjectResult.pupil_id.in_(pupil_ids or [0]),
+            ).all()
             previous_lookup = {row.pupil_id: row for row in previous_rows}
     else:
-        result_rows = (
-            WritingResult.query.join(WritingResult.pupil)
-            .filter(
-                WritingResult.academic_year == academic_year,
-                WritingResult.term == term,
-                Pupil.class_id == school_class.id,
-            )
-        )
-        result_rows = apply_admin_pupil_filters(result_rows, filters).all()
+        result_rows = WritingResult.query.filter(
+            WritingResult.academic_year == academic_year,
+            WritingResult.term == term,
+            WritingResult.pupil_id.in_(pupil_ids or [0]),
+        ).all()
         result_lookup = {row.pupil_id: row for row in result_rows}
 
     rows = []
@@ -1243,6 +1642,7 @@ def _build_class_detail_subject_rows(
             'pupil_premium': pupil.pupil_premium,
             'laps': pupil.laps,
             'service_child': pupil.service_child,
+            'send': pupil.send,
             'flags': _build_pupil_flag_summary(pupil),
         }
         if subject in CORE_SUBJECTS:
@@ -1288,7 +1688,7 @@ def _build_class_detail_subject_rows(
 
 def _build_class_detail_sats_rows(school_class: SchoolClass, academic_year: str, filters: dict | None = None) -> list[dict]:
     pupils = apply_admin_pupil_filters(
-        school_class.pupils,
+        get_class_pupil_query(school_class, academic_year),
         filters,
     ).order_by(Pupil.last_name, Pupil.first_name).all()
     rows = []
@@ -1300,6 +1700,7 @@ def _build_class_detail_sats_rows(school_class: SchoolClass, academic_year: str,
             'pupil_premium': pupil.pupil_premium,
             'laps': pupil.laps,
             'service_child': pupil.service_child,
+            'send': pupil.send,
             'flags': _build_pupil_flag_summary(pupil),
             'subjects': {},
         }
@@ -1316,7 +1717,7 @@ def build_year6_sats_summary(school_class: SchoolClass, academic_year: str) -> d
     if school_class.year_group != 6:
         return None
 
-    pupils = school_class.pupils.filter_by(is_active=True).order_by(Pupil.last_name, Pupil.first_name).all()
+    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).order_by(Pupil.last_name, Pupil.first_name).all()
     rows = []
     for pupil in pupils:
         row = {'pupil': pupil, 'subjects': {}, 'writing': {}}
@@ -1346,7 +1747,7 @@ def get_class_detail_context(
     active_subject = subject if subject in available_subjects else 'maths'
 
     filtered_pupils = apply_admin_pupil_filters(
-        school_class.pupils,
+        get_class_pupil_query(school_class, academic_year),
         filters,
     ).order_by(Pupil.last_name, Pupil.first_name).all()
 
@@ -1357,7 +1758,7 @@ def get_class_detail_context(
         'available_terms': TERMS,
         'selected_term': None,
         'filtered_pupil_count': len(filtered_pupils),
-        'total_pupil_count': school_class.pupils.filter_by(is_active=True).count(),
+        'total_pupil_count': get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).count(),
         'filters': filters,
         'subject_summary': None,
         'pupil_rows': [],
@@ -1435,3 +1836,57 @@ def get_sats_writing_summary(rows: list[SatsWritingResult]) -> dict:
 def get_latest_scaled_score(rows: list[SatsResult]) -> int | None:
     latest_row = max((row for row in rows if row.scaled_score is not None), key=lambda row: row.assessment_point, default=None)
     return latest_row.scaled_score if latest_row else None
+
+
+def get_latest_result(results: list, *, key: str = 'assessment_point'):
+    """Return the newest result-like object in a list using a safe key."""
+    if not results:
+        return None
+    return max(results, key=lambda row: getattr(row, key, 0) or 0, default=None)
+
+
+def calculate_band(combined_percent: float | None, below_threshold: float = 45.0, exceeding_threshold: float = 80.0) -> str:
+    return SubjectResult.calculate_band_label(combined_percent, below_threshold, exceeding_threshold)
+
+
+def calculate_progress(current: float | int | None, previous: float | int | None) -> dict[str, float | int | str | None]:
+    if current is None or previous is None:
+        return {'delta': None, 'label': '—', 'theme': None}
+    delta = current - previous
+    return {'delta': delta, 'label': format_progress_delta(delta), 'theme': progress_theme(delta)}
+
+
+def get_term_filtered_results(query, term: str | None = None):
+    normalized = (term or '').strip().lower()
+    if normalized and normalized != 'all':
+        return query.filter_by(term=normalized)
+    return query
+
+
+def get_tracker_results(pupil_id: int, academic_year: str, *, term: str | None = None) -> list[SubjectResult]:
+    query = SubjectResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year)
+    query = get_term_filtered_results(query, term)
+    return query.order_by(SubjectResult.subject, SubjectResult.term).all()
+
+
+def get_subject_summary(pupil_id: int, academic_year: str, subject: str, *, term: str | None = None) -> dict:
+    rows = get_tracker_results(pupil_id, academic_year, term=term)
+    subject_rows = [row for row in rows if row.subject == subject]
+    latest = get_latest_result(subject_rows)
+    previous_rows = [row for row in subject_rows if latest is None or row.assessment_point != latest.assessment_point]
+    previous = get_latest_result(previous_rows)
+    progress = calculate_progress(
+        latest.combined_percent if latest else None,
+        previous.combined_percent if previous else None,
+    )
+    return {
+        'subject': subject,
+        'count': len(subject_rows),
+        'latest': latest,
+        'previous': previous,
+        'progress': progress,
+    }
+
+
+def get_dashboard_stats(class_id: int | None, academic_year: str) -> list[dict]:
+    return build_dashboard_summary(class_id, academic_year)

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_
 
@@ -20,15 +21,13 @@ from app.models import (
     PupilClassHistory,
     ReceptionTrackerEntry,
     SatsColumnResult,
-    SatsResult,
-    SatsWritingResult,
     SchoolClass,
     SubjectResult,
     TimesTableScore,
     WritingResult,
 )
-from app.services import format_progress_delta, progress_theme
-from app.utils import teacher_or_admin_required
+from app.services import build_academic_year_options, build_pupil_overview_data, format_progress_delta, get_selected_academic_year, progress_theme, summarize_gld_status
+from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, teacher_or_admin_required
 
 from . import pupils_bp
 
@@ -41,10 +40,10 @@ BAND_THEME = {'Working Towards': 'danger', 'WT': 'danger', 'On Track': 'success'
 @teacher_or_admin_required
 def directory():
     filters = _build_pupil_filters(request.args)
-    query = Pupil.query.join(Pupil.school_class)
+    query = demo_filter_pupils(Pupil.query.join(Pupil.school_class))
 
     if current_user.is_teacher:
-        teacher_class_ids = [school_class.id for school_class in current_user.classes.filter_by(is_active=True).all()]
+        teacher_class_ids = [school_class.id for school_class in demo_filter_classes(current_user.classes.filter_by(is_active=True)).all()]
         if not teacher_class_ids:
             pupils = []
             return render_template('pupils/list.html', pupils=pupils, filters=filters, class_options=[], year_group_options=[])
@@ -58,7 +57,8 @@ def directory():
     pupil_ids = [pupil.id for pupil in pupils]
     latest_subject = _latest_subject_snapshots(pupil_ids)
 
-    class_options_query = SchoolClass.query
+    class_options_query = demo_filter_classes(SchoolClass.query)
+    class_options_query = class_options_query.filter(SchoolClass.is_active.is_(True))
     if current_user.is_teacher:
         class_options_query = class_options_query.filter(SchoolClass.teacher_id == current_user.id, SchoolClass.is_active.is_(True))
     class_options = class_options_query.order_by(SchoolClass.year_group, SchoolClass.name).all()
@@ -78,12 +78,18 @@ def directory():
 @login_required
 @teacher_or_admin_required
 def profile(pupil_id: int):
-    pupil = Pupil.query.join(Pupil.school_class).filter(Pupil.id == pupil_id).first_or_404()
+    pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
     if not _can_view_pupil(pupil):
         abort(403)
 
     if request.method == 'POST':
         pupil.strengths_notes = request.form.get('strengths_notes', '').strip() or None
+        if current_user.can_manage_school:
+            pupil.pupil_premium = request.form.get('pupil_premium') == 'on'
+            pupil.laps = request.form.get('laps') == 'on'
+            pupil.service_child = request.form.get('service_child') == 'on'
+            pupil.send = request.form.get('send') == 'on'
         pupil.next_steps_notes = request.form.get('next_steps_notes', '').strip() or None
         pupil.general_notes = request.form.get('general_notes', '').strip() or None
         db.session.add(pupil)
@@ -91,24 +97,30 @@ def profile(pupil_id: int):
         flash('Pupil notes saved.', 'success')
         return redirect(url_for('pupils.profile', pupil_id=pupil.id))
 
-    subject_rows = SubjectResult.query.filter_by(pupil_id=pupil.id).order_by(SubjectResult.academic_year.desc(), SubjectResult.term.desc(), SubjectResult.updated_at.desc()).all()
-    writing_rows = WritingResult.query.filter_by(pupil_id=pupil.id).order_by(WritingResult.academic_year.desc(), WritingResult.term.desc(), WritingResult.updated_at.desc()).all()
-    phonics_rows = PhonicsScore.query.filter_by(pupil_id=pupil.id).all()
-    times_tables_rows = TimesTableScore.query.filter_by(pupil_id=pupil.id).all()
-    reception_rows = ReceptionTrackerEntry.query.filter_by(pupil_id=pupil.id).order_by(ReceptionTrackerEntry.academic_year.desc(), ReceptionTrackerEntry.tracking_point.desc()).all()
-    foundation_rows = FoundationResult.query.filter_by(pupil_id=pupil.id).order_by(FoundationResult.academic_year.desc(), FoundationResult.half_term.desc(), FoundationResult.subject.asc()).all()
-    sats_rows = SatsResult.query.filter_by(pupil_id=pupil.id).order_by(SatsResult.academic_year.desc(), SatsResult.assessment_point.desc()).all()
-    sats_writing_rows = SatsWritingResult.query.filter_by(pupil_id=pupil.id).order_by(SatsWritingResult.academic_year.desc(), SatsWritingResult.assessment_point.desc()).all()
-    sats_column_rows = (
-        SatsColumnResult.query.filter_by(pupil_id=pupil.id)
-        .join(SatsColumnResult.column)
-        .order_by(SatsColumnResult.academic_year.desc(), SatsColumnResult.updated_at.desc())
-        .all()
-    )
+    selected_year = get_selected_academic_year(request.args.get('academic_year_id'), request.args.get('academic_year'))
+    selected_year_id = selected_year.id
+    selected_academic_year = selected_year.name
+    selected_term = (request.args.get('term') or '').strip().lower() or None
+    if selected_term == 'all':
+        selected_term = None
+
+    overview_data = build_pupil_overview_data(pupil, selected_academic_year)
+    subject_rows = overview_data['tracker']['subject_rows']
+    writing_rows = overview_data['tracker']['writing_rows']
+    phonics_rows = overview_data['phonics']
+    times_tables_rows = overview_data['mtc']
+    reception_rows = overview_data['eyfs']['reception_rows']
+    foundation_rows = overview_data['eyfs']['foundation_rows']
+    sats_column_rows = overview_data['sats']
     intervention_rows = Intervention.query.filter_by(pupil_id=pupil.id).order_by(Intervention.created_at.desc()).all()
     history_rows = PupilClassHistory.query.filter_by(pupil_id=pupil.id).order_by(PupilClassHistory.academic_year.desc()).all()
+    selected_history_row = next((row for row in history_rows if row.academic_year == selected_academic_year), None)
+    selected_profile_year_group = overview_data.get('year_group')
+    selected_profile_class_name = selected_history_row.class_name if selected_history_row else (pupil.school_class.name if pupil.school_class else '—')
 
-    latest_summary = _build_latest_summary(subject_rows, writing_rows)
+    latest_summary, latest_result_rows = _build_selected_latest_summary(pupil.id, selected_academic_year, selected_term)
+    latest_foundation_rows = _filter_latest_foundation_rows(pupil.id, selected_academic_year, selected_term)
+    _log_profile_assessment_debug(pupil.id, selected_year_id, selected_term, latest_result_rows, len(latest_foundation_rows))
     subject_history_cards = _build_subject_history_cards(subject_rows, writing_rows)
     intervention_summary = {
         'total': len(intervention_rows),
@@ -119,11 +131,11 @@ def profile(pupil_id: int):
     active_focuses = sorted({row.subject for row in intervention_rows if row.is_active and row.subject})
 
     missing_data_warnings = []
-    if not latest_summary.get('reading'):
+    if not latest_summary.get('reading', {}).get('band'):
         missing_data_warnings.append('Missing Reading result.')
-    if not latest_summary.get('maths'):
+    if not latest_summary.get('maths', {}).get('band'):
         missing_data_warnings.append('Missing Maths result.')
-    if not latest_summary.get('writing'):
+    if not latest_summary.get('writing', {}).get('band'):
         missing_data_warnings.append('Missing Writing judgement.')
 
     phonics_view_rows = [
@@ -155,7 +167,7 @@ def profile(pupil_id: int):
         'pupils/profile.html',
         pupil=pupil,
         can_archive=_can_archive_pupil(pupil),
-        can_restore=current_user.is_admin and not pupil.is_active,
+        can_restore=current_user.can_manage_school and pupil.is_archived,
         latest_summary=latest_summary,
         subject_history_cards=subject_history_cards,
         subject_rows=subject_rows,
@@ -164,33 +176,178 @@ def profile(pupil_id: int):
         times_tables_rows=times_tables_view_rows,
         reception_rows=reception_rows,
         foundation_history=_build_foundation_history(foundation_rows),
-        latest_foundation=_latest_foundation_by_subject(foundation_rows),
-        sats_rows=sats_rows,
-        sats_writing_rows=sats_writing_rows,
+        latest_foundation=_latest_foundation_by_subject(latest_foundation_rows),
         sats_column_rows=sats_column_rows,
+        gld_status=summarize_gld_status(reception_rows),
         intervention_rows=intervention_rows,
         intervention_summary=intervention_summary,
         latest_intervention_note=latest_intervention_note,
         active_focuses=active_focuses,
         history_rows=history_rows,
         missing_data_warnings=missing_data_warnings,
+        academic_year_options=build_academic_year_options(),
+        selected_year_id=selected_year_id,
+        selected_term=selected_term or '',
+        selected_academic_year=selected_academic_year,
+        selected_profile_year_group=selected_profile_year_group,
+        selected_profile_class_name=selected_profile_class_name,
         gap_rows=gap_rows,
     )
 
 
+
+def _latest_term_row(query, term_attr='term'):
+    rows = query.all()
+    if not rows:
+        return None
+    return sorted(rows, key=lambda row: (_term_rank(getattr(row, term_attr)), row.updated_at), reverse=True)[0]
+
+
+def _build_selected_latest_summary(pupil_id: int, academic_year: str, selected_term: str | None) -> tuple[dict, dict]:
+    latest_rows = {}
+    summary = {}
+    for subject in ['reading', 'maths', 'spag']:
+        query = SubjectResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year, subject=subject)
+        if selected_term:
+            query = query.filter(SubjectResult.term == selected_term)
+        row = _latest_term_row(query)
+        latest_rows[subject] = row
+        summary[subject] = _selected_subject_payload(row)
+
+    writing_query = WritingResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year)
+    if selected_term:
+        writing_query = writing_query.filter(WritingResult.term == selected_term)
+    writing_row = _latest_term_row(writing_query)
+    latest_rows['writing'] = writing_row
+    summary['writing'] = _selected_writing_payload(writing_row)
+
+    available_bands = [payload.get('band') for key, payload in summary.items() if key != 'overall' and payload.get('band')]
+    if not available_bands:
+        overall_label = None
+    elif any(_is_working_towards(band) for band in available_bands):
+        overall_label = 'Needs support'
+    else:
+        overall_label = 'On track'
+    summary['overall'] = {
+        'band': overall_label,
+        'display': overall_label or '—',
+        'band_theme': 'danger' if overall_label == 'Needs support' else ('success' if overall_label else 'secondary'),
+        'rank': 1 if overall_label == 'Needs support' else (2 if overall_label else None),
+    }
+    return summary, latest_rows
+
+
+def _selected_subject_payload(row: SubjectResult | None) -> dict:
+    if row is None:
+        return {'band': None, 'display': '—', 'band_theme': 'secondary'}
+    percent = f'{row.combined_percent:.1f}%' if row.combined_percent is not None else '—'
+    band = row.band_label or '—'
+    term = (row.term or '').title()
+    return {
+        'band': row.band_label,
+        'display': f'{percent} — {band} ({term})',
+        'band_theme': BAND_THEME.get(row.band_label or '', 'secondary'),
+        'rank': BAND_RANK.get(row.band_label) if row.band_label else None,
+        'current_percent': row.combined_percent,
+    }
+
+
+def _selected_writing_payload(row: WritingResult | None) -> dict:
+    if row is None:
+        return {'band': None, 'display': '—', 'band_theme': 'secondary'}
+    term = (row.term or '').title()
+    return {
+        'band': row.band,
+        'display': f'{row.band} ({term})',
+        'band_theme': BAND_THEME.get(row.band or '', 'secondary'),
+        'rank': BAND_RANK.get(row.band) if row.band else None,
+    }
+
+
+def _is_working_towards(band: str | None) -> bool:
+    return (band or '').strip().lower() in {'working towards', 'working toward', 'wt', 'below', 'below expected'}
+
+
+def _filter_latest_foundation_rows(pupil_id: int, academic_year: str, selected_term: str | None) -> list[FoundationResult]:
+    query = FoundationResult.query.filter_by(pupil_id=pupil_id, academic_year=academic_year)
+    rows = query.all()
+    if not rows:
+        return []
+    if selected_term:
+        rows = [row for row in rows if (row.half_term or '').lower().startswith(f'{selected_term}_')]
+        if not rows:
+            return []
+    latest_half_term = max((row.half_term for row in rows), key=_half_term_rank)
+    return [row for row in rows if row.half_term == latest_half_term]
+
+
+def _log_profile_assessment_debug(pupil_id: int, selected_year_id: int | str | None, selected_term: str | None, latest_rows: dict, foundation_count: int) -> None:
+    current_app.logger.debug(
+        'pupil summary assessment lookup pupil_id=%s selected_year_id=%s selected_term=%s maths row found=%s reading row found=%s spag row found=%s writing row found=%s foundation rows count=%s',
+        pupil_id,
+        selected_year_id,
+        selected_term or 'latest',
+        bool(latest_rows.get('maths')),
+        bool(latest_rows.get('reading')),
+        bool(latest_rows.get('spag')),
+        bool(latest_rows.get('writing')),
+        foundation_count,
+    )
+
+
+@pupils_bp.route('/api/pupil-profile/quick-save', methods=['POST'])
+@login_required
+@teacher_or_admin_required
+def quick_save_profile():
+    data = request.get_json(silent=True) or {}
+    try:
+        pupil_id = int(data.get('record_id') or 0)
+    except (TypeError, ValueError):
+        return {'ok': False}, 400
+    pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
+    if not _can_view_pupil(pupil):
+        return {'ok': False}, 403
+    field = (data.get('field') or '').strip()
+    allowed = {'strengths_notes', 'next_steps_notes', 'general_notes', 'pupil_premium', 'laps', 'service_child', 'send'}
+    if field not in allowed:
+        return {'ok': False}, 400
+    if field in {'pupil_premium', 'laps', 'service_child', 'send'} and not current_user.can_manage_school:
+        return {'ok': False}, 403
+    value = data.get('value')
+    setattr(pupil, field, bool(value) if field in {'pupil_premium','laps','service_child','send'} else ((value or '').strip() or None))
+    db.session.add(pupil); db.session.commit()
+    return {'ok': True}
 @pupils_bp.route('/<int:pupil_id>/archive', methods=['POST'])
 @login_required
 @teacher_or_admin_required
 def archive(pupil_id: int):
-    pupil = Pupil.query.join(Pupil.school_class).filter(Pupil.id == pupil_id).first_or_404()
+    if is_demo_user():
+        flash('This action is disabled in Demo Mode.', 'warning')
+        return redirect(url_for('pupils.profile', pupil_id=pupil_id))
+    pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
     if not _can_archive_pupil(pupil):
         abort(403)
-    if not pupil.is_active:
+    if pupil.is_archived:
         flash(f'{pupil.full_name} is already archived.', 'info')
         return _redirect_to_pupil_source(pupil.id)
 
+    archive_reason = request.form.get('archive_reason', '').strip() or 'Archived by admin'
+    now = datetime.now(timezone.utc)
     pupil.is_active = False
+    pupil.is_archived = True
+    pupil.archived_at = now
+    pupil.archived_by_user_id = current_user.id
+    pupil.archive_reason = archive_reason
     db.session.add(pupil)
+    log_audit_event(
+        action='pupil_archived',
+        target_type='pupil',
+        target_id=pupil.id,
+        school_id=pupil.school_id,
+        details=f'reason={archive_reason}',
+    )
     db.session.commit()
     flash(f'{pupil.full_name} has been archived.', 'success')
     return _redirect_to_pupil_source(pupil.id)
@@ -200,15 +357,29 @@ def archive(pupil_id: int):
 @login_required
 @teacher_or_admin_required
 def restore(pupil_id: int):
-    pupil = Pupil.query.join(Pupil.school_class).filter(Pupil.id == pupil_id).first_or_404()
-    if not current_user.is_admin:
+    if is_demo_user():
+        flash('This action is disabled in Demo Mode.', 'warning')
+        return redirect(url_for('pupils.profile', pupil_id=pupil_id))
+    pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
+    if not current_user.can_manage_school:
         abort(403)
-    if pupil.is_active:
+    if not pupil.is_archived:
         flash(f'{pupil.full_name} is already active.', 'info')
         return _redirect_to_pupil_source(pupil.id)
 
     pupil.is_active = True
+    pupil.is_archived = False
+    pupil.archived_at = None
+    pupil.archived_by_user_id = None
+    pupil.archive_reason = None
     db.session.add(pupil)
+    log_audit_event(
+        action='pupil_restored',
+        target_type='pupil',
+        target_id=pupil.id,
+        school_id=pupil.school_id,
+    )
     db.session.commit()
     flash(f'{pupil.full_name} has been restored to active lists.', 'success')
     return _redirect_to_pupil_source(pupil.id)
@@ -223,8 +394,8 @@ def _build_pupil_filters(args) -> dict:
         'pp': (args.get('pp') or 'all').strip() or 'all',
         'laps': (args.get('laps') or 'all').strip() or 'all',
         'service_child': (args.get('service_child') or 'all').strip() or 'all',
-        'send_flag': (args.get('send_flag') or 'all').strip() or 'all',
-        'status': (args.get('status') or 'all').strip() or 'all',
+        'send': (args.get('send') or 'all').strip() or 'all',
+        'status': (args.get('status') or 'current').strip() or 'current',
     }
 
 
@@ -242,12 +413,13 @@ def _apply_common_filters(query, filters: dict):
         ('pp', Pupil.pupil_premium),
         ('laps', Pupil.laps),
         ('service_child', Pupil.service_child),
+        ('send', Pupil.send),
     ):
         value = filters.get(key)
         if value == 'yes':
             query = query.filter(field.is_(True))
         elif value == 'no':
-            query = query.filter(field.is_(False))
+            query = query.filter(or_(field.is_(False), field.is_(None)))
 
     search = filters.get('search', '')
     if search:
@@ -266,26 +438,23 @@ def _apply_common_filters(query, filters: dict):
 def _apply_status_filter(query, status: str):
     normalized = (status or 'all').lower()
     if normalized in {'current', 'active'}:
-        return query.filter(Pupil.is_active.is_(True))
+        return query.filter(Pupil.is_archived.is_(False))
     if normalized == 'archived':
-        return query.filter(Pupil.is_active.is_(False))
+        return query.filter(Pupil.is_archived.is_(True))
     if normalized == 'previous':
-        return query.filter(Pupil.is_active.is_(True), Pupil.class_history.any())
+        return query.filter(Pupil.is_archived.is_(False), Pupil.class_history.any())
     return query
 
 
 def _can_view_pupil(pupil: Pupil) -> bool:
-    if current_user.is_admin:
+    if current_user.can_manage_school:
         return True
-    teacher_class_ids = {school_class.id for school_class in current_user.classes.filter_by(is_active=True).all()}
-    return pupil.is_active and pupil.class_id in teacher_class_ids
+    teacher_class_ids = {school_class.id for school_class in demo_filter_classes(current_user.classes.filter_by(is_active=True)).all()}
+    return not pupil.is_archived and pupil.class_id in teacher_class_ids
 
 
 def _can_archive_pupil(pupil: Pupil) -> bool:
-    if current_user.is_admin:
-        return True
-    teacher_class_ids = {school_class.id for school_class in current_user.classes.filter_by(is_active=True).all()}
-    return pupil.class_id in teacher_class_ids
+    return current_user.can_manage_school
 
 
 def _redirect_to_pupil_source(pupil_id: int):

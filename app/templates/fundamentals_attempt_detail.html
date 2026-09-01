@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}Maths Fundamentals Attempt{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h1>{{ attempt.pupil.full_name }}</h1>
+    <p class="text-muted mb-1">{{ attempt.session.strand.name }} · {{ attempt.session.school_class.name }} · Session {{ attempt.session.id }}</p>
+    <p class="mb-0">Secure level: <strong>{{ attempt.secure_level if attempt.secure_level else '—' }}</strong> · Intervention level: <strong>{{ attempt.intervention_level if attempt.intervention_level else '—' }}</strong></p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('fundamentals.session_detail', session_id=attempt.session_id) }}">Back to session</a>
+</div>
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h2 class="h4">Responses</h2>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead><tr><th>Level</th><th>Question</th><th>Pupil answer</th><th>Correct answer</th><th>Result</th></tr></thead>
+        <tbody>
+          {% for row in response_rows %}
+            {% set response = row.response %}
+            <tr>
+              <td>{{ response.level_number }}</td>
+              <td>{{ row.question_text }}</td>
+              <td>{{ response.pupil_answer or '—' }}</td>
+              <td>{{ response.question.answer }}</td>
+              <td>{% if response.is_correct %}<span class="badge text-bg-success">Correct</span>{% else %}<span class="badge text-bg-danger">Incorrect</span>{% endif %}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="text-muted">No responses yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
