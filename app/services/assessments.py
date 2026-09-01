@@ -870,7 +870,7 @@ def get_most_recent_term_with_data(
     subgroup: str = 'all',
     filters: dict | None = None,
 ) -> str | None:
-    school_class = SchoolClass.query.get(class_id)
+    school_class = school_scoped_query(SchoolClass, SchoolClass.query).filter_by(id=class_id).first()
     if school_class is None:
         return None
     pupil_ids = get_class_pupil_ids(school_class, academic_year, filters, subgroup)
@@ -924,7 +924,7 @@ def compute_class_subject_summary(
     filters: dict | None = None,
     term: str | None = None,
 ) -> dict:
-    school_class = SchoolClass.query.get(class_id)
+    school_class = school_scoped_query(SchoolClass, SchoolClass.query).filter_by(id=class_id).first()
     if school_class is None:
         return _empty_subject_summary(subject)
 

@@ -1,11 +1,22 @@
 """Shared utility helpers and access decorators."""
 
 from functools import wraps
+from urllib.parse import urlparse
 
 from flask import abort, current_app, flash, g, redirect, request, url_for
 from flask_login import current_user
 
 from app.models import AuditLog, Pupil, SchoolClass
+
+
+def safe_redirect_target(target: str | None, fallback: str) -> str:
+    """Return a local redirect target, rejecting external URLs."""
+    candidate = (target or '').strip()
+    if candidate:
+        parsed = urlparse(candidate)
+        if not parsed.scheme and not parsed.netloc:
+            return candidate
+    return fallback
 
 
 def role_required(*roles):

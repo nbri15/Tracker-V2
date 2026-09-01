@@ -1,4 +1,26 @@
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const method = (init.method || 'GET').toUpperCase();
+  const url = new URL(typeof input === 'string' ? input : input.url, window.location.href);
+  if (url.origin === window.location.origin && !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+    const headers = new Headers(init.headers || {});
+    headers.set('X-CSRFToken', csrfToken);
+    init = { ...init, headers };
+  }
+  return nativeFetch(input, init);
+};
+
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('form').forEach((form) => {
+    if ((form.method || 'get').toLowerCase() !== 'post' || form.querySelector('input[name="csrf_token"]')) return;
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'csrf_token';
+    input.value = csrfToken;
+    form.appendChild(input);
+  });
+
   const pdfUrlForButton = (button) => {
     if (button.dataset.pdfUrl) return button.dataset.pdfUrl;
     const url = new URL(window.location.href);

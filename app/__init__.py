@@ -8,7 +8,7 @@ from flask_login import current_user
 from sqlalchemy import inspect, text
 
 from config import config_by_name
-from .extensions import db, login_manager, migrate
+from .extensions import csrf, db, login_manager, migrate
 from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label, short_band_label
 from .services.gender import normalize_gender
 from .utils import current_school_id, is_demo_user
@@ -47,6 +47,7 @@ def register_extensions(app: Flask) -> None:
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
+    csrf.init_app(app)
 
 
 def register_blueprints(app: Flask) -> None:
