@@ -99,6 +99,22 @@ def register_error_handlers(app: Flask) -> None:
 def register_request_guards(app: Flask) -> None:
     """Apply application-wide access guards."""
 
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy', 'same-origin')
+        response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; "
+            "font-src 'self' https://cdn.jsdelivr.net; connect-src 'self'; frame-ancestors 'none';",
+        )
+        if app.config.get('ENV') == 'production':
+            response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        return response
+
     @app.teardown_appcontext
     def shutdown_session(exception=None):
         db.session.remove()
