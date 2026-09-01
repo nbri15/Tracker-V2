@@ -58,7 +58,7 @@
             <label class="form-check-label" for="confirm-promotion">I confirm that I want to promote pupils from {{ academic_year }} into {{ next_year }}.</label>
           </div>
           <div class="form-actions promotion-actions">
-            <button class="btn btn-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote active pupils</button>
+            <button class="btn btn-primary compact-button" {% if demo_mode %}disabled title="This action is disabled in Demo Mode."{% endif %}>Promote pupils and change to {{ next_year }}</button>
           </div>
         </form>
         <div class="compact-toolbar promotion-secondary-actions">

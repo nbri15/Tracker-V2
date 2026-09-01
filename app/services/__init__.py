@@ -42,6 +42,7 @@ from .assessments import (
     get_school_working_academic_year,
     get_selected_academic_year,
     get_current_term,
+    is_academic_year_rollover_due,
     get_next_sort_direction,
     get_latest_previous_assessment,
     get_gender_filter_options,

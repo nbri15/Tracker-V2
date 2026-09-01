@@ -18,6 +18,8 @@ from app.services import (
     build_dashboard_summary,
     build_subject_overview_cards,
     calculate_progress,
+    get_current_academic_year,
+    get_school_working_academic_year,
     get_selected_current_academic_year,
     get_selected_academic_year,
     build_academic_year_options,
@@ -26,6 +28,7 @@ from app.services import (
     get_gender_filter_options,
     get_tracker_mode,
     get_tracker_mode_label,
+    is_academic_year_rollover_due,
     sort_class_rows,
 )
 from app.utils import (
@@ -132,8 +135,16 @@ def teacher_dashboard():
 def admin_dashboard():
     if current_user.is_executive_admin and current_school_id() is None:
         return redirect(url_for('executive.schools'))
-    selected_year = get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+    school_id = current_school_id()
+    working_year = get_school_working_academic_year(school_id)
+    has_explicit_year = bool(request.args.get('year') or request.args.get('academic_year'))
+    selected_year = (
+        get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+        if has_explicit_year
+        else working_year
+    )
     academic_year = selected_year.name
+    calendar_year = get_current_academic_year()
     term = (request.args.get("term") or "Summer").strip()
     if term not in ("Autumn", "Spring", "Summer", "All"):
         term = "Summer"
@@ -163,6 +174,9 @@ def admin_dashboard():
 
     context = {
         'academic_year': academic_year,
+        'working_academic_year': working_year.name,
+        'calendar_academic_year': calendar_year,
+        'rollover_required': is_academic_year_rollover_due(working_year.name, calendar_year),
         'selected_year': selected_year,
         'academic_year_options': build_academic_year_options(academic_year),
         'term': term,

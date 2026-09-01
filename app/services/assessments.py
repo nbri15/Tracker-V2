@@ -217,6 +217,15 @@ def get_current_academic_year(today: datetime | None = None) -> str:
     return f'{start_year}/{str(start_year + 1)[-2:]}'
 
 
+def is_academic_year_rollover_due(working_year: str, calendar_year: str | None = None) -> bool:
+    """Return true only when the calendar has advanced beyond the working year."""
+    calendar_year = calendar_year or get_current_academic_year()
+    try:
+        return int(calendar_year.split('/')[0]) > int(working_year.split('/')[0])
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 def get_current_term(today: datetime | None = None) -> str:
     today = today or datetime.now(timezone.utc)
     if today.month >= 9:

@@ -2,7 +2,13 @@ from flask import Flask, session
 
 from app.extensions import db
 from app.models import AcademicYear, School
-from app.services import get_school_working_academic_year, promote_pupils_to_next_year
+from app.services import get_school_working_academic_year, is_academic_year_rollover_due, promote_pupils_to_next_year
+
+
+def test_rollover_prompt_only_appears_after_calendar_advances():
+    assert is_academic_year_rollover_due('2025/26', '2026/27') is True
+    assert is_academic_year_rollover_due('2025/26', '2025/26') is False
+    assert is_academic_year_rollover_due('2026/27', '2025/26') is False
 
 
 def _app():
