@@ -40,6 +40,7 @@ from app.utils import (
     school_scoped_query,
     get_year_group_class_for_user,
     teacher_required,
+    safe_redirect_target,
 )
 
 from . import dashboards_bp
@@ -67,7 +68,7 @@ def set_academic_year():
     else:
         session['selected_academic_year_id'] = year.id
         flash(f'Academic year set to {year.name}', 'success')
-    return redirect(request.referrer or url_for('dashboards.index'))
+    return redirect(safe_redirect_target(request.referrer, url_for('dashboards.index')))
 
 @dashboards_bp.route('/dashboard')
 @login_required

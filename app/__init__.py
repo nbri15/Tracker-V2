@@ -8,7 +8,7 @@ from flask_login import current_user
 from sqlalchemy import inspect, text
 
 from config import config_by_name
-from .extensions import db, login_manager, migrate
+from .extensions import csrf, db, login_manager, migrate
 from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label, short_band_label
 from .services.gender import normalize_gender
 from .utils import current_school_id, is_demo_user
@@ -47,6 +47,7 @@ def register_extensions(app: Flask) -> None:
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
+    csrf.init_app(app)
 
 
 def register_blueprints(app: Flask) -> None:
@@ -97,6 +98,22 @@ def register_error_handlers(app: Flask) -> None:
 
 def register_request_guards(app: Flask) -> None:
     """Apply application-wide access guards."""
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy', 'same-origin')
+        response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; "
+            "font-src 'self' https://cdn.jsdelivr.net; connect-src 'self'; frame-ancestors 'none';",
+        )
+        if app.config.get('ENV') == 'production':
+            response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        return response
 
     @app.teardown_appcontext
     def shutdown_session(exception=None):

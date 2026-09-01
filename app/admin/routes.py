@@ -50,7 +50,7 @@ def _render_table_pdf(title: str, headers: list, rows: list, filters: dict | Non
     except Exception:
         current_app.logger.exception('PDF generation failed endpoint=%s template=%s rows=%s', request.endpoint, template_name, len(rows))
         flash('PDF could not be generated. Check server logs.', 'danger')
-        return redirect(request.referrer or url_for('admin.classes'))
+        return redirect(safe_redirect_target(request.referrer, url_for('admin.classes')))
 
     current_app.logger.info(
         'PDF export generated endpoint=%s template=%s rows=%s bytes=%s',
@@ -193,7 +193,7 @@ from app.services import (
     ensure_times_tables_columns,
     FoundationValidationError,
 )
-from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, school_scoped_query
+from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, safe_redirect_target, school_scoped_query
 from app.services.pupil_quick_add import create_quick_add_pupil
 
 
@@ -643,7 +643,16 @@ def _class_linked_data_counts(school_class: SchoolClass) -> dict[str, int]:
 
 def _pupil_action_redirect():
     next_url = request.form.get('next', '').strip()
-    return redirect(next_url or url_for('admin.pupils'))
+    return redirect(safe_redirect_target(next_url, url_for('admin.pupils')))
+
+
+def _resolve_class_teacher(teacher_id_raw: str, school_id: int) -> int | None:
+    if not teacher_id_raw:
+        return None
+    teacher = User.query.filter_by(id=int(teacher_id_raw), school_id=school_id, role='teacher', is_active=True).first()
+    if teacher is None or teacher.is_demo != is_demo_user():
+        raise ValueError('Choose an active teacher from this school.')
+    return teacher.id
 
 
 def _school_scope_filter(model):
@@ -689,7 +698,7 @@ def classes():
                 if existing:
                     raise ValueError('A class with that name already exists in your school.')
                 school_class = SchoolClass(name=name, year_group=year_group, school_id=effective_school_id)
-                school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
+                school_class.teacher_id = _resolve_class_teacher(teacher_id_raw, effective_school_id)
                 school_class.is_active = True
                 school_class.is_demo = current_user.is_demo
                 db.session.add(school_class)
@@ -711,7 +720,7 @@ def classes():
                     raise ValueError('A class with that name already exists in this school.')
                 school_class.name = new_name
                 school_class.year_group = new_year_group
-                school_class.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
+                school_class.teacher_id = _resolve_class_teacher(teacher_id_raw, effective_school_id)
                 school_class.is_active = request.form.get(f'is_active_{school_class.id}') == 'on'
                 db.session.add(school_class)
                 flash(f'Updated class {school_class.name}.', 'success')
