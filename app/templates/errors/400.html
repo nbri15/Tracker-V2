@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Request could not be completed{% endblock %}
+{% set page_heading = 'Request could not be completed' %}
+{% block content %}
+<div class="card shadow-sm"><div class="card-body py-5 text-center">
+  <h2 class="h4">That request was invalid or has expired.</h2>
+  <p class="text-muted">Refresh the page and try again. No changes were saved.</p>
+  <a class="btn btn-primary" href="{{ url_for('dashboards.index') }}">Return to dashboard</a>
+</div></div>
+{% endblock %}
