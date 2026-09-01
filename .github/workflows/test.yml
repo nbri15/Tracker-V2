@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: development
+      DATABASE_URL: sqlite:////tmp/class_compass_test.db
+      SECRET_KEY: ci-test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+      - run: python -m compileall -q app tests
+      - name: Application smoke test
+        run: python -c "from app import create_app; app=create_app('development'); assert app.url_map"

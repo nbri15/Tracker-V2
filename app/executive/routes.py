@@ -8,7 +8,8 @@ from datetime import datetime
 
 from flask import Response, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import text
+from sqlalchemy import or_, text
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import (
@@ -16,6 +17,9 @@ from app.models import (
     AssessmentSetting,
     AuditLog,
     FoundationResult,
+    FundamentalPupilAttempt,
+    FundamentalResponse,
+    FundamentalSession,
     GapQuestion,
     GapTemplate,
     GapScore,
@@ -24,6 +28,8 @@ from app.models import (
     Pupil,
     PupilClassHistory,
     ReceptionTrackerEntry,
+    SimpleSatsExamTab,
+    SimpleSatsSetting,
     SatsColumnResult,
     SatsColumnSetting,
     SatsExamTab,
@@ -137,6 +143,8 @@ def _can_delete_user(user: User, actor: User) -> tuple[bool, str | None]:
 
 
 def _school_data_counts(school_id: int) -> dict[str, int]:
+    class_ids = SchoolClass.query.with_entities(SchoolClass.id).filter_by(school_id=school_id)
+    session_ids = FundamentalSession.query.with_entities(FundamentalSession.id).filter(FundamentalSession.class_id.in_(class_ids))
     return {
         'users': User.query.filter_by(school_id=school_id).count(),
         'pupils': Pupil.query.filter_by(school_id=school_id).count(),
@@ -152,6 +160,10 @@ def _school_data_counts(school_id: int) -> dict[str, int]:
         'sats_results': SatsResult.query.filter_by(school_id=school_id).count(),
         'sats_writing_results': SatsWritingResult.query.filter_by(school_id=school_id).count(),
         'sats_column_results': SatsColumnResult.query.filter_by(school_id=school_id).count(),
+        'simple_sats_tabs': SimpleSatsExamTab.query.filter_by(school_id=school_id).count(),
+        'simple_sats_settings': SimpleSatsSetting.query.filter_by(school_id=school_id).count(),
+        'fundamentals_sessions': FundamentalSession.query.filter(FundamentalSession.class_id.in_(class_ids)).count(),
+        'fundamentals_attempts': FundamentalPupilAttempt.query.filter(FundamentalPupilAttempt.session_id.in_(session_ids)).count(),
     }
 
 
@@ -164,7 +176,12 @@ def _can_delete_school(school: School) -> tuple[bool, str | None]:
 def _permanently_delete_school_data(school: School) -> None:
     school_id = school.id
 
-    User.query.filter(User.school_id == school_id, User.role != 'executive_admin').delete(synchronize_session=False)
+    class_ids = SchoolClass.query.with_entities(SchoolClass.id).filter_by(school_id=school_id)
+    session_ids = FundamentalSession.query.with_entities(FundamentalSession.id).filter(FundamentalSession.class_id.in_(class_ids))
+    attempt_ids = FundamentalPupilAttempt.query.with_entities(FundamentalPupilAttempt.id).filter(FundamentalPupilAttempt.session_id.in_(session_ids))
+    FundamentalResponse.query.filter(FundamentalResponse.attempt_id.in_(attempt_ids)).delete(synchronize_session=False)
+    FundamentalPupilAttempt.query.filter(FundamentalPupilAttempt.session_id.in_(session_ids)).delete(synchronize_session=False)
+    FundamentalSession.query.filter(FundamentalSession.class_id.in_(class_ids)).delete(synchronize_session=False)
 
     SubjectResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     WritingResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
@@ -176,6 +193,8 @@ def _permanently_delete_school_data(school: School) -> None:
     SatsColumnResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     SatsResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     SatsWritingResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SimpleSatsExamTab.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    SimpleSatsSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     GapScore.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     PupilClassHistory.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     Pupil.query.filter_by(school_id=school_id).delete(synchronize_session=False)
@@ -190,6 +209,26 @@ def _permanently_delete_school_data(school: School) -> None:
     TrackerModeSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     SchoolClass.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     AuditLog.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    school.archived_by_user_id = None
+    db.session.flush()
+    User.query.filter(User.school_id == school_id, User.role != 'executive_admin').delete(synchronize_session=False)
+
+
+def _validate_school_payload(name: str, slug: str, *, exclude_id: int | None = None) -> tuple[str, str]:
+    name = (name or '').strip()
+    slug = (slug or '').strip().lower()
+    if not name:
+        raise ValueError('School name is required.')
+    if not slug:
+        raise ValueError('School code is required.')
+    if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', slug):
+        raise ValueError('School code may contain lowercase letters, numbers and single hyphens only.')
+    duplicate = School.query.filter(or_(School.name.ilike(name), School.slug == slug))
+    if exclude_id is not None:
+        duplicate = duplicate.filter(School.id != exclude_id)
+    if duplicate.first():
+        raise ValueError('A school with that name or code already exists.')
+    return name, slug
 
 
 def _build_zip_export(table_rows: dict[str, list[dict]], scope: str) -> tuple[bytes, str]:
@@ -220,26 +259,28 @@ def _build_combined_csv_export(table_rows: dict[str, list[dict]], scope: str) ->
 def schools():
     if request.method == 'POST':
         action = request.form.get('action', 'create')
-        if action == 'create':
-            school = School(
-                name=request.form.get('name', '').strip(),
-                slug=request.form.get('slug', '').strip().lower(),
-                is_active=request.form.get('is_active') == 'on',
-                is_demo=request.form.get('is_demo') == 'on',
-            )
-            db.session.add(school)
-            db.session.commit()
-            initialise_school_data(school.id)
-            flash(f'Created school {school.name}.', 'success')
-        elif action == 'update':
-            school = School.query.get_or_404(int(request.form.get('school_id', '0')))
-            school.name = request.form.get(f'name_{school.id}', school.name).strip()
-            school.slug = request.form.get(f'slug_{school.id}', school.slug).strip().lower()
-            school.is_active = request.form.get(f'is_active_{school.id}') == 'on'
-            school.is_demo = request.form.get(f'is_demo_{school.id}') == 'on'
-            db.session.add(school)
-            db.session.commit()
-            flash(f'Updated {school.name}.', 'success')
+        try:
+            if action == 'create':
+                name, slug = _validate_school_payload(request.form.get('name', ''), request.form.get('slug', ''))
+                school = School(name=name, slug=slug, is_active=request.form.get('is_active') == 'on', is_demo=request.form.get('is_demo') == 'on')
+                db.session.add(school)
+                db.session.commit()
+                initialise_school_data(school.id)
+                flash(f'Created school {school.name}.', 'success')
+            elif action == 'update':
+                school = School.query.get_or_404(int(request.form.get('school_id', '0')))
+                name, slug = _validate_school_payload(request.form.get(f'name_{school.id}', school.name), request.form.get(f'slug_{school.id}', school.slug), exclude_id=school.id)
+                school.name = name
+                school.slug = slug
+                school.is_active = request.form.get(f'is_active_{school.id}') == 'on'
+                school.is_demo = request.form.get(f'is_demo_{school.id}') == 'on'
+                db.session.add(school)
+                db.session.commit()
+                flash(f'Updated {school.name}.', 'success')
+        except (ValueError, IntegrityError) as exc:
+            db.session.rollback()
+            message = str(exc) if isinstance(exc, ValueError) else 'A school with that name or code already exists.'
+            flash(f'School changes could not be saved: {message}', 'danger')
         return redirect(url_for('executive.schools'))
 
     show_archived = request.args.get('show_archived') == '1'
@@ -419,7 +460,7 @@ def delete_school(school_id: int):
     school_id_value = school.id
     _permanently_delete_school_data(school)
     db.session.delete(school)
-    log_audit_event('school_permanently_deleted', 'school', school_id_value, school_id=school_id_value, details=f'name={school_name}')
+    log_audit_event('school_permanently_deleted', 'school', school_id_value, school_id=None, details=f'name={school_name}')
     db.session.commit()
     flash(f'{school_name} has been deleted.', 'success')
     return redirect(url_for('executive.archived_schools'))

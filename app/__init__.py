@@ -94,6 +94,16 @@ def register_error_handlers(app: Flask) -> None:
     def not_found(error):
         return render_template('errors/404.html'), 404
 
+    @app.errorhandler(400)
+    def bad_request(error):
+        return render_template('errors/400.html'), 400
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        db.session.rollback()
+        app.logger.exception('Unhandled application error', exc_info=error)
+        return render_template('errors/500.html'), 500
+
 
 def register_request_guards(app: Flask) -> None:
     """Apply application-wide access guards."""
