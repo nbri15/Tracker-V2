@@ -2,6 +2,12 @@
 {% block title %}Promotion & History{% endblock %}
 {% set page_heading = 'Promotion and academic-year history' %}
 {% block content %}
+{% if request.args.get('rollover_prompt') == '1' %}
+<div class="alert alert-warning" role="alert">
+  <strong>Academic-year rollover needs your review.</strong>
+  Your school is still working in {{ academic_year }}. Check the class destinations below, then confirm promotion into {{ next_year }}. Nothing changes until you confirm.
+</div>
+{% endif %}
 <div class="row g-4 mb-4">
   <div class="col-lg-7">
     <div class="card shadow-sm h-100">

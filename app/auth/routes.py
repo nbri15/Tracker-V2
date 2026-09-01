@@ -7,10 +7,26 @@ from flask_login import current_user, login_required, login_user, logout_user
 
 from app.extensions import db
 from app.models import School, User
+from app.services import (
+    get_current_academic_year,
+    get_school_working_academic_year,
+    is_academic_year_rollover_due,
+)
 from app.utils import is_demo_mode_enabled
 
 from . import auth_bp
 from .forms import ChangePasswordForm, LoginForm
+
+
+def _login_rollover_years(user: User) -> tuple[str, str] | None:
+    """Return working/calendar years when a school admin must review rollover."""
+    if not user.is_school_admin or not user.school_id:
+        return None
+    working_year = get_school_working_academic_year(user.school_id).name
+    calendar_year = get_current_academic_year()
+    if is_academic_year_rollover_due(working_year, calendar_year):
+        return working_year, calendar_year
+    return None
 
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
@@ -42,6 +58,15 @@ def login():
             if user.require_password_change:
                 flash('Please set a new password before continuing.', 'warning')
                 return redirect(url_for('auth.change_password'))
+            rollover_years = _login_rollover_years(user)
+            if rollover_years:
+                working_year, calendar_year = rollover_years
+                flash(
+                    f'The new academic year is {calendar_year}. Review pupil promotion '
+                    f'before changing your school from {working_year}.',
+                    'warning',
+                )
+                return redirect(url_for('admin.promotion', rollover_prompt='1'))
             flash('Welcome back.', 'success')
             next_page = request.args.get('next')
             if next_page and urlparse(next_page).netloc == '':

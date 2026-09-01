@@ -280,6 +280,10 @@ def get_selected_academic_year(raw_year_id: str | None = None, raw_academic_year
             except (TypeError, ValueError):
                 selected = None
 
+    if selected is None and has_request_context():
+        school_id = current_school_id()
+        if school_id is not None:
+            selected = get_school_working_academic_year(school_id)
     if selected is None:
         selected = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
     if selected is None:
@@ -295,7 +299,12 @@ def get_selected_academic_year(raw_year_id: str | None = None, raw_academic_year
 
 
 def get_selected_current_academic_year() -> str:
-    """Return the globally selected current academic year, falling back to date-derived value."""
+    """Return the request school's working year, with a legacy global fallback."""
+
+    if has_request_context():
+        school_id = current_school_id()
+        if school_id is not None:
+            return get_school_working_academic_year(school_id).name
 
     current = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
     return current.name if current else get_current_academic_year()
