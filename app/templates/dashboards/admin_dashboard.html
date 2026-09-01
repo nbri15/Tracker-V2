@@ -24,7 +24,7 @@
 {% if rollover_required %}
 <div class="alert alert-warning d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3" role="alert">
   <div>
-    <strong>It is September {{ calendar_academic_year.split('/')[0] }}.</strong>
+    <strong>The new academic year is {{ calendar_academic_year }}.</strong>
     Would you like to change the academic year from {{ working_academic_year }} to {{ calendar_academic_year }} and promote the previous year groups?
   </div>
   <a class="btn btn-warning text-nowrap" href="{{ url_for('admin.promotion') }}">Review and promote</a>

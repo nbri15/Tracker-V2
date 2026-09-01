@@ -88,7 +88,14 @@ def teacher_dashboard():
         term = "Summer"
 
     school_class = get_primary_class_for_user(current_user)
-    selected_year = get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+    school_id = current_school_id()
+    working_year = get_school_working_academic_year(school_id)
+    has_explicit_year = bool(request.args.get('year') or request.args.get('academic_year'))
+    selected_year = (
+        get_selected_academic_year(request.args.get('year'), request.args.get('academic_year'))
+        if has_explicit_year
+        else working_year
+    )
     academic_year = selected_year.name
     pupil_count = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).count() if school_class else 0
     summary_rows = get_dashboard_stats(school_class.id if school_class else None, academic_year)

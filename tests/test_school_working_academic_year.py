@@ -60,3 +60,10 @@ def test_promotion_advances_only_the_selected_schools_working_year():
         assert school_a.current_academic_year.name == '2026/27'
         assert school_b.current_academic_year.name == '2026/27'
         assert AcademicYear.query.filter_by(name='2025/26').one().is_current is True
+
+        try:
+            promote_pupils_to_next_year('2025/26', school_a.id)
+        except ValueError as exc:
+            assert 'already working in 2026/27' in str(exc)
+        else:
+            raise AssertionError('A second promotion from the old working year should be rejected.')

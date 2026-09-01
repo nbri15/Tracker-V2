@@ -2,7 +2,7 @@
 
 from urllib.parse import urlparse
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from app.extensions import db
@@ -37,6 +37,7 @@ def login():
         credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
         school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
         if credentials_valid and school_active_or_exec:
+            session.pop('selected_academic_year_id', None)
             login_user(user)
             if user.require_password_change:
                 flash('Please set a new password before continuing.', 'warning')
@@ -79,6 +80,7 @@ def demo_login():
         flash('Demo school is inactive.', 'danger')
         return redirect(url_for('auth.login'))
     login_user(user)
+    session.pop('selected_academic_year_id', None)
     flash(f'Signed in as {username}.', 'success')
     return redirect(url_for('dashboards.index'))
 
@@ -89,6 +91,7 @@ def logout():
     """Log out the current user."""
 
     logout_user()
+    session.pop('selected_academic_year_id', None)
     flash('You have been signed out.', 'info')
     return redirect(url_for('auth.login'))
 
