@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.extensions import db
 from app.models import AcademicYear, AssessmentSetting, Pupil, PupilClassHistory, School, SchoolClass, TrackerModeSetting, User
-from .assessments import get_current_academic_year, get_setting_defaults
+from .assessments import get_current_academic_year, get_setting_defaults, is_academic_year_rollover_due
 
 
 @dataclass(frozen=True)
@@ -92,12 +92,15 @@ def build_next_academic_year(academic_year: str) -> str:
 
 
 def ensure_default_logins_and_classes() -> dict:
-    ensure_academic_year(mark_current=True)
+    calendar_year = ensure_academic_year()
     default_school = School.query.filter_by(slug='barrow-school').first()
     if not default_school:
         default_school = School(name='Barrow School', slug='barrow-school', is_active=True, is_demo=False)
         db.session.add(default_school)
         db.session.flush()
+    if default_school.current_academic_year is None:
+        default_school.current_academic_year = calendar_year
+        db.session.add(default_school)
     admin = User.query.filter(
         User.school_id == default_school.id,
         User.username.ilike(DEFAULT_ADMIN.username),
@@ -219,15 +222,20 @@ def get_promotion_mapping_options(school_id: int) -> list[dict]:
 def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_mapping: dict[int, int | None] | None = None) -> dict:
     if school_id is None:
         raise ValueError('A school must be selected before promoting pupils.')
+    school = db.session.get(School, school_id)
+    if not school:
+        raise ValueError('The selected school could not be found.')
+    if school.current_academic_year and school.current_academic_year.name != source_year:
+        raise ValueError(f'This school is already working in {school.current_academic_year.name}. Refresh before promoting again.')
+    if not is_academic_year_rollover_due(source_year):
+        raise ValueError(f'{source_year} is not ready to roll over yet.')
+
     snapshot_count = snapshot_pupil_history(source_year, school_id)
     target_year = build_next_academic_year(source_year)
     if int(target_year.split('/')[0]) <= int(source_year.split('/')[0]):
         raise ValueError('The promotion destination must be after the working academic year.')
     ensure_academic_year(source_year, archived=True)
     target_record = ensure_academic_year(target_year)
-    school = db.session.get(School, school_id)
-    if not school:
-        raise ValueError('The selected school could not be found.')
     school.current_academic_year = target_record
     db.session.add(school)
 

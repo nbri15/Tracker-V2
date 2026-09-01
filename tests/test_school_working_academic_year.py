@@ -2,7 +2,13 @@ from flask import Flask, session
 
 from app.extensions import db
 from app.models import AcademicYear, School
-from app.services import get_school_working_academic_year, promote_pupils_to_next_year
+from app.services import get_school_working_academic_year, is_academic_year_rollover_due, promote_pupils_to_next_year
+
+
+def test_rollover_prompt_only_appears_after_calendar_advances():
+    assert is_academic_year_rollover_due('2025/26', '2026/27') is True
+    assert is_academic_year_rollover_due('2025/26', '2025/26') is False
+    assert is_academic_year_rollover_due('2026/27', '2025/26') is False
 
 
 def _app():
@@ -54,3 +60,10 @@ def test_promotion_advances_only_the_selected_schools_working_year():
         assert school_a.current_academic_year.name == '2026/27'
         assert school_b.current_academic_year.name == '2026/27'
         assert AcademicYear.query.filter_by(name='2025/26').one().is_current is True
+
+        try:
+            promote_pupils_to_next_year('2025/26', school_a.id)
+        except ValueError as exc:
+            assert 'already working in 2026/27' in str(exc)
+        else:
+            raise AssertionError('A second promotion from the old working year should be rejected.')
