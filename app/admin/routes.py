@@ -70,6 +70,8 @@ from app.models import (
     AcademicYear,
     AssessmentSetting,
     FoundationResult,
+    FundamentalPupilAttempt,
+    FundamentalResponse,
     GapScore,
     Intervention,
     PhonicsScore,
@@ -612,10 +614,20 @@ PUPIL_LINKED_MODELS = (
 
 
 def _linked_pupil_record_counts(pupil_id: int) -> dict[str, int]:
-    return {
+    counts = {
         label: model.query.filter_by(pupil_id=pupil_id).count()
         for label, model in PUPIL_LINKED_MODELS
     }
+    counts['Maths Fundamentals attempts'] = FundamentalPupilAttempt.query.filter_by(pupil_id=pupil_id).count()
+    return counts
+
+
+def _delete_pupil_linked_data(pupil: Pupil) -> None:
+    attempt_ids = FundamentalPupilAttempt.query.with_entities(FundamentalPupilAttempt.id).filter_by(pupil_id=pupil.id)
+    FundamentalResponse.query.filter(FundamentalResponse.attempt_id.in_(attempt_ids)).delete(synchronize_session=False)
+    FundamentalPupilAttempt.query.filter_by(pupil_id=pupil.id).delete(synchronize_session=False)
+    for _, model in PUPIL_LINKED_MODELS:
+        model.query.filter_by(pupil_id=pupil.id, school_id=pupil.school_id).delete(synchronize_session=False)
 
 
 def _linked_record_summary(linked_counts: dict[str, int]) -> str:
@@ -1470,8 +1482,7 @@ def permanent_delete_pupil(pupil_id: int):
         flash('Type DELETE to confirm permanent deletion.', 'danger')
         return redirect(url_for('admin.confirm_permanent_delete_pupil', pupil_id=pupil.id))
 
-    for _, model in PUPIL_LINKED_MODELS:
-        model.query.filter_by(pupil_id=pupil.id, school_id=pupil.school_id).delete(synchronize_session=False)
+    _delete_pupil_linked_data(pupil)
     pupil_name = pupil.full_name
     pupil_id_value = pupil.id
     school_id = pupil.school_id
