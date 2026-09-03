@@ -31,9 +31,9 @@ def _load_repair_migration():
     return module
 
 
-def _load_barrow_repair_migration():
-    migration_path = Path(__file__).parents[1] / 'migrations' / 'versions' / '20260903_01_rewind_barrow_working_year.py'
-    spec = importlib.util.spec_from_file_location('barrow_working_year_repair', migration_path)
+def _load_all_schools_repair_migration():
+    migration_path = Path(__file__).parents[1] / 'migrations' / 'versions' / '20260903_01_rewind_all_working_years.py'
+    spec = importlib.util.spec_from_file_location('all_schools_working_year_repair', migration_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -85,7 +85,7 @@ def test_repair_rewinds_only_schools_without_recorded_promotion():
     assert selected == {10: 1, 20: 2}
 
 
-def test_explicit_barrow_repair_ignores_misleading_history():
+def test_explicit_repair_rewinds_every_school_on_unconfirmed_year():
     engine = sa.create_engine('sqlite://')
     metadata = sa.MetaData()
     years = sa.Table(
@@ -109,13 +109,14 @@ def test_explicit_barrow_repair_ignores_misleading_history():
         connection.execute(schools.insert(), [
             {'id': 10, 'slug': 'barrow-school', 'current_academic_year_id': 2},
             {'id': 20, 'slug': 'another-school', 'current_academic_year_id': 2},
+            {'id': 30, 'slug': 'already-old-year', 'current_academic_year_id': 1},
         ])
 
-        repaired = _load_barrow_repair_migration().rewind_barrow_school(connection)
+        repaired = _load_all_schools_repair_migration().rewind_all_schools(connection)
         selected = dict(connection.execute(sa.select(schools.c.id, schools.c.current_academic_year_id)).all())
 
-    assert repaired == 1
-    assert selected == {10: 1, 20: 2}
+    assert repaired == 2
+    assert selected == {10: 1, 20: 1, 30: 1}
 
 
 def test_school_admin_login_redirects_to_rollover_review(monkeypatch):
