@@ -31,6 +31,14 @@ def _load_repair_migration():
     return module
 
 
+def _load_barrow_repair_migration():
+    migration_path = Path(__file__).parents[1] / 'migrations' / 'versions' / '20260903_01_rewind_barrow_working_year.py'
+    spec = importlib.util.spec_from_file_location('barrow_working_year_repair', migration_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_repair_rewinds_only_schools_without_recorded_promotion():
     engine = sa.create_engine('sqlite://')
     metadata = sa.MetaData()
@@ -71,6 +79,39 @@ def test_repair_rewinds_only_schools_without_recorded_promotion():
         ])
 
         repaired = _load_repair_migration().rewind_unpromoted_schools(connection)
+        selected = dict(connection.execute(sa.select(schools.c.id, schools.c.current_academic_year_id)).all())
+
+    assert repaired == 1
+    assert selected == {10: 1, 20: 2}
+
+
+def test_explicit_barrow_repair_ignores_misleading_history():
+    engine = sa.create_engine('sqlite://')
+    metadata = sa.MetaData()
+    years = sa.Table(
+        'academic_years', metadata,
+        sa.Column('id', sa.Integer, primary_key=True),
+        sa.Column('name', sa.String(20), unique=True, nullable=False),
+    )
+    schools = sa.Table(
+        'schools', metadata,
+        sa.Column('id', sa.Integer, primary_key=True),
+        sa.Column('slug', sa.String(140), unique=True, nullable=False),
+        sa.Column('current_academic_year_id', sa.Integer),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(years.insert(), [
+            {'id': 1, 'name': '2025/26'},
+            {'id': 2, 'name': '2026/27'},
+        ])
+        connection.execute(schools.insert(), [
+            {'id': 10, 'slug': 'barrow-school', 'current_academic_year_id': 2},
+            {'id': 20, 'slug': 'another-school', 'current_academic_year_id': 2},
+        ])
+
+        repaired = _load_barrow_repair_migration().rewind_barrow_school(connection)
         selected = dict(connection.execute(sa.select(schools.c.id, schools.c.current_academic_year_id)).all())
 
     assert repaired == 1
