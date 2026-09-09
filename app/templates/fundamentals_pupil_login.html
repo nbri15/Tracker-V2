@@ -11,20 +11,16 @@
   <div class="card mx-auto" style="max-width:42rem">
     <div class="card-body p-4">
       <h1>Maths Fundamentals</h1>
+      <p class="lead mb-1">{{ session.strand.name }}</p>
+      <p class="text-muted">{{ session.school_class.name }}</p>
       {% include 'partials/flash_messages.html' %}
-      {% if no_session %}<div class="alert alert-info">Your teacher has not started a Maths Fundamentals assessment yet.</div>{% endif %}
-      {% if not classes %}
-        <div class="alert alert-info">No assessment is currently available. Ask your teacher to start a Maths Fundamentals session.</div>
+      {% if not pupils %}
+        <div class="alert alert-info">No pupils are currently available for this assessment.</div>
       {% else %}
         <form method="post" id="fundamentals-join-form">
-          <label class="form-label" for="class_id">Class</label>
-          <select id="class_id" name="class_id" class="form-select form-select-lg mb-3" required>
-            <option value="">Choose your class</option>
-            {% for class in classes %}<option value="{{ class.id }}" {% if selected_class_id==class.id %}selected{% endif %}>{{ class.name }}</option>{% endfor %}
-          </select>
-
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="form-label" for="pupil_id">Name</label>
-          <select id="pupil_id" name="pupil_id" class="form-select form-select-lg mb-3" required {% if not pupils %}disabled{% endif %}>
+          <select id="pupil_id" name="pupil_id" class="form-select form-select-lg mb-3" required>
             <option value="">Choose your name</option>
             {% for pupil in pupils %}<option value="{{ pupil.id }}">{{ pupil.full_name }}</option>{% endfor %}
           </select>
@@ -34,31 +30,5 @@
     </div>
   </div>
 </main>
-{% if classes %}
-<script>
-  const classSelect = document.getElementById('class_id');
-  const pupilSelect = document.getElementById('pupil_id');
-
-  classSelect.addEventListener('change', async () => {
-    pupilSelect.innerHTML = '<option value="">Choose your name</option>';
-    pupilSelect.disabled = true;
-
-    const classId = classSelect.value;
-    if (!classId) return;
-
-    const response = await fetch(`/fundamentals/api/classes/${classId}/pupils`);
-    const data = response.ok ? await response.json() : {pupils: []};
-
-    for (const pupil of data.pupils || []) {
-      const option = document.createElement('option');
-      option.value = pupil.id;
-      option.textContent = pupil.name;
-      pupilSelect.appendChild(option);
-    }
-
-    pupilSelect.disabled = false;
-  });
-</script>
-{% endif %}
 </body>
 </html>

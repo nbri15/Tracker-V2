@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import random
 from datetime import datetime, timezone
 from io import BytesIO
 
 import qrcode
 
-from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import (
@@ -25,6 +28,148 @@ from app.models import (
 )
 from app.utils import current_school_id
 from . import fundamentals_bp
+
+
+SESSION_TOKEN_SALT = 'maths-fundamentals-session-v1'
+ATTEMPT_TOKEN_SALT = 'maths-fundamentals-attempt-v1'
+QUESTION_TOKEN_SALT = 'maths-fundamentals-question-v1'
+DEFAULT_TOKEN_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
+def _token_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(
+        current_app.config['SECRET_KEY'],
+        signer_kwargs={'digest_method': hashlib.sha256},
+    )
+
+
+def _token_max_age() -> int:
+    return int(current_app.config.get('FUNDAMENTALS_TOKEN_MAX_AGE', DEFAULT_TOKEN_MAX_AGE_SECONDS))
+
+
+def _load_signed_token(token: str, *, salt: str, kind: str) -> dict:
+    try:
+        payload = _token_serializer().loads(token, salt=salt, max_age=_token_max_age())
+    except (BadSignature, SignatureExpired):
+        abort(404)
+    if not isinstance(payload, dict) or payload.get('kind') != kind:
+        abort(404)
+    return payload
+
+
+def make_session_token(session: FundamentalSession) -> str:
+    """Return a signed public token bound to one exact assessment session."""
+    return _token_serializer().dumps(
+        {
+            'kind': 'session',
+            'session_id': session.id,
+            'class_id': session.class_id,
+            'school_id': session.school_class.school_id,
+            'strand_id': session.strand_id,
+        },
+        salt=SESSION_TOKEN_SALT,
+    )
+
+
+def make_attempt_token(attempt: FundamentalPupilAttempt) -> str:
+    """Return a signed public token bound to one pupil attempt and session."""
+    return _token_serializer().dumps(
+        {
+            'kind': 'attempt',
+            'attempt_id': attempt.id,
+            'session_id': attempt.session_id,
+            'pupil_id': attempt.pupil_id,
+            'class_id': attempt.session.class_id,
+            'school_id': attempt.session.school_class.school_id,
+            'strand_id': attempt.session.strand_id,
+        },
+        salt=ATTEMPT_TOKEN_SALT,
+    )
+
+
+def _make_question_token(attempt: FundamentalPupilAttempt, question: FundamentalQuestion) -> str:
+    return _token_serializer().dumps(
+        {
+            'kind': 'question',
+            'attempt_id': attempt.id,
+            'session_id': attempt.session_id,
+            'question_id': question.id,
+            'level_number': attempt.current_level,
+        },
+        salt=QUESTION_TOKEN_SALT,
+    )
+
+
+def _valid_public_session(session: FundamentalSession, *, require_active: bool = True) -> bool:
+    school_class = session.school_class
+    school = school_class.school if school_class else None
+    if not school_class or not school:
+        return False
+    if require_active and not session.is_active:
+        return False
+    return bool(school_class.is_active and school.is_active and not school.is_archived)
+
+
+def _session_from_token(session_token: str, *, require_active: bool = True) -> FundamentalSession:
+    payload = _load_signed_token(session_token, salt=SESSION_TOKEN_SALT, kind='session')
+    session = db.session.get(FundamentalSession, payload.get('session_id'))
+    if not session:
+        abort(404)
+    if payload.get('class_id') != session.class_id or payload.get('strand_id') != session.strand_id:
+        abort(404)
+    if payload.get('school_id') != session.school_class.school_id:
+        abort(404)
+    if not _valid_public_session(session, require_active=require_active):
+        abort(404)
+    return session
+
+
+def _validate_attempt_scope(attempt: FundamentalPupilAttempt, *, require_active: bool = True) -> None:
+    session = attempt.session
+    pupil = attempt.pupil
+    if not session or not pupil or not _valid_public_session(session, require_active=require_active):
+        abort(404)
+    if pupil.class_id != session.class_id:
+        abort(404)
+    if pupil.school_id != session.school_class.school_id:
+        abort(404)
+    if not pupil.is_active or pupil.is_archived or pupil.is_demo != session.school_class.is_demo:
+        abort(404)
+
+
+def _attempt_from_token(attempt_token: str, *, require_active: bool = True) -> FundamentalPupilAttempt:
+    payload = _load_signed_token(attempt_token, salt=ATTEMPT_TOKEN_SALT, kind='attempt')
+    attempt = db.session.get(FundamentalPupilAttempt, payload.get('attempt_id'))
+    if not attempt or payload.get('session_id') != attempt.session_id:
+        abort(404)
+    if (
+        payload.get('pupil_id') != attempt.pupil_id
+        or payload.get('class_id') != attempt.session.class_id
+        or payload.get('school_id') != attempt.session.school_class.school_id
+        or payload.get('strand_id') != attempt.session.strand_id
+    ):
+        abort(404)
+    _validate_attempt_scope(attempt, require_active=require_active)
+    return attempt
+
+
+def _question_from_token(question_token: str, attempt: FundamentalPupilAttempt) -> tuple[FundamentalQuestion, int]:
+    payload = _load_signed_token(question_token, salt=QUESTION_TOKEN_SALT, kind='question')
+    if payload.get('attempt_id') != attempt.id or payload.get('session_id') != attempt.session_id:
+        abort(404)
+    question = db.session.get(FundamentalQuestion, payload.get('question_id'))
+    token_level = payload.get('level_number')
+    if not question or question.strand_id != attempt.session.strand_id:
+        abort(404)
+    if question.level_number != token_level:
+        abort(404)
+    return question, token_level
+
+
+def _attempt_public_redirect(attempt: FundamentalPupilAttempt):
+    attempt_token = make_attempt_token(attempt)
+    endpoint = 'fundamentals.pupil_complete' if attempt.is_complete else 'fundamentals.pupil_question'
+    return redirect(url_for(endpoint, attempt_token=attempt_token))
 
 
 NUMBER_BONDS_INTERVENTIONS = (
@@ -178,42 +323,6 @@ def _active_classes_for_user():
     return query.order_by(SchoolClass.year_group, SchoolClass.name).all()
 
 
-def _classes_with_active_sessions():
-    active_class_ids = (
-        db.session.query(FundamentalSession.class_id)
-        .filter(FundamentalSession.is_active.is_(True))
-        .distinct()
-        .all()
-    )
-    active_class_ids = [row[0] for row in active_class_ids]
-    if not active_class_ids:
-        classes = []
-    else:
-        query = SchoolClass.query.filter(
-            SchoolClass.id.in_(active_class_ids),
-            SchoolClass.is_active.is_(True),
-        )
-        if hasattr(SchoolClass, 'is_archived'):
-            query = query.filter(SchoolClass.is_archived.is_(False))
-        if hasattr(SchoolClass, 'is_archive'):
-            query = query.filter(SchoolClass.is_archive.is_(False))
-        classes = query.order_by(SchoolClass.name.asc()).all()
-    current_app.logger.info(
-        "Fundamentals join active sessions=%s active_class_ids=%s classes=%s",
-        FundamentalSession.query.filter_by(is_active=True).count(),
-        active_class_ids,
-        [c.name for c in classes],
-    )
-    return classes
-
-
-def _active_session_for_class(class_id: int):
-    return (FundamentalSession.query
-        .join(SchoolClass, FundamentalSession.class_id == SchoolClass.id)
-        .filter(FundamentalSession.class_id == class_id, FundamentalSession.is_active.is_(True), SchoolClass.is_active.is_(True))
-        .order_by(FundamentalSession.created_at.desc()).first())
-
-
 def format_fundamental_question_text(question: FundamentalQuestion) -> str:
     text = (question.question_text or '').strip()
     question_type = (question.question_type or '').strip().lower()
@@ -321,20 +430,25 @@ def session_detail(session_id: int):
         attempt.id: FundamentalResponse.query.filter_by(attempt_id=attempt.id).count()
         for attempt in attempts
     }
+    pupil_join_path = url_for('fundamentals.pupil_join', session_token=make_session_token(session))
+    pupil_join_url = request.host_url.rstrip('/') + pupil_join_path
     return render_template(
         'fundamentals_session.html',
         session=session,
         pupils=pupils,
         attempts=attempts_by_pupil,
         answered_counts=answered_counts,
+        pupil_join_path=pupil_join_path,
+        pupil_join_url=pupil_join_url,
     )
 
 
 @fundamentals_bp.route('/qr/<int:session_id>')
 @login_required
 def fundamentals_qr(session_id: int):
-    _get_session_or_404(session_id)
-    join_url = request.host_url.rstrip('/') + '/fundamentals/join'
+    session = _get_session_or_404(session_id)
+    join_path = url_for('fundamentals.pupil_join', session_token=make_session_token(session))
+    join_url = request.host_url.rstrip('/') + join_path
     image = qrcode.make(join_url)
     image_io = BytesIO()
     image.save(image_io, 'PNG')
@@ -512,85 +626,75 @@ def stop_session(session_id: int):
 
 
 
-def _active_pupils_for_class(class_id: int):
-    query = Pupil.query.filter_by(class_id=class_id, is_active=True, is_archived=False)
-    if hasattr(Pupil, 'number'):
-        query = query.order_by(Pupil.number.is_(None), Pupil.number.asc(), Pupil.name.asc())
-    else:
-        query = query.order_by(Pupil.last_name.asc(), Pupil.first_name.asc())
-    return query.all()
+def _active_pupils_for_session(session: FundamentalSession):
+    return (Pupil.query
+        .filter(
+            Pupil.class_id == session.class_id,
+            Pupil.school_id == session.school_class.school_id,
+            Pupil.is_active.is_(True),
+            Pupil.is_archived.is_(False),
+            Pupil.is_demo == session.school_class.is_demo,
+        )
+        .order_by(Pupil.last_name.asc(), Pupil.first_name.asc())
+        .all())
 
 
-@fundamentals_bp.route('/api/classes/<int:class_id>/pupils')
-def api_class_pupils(class_id: int):
-    active_session = (
-        FundamentalSession.query
-        .filter_by(class_id=class_id, is_active=True)
-        .order_by(FundamentalSession.created_at.desc())
-        .first()
-    )
-    if not active_session:
-        return jsonify({'pupils': []}), 404
-    pupils = _active_pupils_for_class(class_id)
-    return jsonify({
-        'pupils': [
-            {'id': pupil.id, 'name': pupil.name}
-            for pupil in pupils
-        ]
-    })
-
-@fundamentals_bp.route('/pupil', methods=['GET', 'POST'])
-def pupil_login():
-    classes = _classes_with_active_sessions()
-    pupils = []
-    selected_class_id = request.values.get('class_id', type=int)
-    selected_class = next((school_class for school_class in classes if school_class.id == selected_class_id), None)
-    if selected_class:
-        pupils = _active_pupils_for_class(selected_class_id)
+@fundamentals_bp.route('/join/<session_token>', methods=['GET', 'POST'])
+def pupil_join(session_token: str):
+    session = _session_from_token(session_token)
+    pupils = _active_pupils_for_session(session)
     if request.method == 'POST':
-        pupil = Pupil.query.get_or_404(request.form.get('pupil_id', type=int))
-        if not selected_class or pupil.class_id != selected_class.id:
-            flash('Please check your class and name.', 'danger')
-            return render_template('fundamentals_pupil_login.html', classes=classes, pupils=pupils, selected_class_id=selected_class_id)
-        session = _active_session_for_class(selected_class.id)
-        if not session:
-            return render_template('fundamentals_pupil_login.html', classes=classes, pupils=pupils, selected_class_id=selected_class_id, no_session=True)
+        pupil = (Pupil.query
+            .filter(
+                Pupil.id == request.form.get('pupil_id', type=int),
+                Pupil.class_id == session.class_id,
+                Pupil.school_id == session.school_class.school_id,
+                Pupil.is_active.is_(True),
+                Pupil.is_archived.is_(False),
+                Pupil.is_demo == session.school_class.is_demo,
+            )
+            .first_or_404())
         attempt = FundamentalPupilAttempt.query.filter_by(session_id=session.id, pupil_id=pupil.id).first()
         if not attempt:
             attempt = FundamentalPupilAttempt(session_id=session.id, pupil_id=pupil.id, current_level=session.start_level)
             db.session.add(attempt)
-            db.session.commit()
-        if attempt.is_complete:
-            return redirect(url_for('fundamentals.pupil_complete', attempt_id=attempt.id))
-        return redirect(url_for('fundamentals.pupil_question', attempt_id=attempt.id))
-    return render_template('fundamentals_pupil_login.html', classes=classes, pupils=pupils, selected_class_id=selected_class_id)
-
-
-@fundamentals_bp.route('/join', methods=['GET', 'POST'])
-def join():
-    return pupil_login()
+            try:
+                db.session.commit()
+            except IntegrityError:
+                db.session.rollback()
+                attempt = FundamentalPupilAttempt.query.filter_by(session_id=session.id, pupil_id=pupil.id).first_or_404()
+        _validate_attempt_scope(attempt)
+        return _attempt_public_redirect(attempt)
+    return render_template('fundamentals_pupil_login.html', session=session, pupils=pupils)
 
 
 def _complete_attempt(attempt: FundamentalPupilAttempt):
     attempt.is_complete = True
     attempt.completed_at = datetime.now(timezone.utc)
     db.session.commit()
-    return redirect(url_for('fundamentals.pupil_complete', attempt_id=attempt.id))
+    return _attempt_public_redirect(attempt)
 
 
-@fundamentals_bp.route('/pupil/question/<int:attempt_id>', methods=['GET', 'POST'])
-def pupil_question(attempt_id: int):
-    attempt = FundamentalPupilAttempt.query.get_or_404(attempt_id)
-    if attempt.pupil.class_id != attempt.session.class_id or not attempt.session.is_active:
-        abort(404)
+@fundamentals_bp.route('/pupil/question/<attempt_token>', methods=['GET', 'POST'])
+def pupil_question(attempt_token: str):
+    attempt = _attempt_from_token(attempt_token)
     if attempt.is_complete:
-        return redirect(url_for('fundamentals.pupil_complete', attempt_id=attempt.id))
+        return _attempt_public_redirect(attempt)
     level = FundamentalLevel.query.filter_by(strand_id=attempt.session.strand_id, level_number=attempt.current_level).first()
     if not level:
         return _complete_attempt(attempt)
     if request.method == 'POST':
-        question = FundamentalQuestion.query.get_or_404(request.form.get('question_db_id', type=int))
-        if question.strand_id != attempt.session.strand_id or question.level_number != attempt.current_level:
+        question, token_level = _question_from_token(request.form.get('question_token') or '', attempt)
+        attempt = (FundamentalPupilAttempt.query
+            .filter_by(id=attempt.id)
+            .populate_existing()
+            .with_for_update()
+            .first_or_404())
+        _validate_attempt_scope(attempt)
+        existing_response = FundamentalResponse.query.filter_by(attempt_id=attempt.id, question_id=question.id).first()
+        if existing_response:
+            return _attempt_public_redirect(attempt)
+        if question.level_number != attempt.current_level or token_level != attempt.current_level:
             abort(404)
         pupil_answer = (request.form.get('answer') or '').strip()
         is_correct = pupil_answer.casefold() == (question.answer or '').strip().casefold()
@@ -604,35 +708,41 @@ def pupil_question(attempt_id: int):
             correct_answer_snapshot=question.answer,
             skill_snapshot=level.skill,
         ))
-        db.session.commit()
-        answered = FundamentalResponse.query.filter_by(attempt_id=attempt.id, level_number=attempt.current_level).all()
-        if len(answered) >= 10:
-            score = round((sum(1 for r in answered if r.is_correct) / len(answered)) * 100)
-            if score >= level.pass_mark:
-                attempt.secure_level = attempt.current_level
-                attempt.below_70_streak = 0
-            else:
-                if attempt.intervention_level is None:
-                    attempt.intervention_level = attempt.current_level
-                attempt.below_70_streak += 1
-            attempt.current_level += 1
-            next_level = FundamentalLevel.query.filter_by(strand_id=attempt.session.strand_id, level_number=attempt.current_level).first()
-            if attempt.below_70_streak >= 2 or not next_level:
-                return _complete_attempt(attempt)
+        try:
+            db.session.flush()
+            answered = FundamentalResponse.query.filter_by(attempt_id=attempt.id, level_number=attempt.current_level).all()
+            if len(answered) >= 10:
+                score = round((sum(1 for r in answered if r.is_correct) / len(answered)) * 100)
+                if score >= level.pass_mark:
+                    attempt.secure_level = attempt.current_level
+                    attempt.below_70_streak = 0
+                else:
+                    if attempt.intervention_level is None:
+                        attempt.intervention_level = attempt.current_level
+                    attempt.below_70_streak += 1
+                attempt.current_level += 1
+                next_level = FundamentalLevel.query.filter_by(strand_id=attempt.session.strand_id, level_number=attempt.current_level).first()
+                if attempt.below_70_streak >= 2 or not next_level:
+                    attempt.is_complete = True
+                    attempt.completed_at = datetime.now(timezone.utc)
             db.session.commit()
-        return redirect(url_for('fundamentals.pupil_question', attempt_id=attempt.id))
+        except IntegrityError:
+            db.session.rollback()
+            attempt = _attempt_from_token(attempt_token)
+        return _attempt_public_redirect(attempt)
 
     answered_ids = [r.question_id for r in FundamentalResponse.query.filter_by(attempt_id=attempt.id, level_number=attempt.current_level).all()]
     questions = FundamentalQuestion.query.filter_by(strand_id=attempt.session.strand_id, level_number=attempt.current_level).all()
     remaining = [q for q in questions if q.id not in answered_ids]
     if not remaining:
-        return redirect(url_for('fundamentals.pupil_question', attempt_id=attempt.id))
+        return _attempt_public_redirect(attempt)
     question = random.choice(remaining)
     answered_this_level = len(answered_ids)
     return render_template(
         'fundamentals_pupil_question.html',
         attempt=attempt,
         question=question,
+        question_token=_make_question_token(attempt, question),
         current_level_obj=level,
         answered_this_level=answered_this_level,
     )
@@ -666,9 +776,9 @@ def attempt_detail(attempt_id: int):
     return render_template('fundamentals_attempt_detail.html', attempt=attempt, response_rows=response_rows)
 
 
-@fundamentals_bp.route('/pupil/complete/<int:attempt_id>')
-def pupil_complete(attempt_id: int):
-    attempt = FundamentalPupilAttempt.query.get_or_404(attempt_id)
-    if attempt.pupil.class_id != attempt.session.class_id:
-        abort(404)
+@fundamentals_bp.route('/pupil/complete/<attempt_token>')
+def pupil_complete(attempt_token: str):
+    attempt = _attempt_from_token(attempt_token, require_active=False)
+    if not attempt.is_complete:
+        return _attempt_public_redirect(attempt)
     return render_template('fundamentals_pupil_complete.html', attempt=attempt)

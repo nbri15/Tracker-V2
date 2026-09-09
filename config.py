@@ -55,6 +55,7 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_HTTPONLY = True
     DEMO_MODE = _env_flag('DEMO_MODE', default=False)
+    FUNDAMENTALS_TOKEN_MAX_AGE = int(os.environ.get('FUNDAMENTALS_TOKEN_MAX_AGE', '86400'))
 
 
 class DevelopmentConfig(Config):
