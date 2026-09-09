@@ -94,6 +94,9 @@ class FundamentalResponse(db.Model):
     level_number = db.Column(db.Integer, nullable=False, index=True)
     pupil_answer = db.Column(db.String(255), nullable=True)
     is_correct = db.Column(db.Boolean, nullable=False)
+    question_text_snapshot = db.Column(db.Text, nullable=True)
+    correct_answer_snapshot = db.Column(db.String(255), nullable=True)
+    skill_snapshot = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     attempt = db.relationship('FundamentalPupilAttempt', back_populates='responses')

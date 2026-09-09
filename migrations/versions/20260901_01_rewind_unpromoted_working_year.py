@@ -44,7 +44,7 @@ def rewind_unpromoted_schools(bind) -> int:
         sa.select(academic_years.c.id).where(academic_years.c.name == SOURCE_YEAR)
     ).scalar_one_or_none()
     if source_year_id is None:
-        result = bind.execute(
+        bind.execute(
             academic_years.insert().values(
                 name=SOURCE_YEAR,
                 is_current=False,
@@ -52,7 +52,12 @@ def rewind_unpromoted_schools(bind) -> int:
                 created_at=datetime.now(timezone.utc),
             )
         )
-        source_year_id = result.inserted_primary_key[0]
+        # The lightweight table definition above intentionally has no primary
+        # key metadata, so inserted_primary_key is empty on SQLite. Re-querying
+        # preserves the migration's existing behaviour across database engines.
+        source_year_id = bind.execute(
+            sa.select(academic_years.c.id).where(academic_years.c.name == SOURCE_YEAR)
+        ).scalar_one()
 
     incorrect_year_id = bind.execute(
         sa.select(academic_years.c.id).where(academic_years.c.name == INCORRECT_YEAR)

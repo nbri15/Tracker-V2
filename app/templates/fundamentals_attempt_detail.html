@@ -22,7 +22,7 @@
               <td>{{ response.level_number }}</td>
               <td>{{ row.question_text }}</td>
               <td>{{ response.pupil_answer or '—' }}</td>
-              <td>{{ response.question.answer }}</td>
+              <td>{{ row.correct_answer }}</td>
               <td>{% if response.is_correct %}<span class="badge text-bg-success">Correct</span>{% else %}<span class="badge text-bg-danger">Incorrect</span>{% endif %}</td>
             </tr>
           {% else %}
