@@ -11,6 +11,7 @@ from sqlalchemy import inspect, text
 from app import create_app
 from app.extensions import db
 from app.models import (
+    AcademicYear,
     FundamentalLevel,
     FundamentalPupilAttempt,
     FundamentalQuestion,
@@ -92,6 +93,17 @@ def test_migrations_upgrade_a_clean_database_with_complete_fundamentals_schema(m
         assert FUNDAMENTALS_TABLES <= set(inspector.get_table_names())
         response_columns = {column['name'] for column in inspector.get_columns('fundamental_responses')}
         assert {'question_text_snapshot', 'correct_answer_snapshot', 'skill_snapshot'} <= response_columns
+        session_columns = {
+            column['name']: column['nullable']
+            for column in inspector.get_columns('fundamental_sessions')
+        }
+        assert session_columns['academic_year'] is True
+        school_columns = {
+            column['name']: column['nullable']
+            for column in inspector.get_columns('schools')
+        }
+        assert school_columns['current_academic_year_id'] is False
+        assert 'academic_year_reminder_dismissed_for' in school_columns
 
         nullable = {
             column['name']: column['nullable']
@@ -194,7 +206,12 @@ def test_seed_updates_existing_question_instead_of_duplicating(migrated_app):
 
 def test_attempts_responses_and_snapshots_survive_reseeding(migrated_app):
     with migrated_app.app_context():
-        school = School(name='Seed Safety School', slug='seed-safety-school')
+        academic_year = AcademicYear.query.filter_by(name='2025/26').one()
+        school = School(
+            name='Seed Safety School',
+            slug='seed-safety-school',
+            current_academic_year=academic_year,
+        )
         db.session.add(school)
         db.session.flush()
         teacher = User(username='seed-safety-teacher', role='teacher', school_id=school.id)
