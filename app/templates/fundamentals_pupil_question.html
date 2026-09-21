@@ -17,10 +17,11 @@
           Question {{ answered_this_level + 1 }} of 10
         </div>
         <div class="display-5 mb-4" style="white-space:pre-line">{{ question.question_text }}</div>
-        <form method="post">
-          <input type="hidden" name="question_db_id" value="{{ question.id }}">
+        <form method="post" onsubmit="this.querySelector('button[type=submit]').disabled=true;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="question_token" value="{{ question_token }}">
           <input class="form-control form-control-lg text-center mb-4" name="answer" autocomplete="off" autofocus required>
-          <button class="btn btn-success btn-lg px-5">Submit</button>
+          <button type="submit" class="btn btn-success btn-lg px-5">Submit</button>
         </form>
       </div>
     </div>
