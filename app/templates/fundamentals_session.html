@@ -1,8 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Maths Fundamentals Session{% endblock %}
 {% block content %}
-{% set pupil_join_path = url_for('fundamentals.join') %}
-{% set pupil_join_url = request.host_url.rstrip('/') ~ pupil_join_path %}
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h1>{{ session.strand.name }}</h1>

@@ -87,6 +87,13 @@ class FundamentalPupilAttempt(db.Model):
 
 class FundamentalResponse(db.Model):
     __tablename__ = 'fundamental_responses'
+    __table_args__ = (
+        db.UniqueConstraint(
+            'attempt_id',
+            'question_id',
+            name='uq_fundamental_response_attempt_question',
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     attempt_id = db.Column(db.Integer, db.ForeignKey('fundamental_pupil_attempts.id'), nullable=False, index=True)
