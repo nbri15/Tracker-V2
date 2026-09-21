@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from sqlalchemy import inspect
+
 from app.extensions import db
 from app.models import Intervention, Pupil, SchoolClass, SubjectResult, User, WritingResult
 from app.services import CORE_SUBJECTS, compute_subject_result_values, get_current_academic_year, get_subject_setting
@@ -116,7 +118,14 @@ def ensure_demo_intervention(pupil: Pupil, academic_year: str) -> None:
 def seed_demo_data() -> None:
     """Create/refresh demo-only accounts and records without touching real data."""
 
-    db.create_all()
+    inspector = inspect(db.engine)
+    required_tables = ('users', 'school_classes', 'pupils', 'subject_results', 'writing_results', 'interventions')
+    missing_tables = [table for table in required_tables if not inspector.has_table(table)]
+    if missing_tables:
+        raise RuntimeError(
+            'Database schema is not current. Run "flask db upgrade" before seeding demo data. '
+            f'Missing: {", ".join(missing_tables)}.'
+        )
     demo_admin = ensure_demo_user('demo_admin', 'demo123', 'admin')
     demo_teacher = ensure_demo_user('demo_teacher', 'demo123', 'teacher')
 

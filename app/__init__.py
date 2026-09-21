@@ -31,8 +31,6 @@ def create_app(config_name: str | None = None) -> Flask:
     register_template_helpers(app)
     register_shell_context(app)
     register_cli_commands(app)
-    bootstrap_runtime_schema(app)
-    bootstrap_fundamentals(app)
     bootstrap_academic_years(app)
     bootstrap_gender_values(app)
     bootstrap_admin_from_env(app)
@@ -190,6 +188,10 @@ def register_shell_context(app: Flask) -> None:
 def register_cli_commands(app: Flask) -> None:
     """Register custom CLI utilities for production-safe administration."""
 
+    from .fundamentals.cli import fundamentals_cli
+
+    app.cli.add_command(fundamentals_cli)
+
     @app.cli.command('create-admin')
     @click.option('--username', envvar='ADMIN_USERNAME', default='admin', show_default=True)
     @click.option('--password', envvar='ADMIN_PASSWORD', prompt=True, hide_input=True, confirmation_prompt=True)
@@ -236,122 +238,6 @@ def bootstrap_admin_from_env(app: Flask) -> None:
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
-
-
-def bootstrap_runtime_schema(app: Flask) -> None:
-    """Apply lightweight additive schema fixes needed at runtime.
-
-    This keeps startup resilient on environments where running CLI migrations
-    is not practical (for example, managed platforms without shell access).
-    The bootstrap is intentionally non-destructive and only adds missing
-    columns.
-    """
-
-    with app.app_context():
-        # Ensure an empty database has baseline tables before additive ALTERs.
-        db.create_all()
-        inspector = inspect(db.engine)
-
-        table_columns = {
-            'schools': {
-                'name': 'VARCHAR(140)',
-                'slug': 'VARCHAR(140)',
-                'is_active': 'BOOLEAN DEFAULT TRUE',
-                'is_demo': 'BOOLEAN DEFAULT FALSE',
-            },
-            'pupils': {
-                'strengths_notes': 'TEXT',
-                'next_steps_notes': 'TEXT',
-                'general_notes': 'TEXT',
-                'is_demo': 'BOOLEAN DEFAULT FALSE',
-                'school_id': 'INTEGER',
-            },
-            'subject_results': {
-                'assessment_year_group': 'INTEGER',
-                'school_id': 'INTEGER',
-            },
-            'users': {
-                'is_demo': 'BOOLEAN DEFAULT FALSE',
-                'school_id': 'INTEGER',
-            },
-            'school_classes': {
-                'is_demo': 'BOOLEAN DEFAULT FALSE',
-                'school_id': 'INTEGER',
-            },
-            'interventions': {
-                'is_demo': 'BOOLEAN DEFAULT FALSE',
-                'school_id': 'INTEGER',
-            },
-        }
-
-        with db.engine.begin() as connection:
-            for table_name, columns in table_columns.items():
-                if not inspector.has_table(table_name):
-                    app.logger.warning(
-                        "Runtime schema bootstrap skipped missing table '%s'.",
-                        table_name,
-                    )
-                    continue
-
-                existing_columns = {column['name'] for column in inspector.get_columns(table_name)}
-                for column_name, column_type in columns.items():
-                    if column_name in existing_columns:
-                        continue
-
-                    if inspector.dialect.name == 'postgresql':
-                        statement = (
-                            f'ALTER TABLE {table_name} '
-                            f'ADD COLUMN IF NOT EXISTS {column_name} {column_type}'
-                        )
-                    else:
-                        statement = f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}'
-
-                    try:
-                        connection.execute(text(statement))
-                    except Exception:
-                        app.logger.warning(
-                            "Runtime schema bootstrap failed for %s.%s.",
-                            table_name,
-                            column_name,
-                            exc_info=True,
-                        )
-
-
-def ensure_fundamentals_tables() -> None:
-    """Create Maths Fundamentals tables if they do not already exist."""
-
-    from .models import (
-        FundamentalLevel,
-        FundamentalPupilAttempt,
-        FundamentalQuestion,
-        FundamentalResponse,
-        FundamentalSession,
-        FundamentalStrand,
-    )
-
-    for model in (
-        FundamentalStrand,
-        FundamentalLevel,
-        FundamentalQuestion,
-        FundamentalSession,
-        FundamentalPupilAttempt,
-        FundamentalResponse,
-    ):
-        model.__table__.create(bind=db.engine, checkfirst=True)
-
-
-def bootstrap_fundamentals(app: Flask) -> None:
-    """Safely create and seed Maths Fundamentals at startup."""
-
-    with app.app_context():
-        try:
-            ensure_fundamentals_tables()
-            from .fundamentals.seed import seed_fundamentals
-
-            seed_fundamentals()
-        except Exception:
-            db.session.rollback()
-            app.logger.warning('Maths Fundamentals bootstrap failed.', exc_info=True)
 
 
 def bootstrap_academic_years(app: Flask) -> None:

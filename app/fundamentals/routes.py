@@ -594,7 +594,16 @@ def pupil_question(attempt_id: int):
             abort(404)
         pupil_answer = (request.form.get('answer') or '').strip()
         is_correct = pupil_answer.casefold() == (question.answer or '').strip().casefold()
-        db.session.add(FundamentalResponse(attempt_id=attempt.id, question_id=question.id, level_number=attempt.current_level, pupil_answer=pupil_answer, is_correct=is_correct))
+        db.session.add(FundamentalResponse(
+            attempt_id=attempt.id,
+            question_id=question.id,
+            level_number=attempt.current_level,
+            pupil_answer=pupil_answer,
+            is_correct=is_correct,
+            question_text_snapshot=question.question_text,
+            correct_answer_snapshot=question.answer,
+            skill_snapshot=level.skill,
+        ))
         db.session.commit()
         answered = FundamentalResponse.query.filter_by(attempt_id=attempt.id, level_number=attempt.current_level).all()
         if len(answered) >= 10:
@@ -649,7 +658,8 @@ def attempt_detail(attempt_id: int):
     response_rows = [
         {
             'response': response,
-            'question_text': format_fundamental_question_text(response.question),
+            'question_text': response.question_text_snapshot or format_fundamental_question_text(response.question),
+            'correct_answer': response.correct_answer_snapshot or response.question.answer,
         }
         for response in responses
     ]

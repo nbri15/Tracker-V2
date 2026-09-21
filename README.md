@@ -97,6 +97,14 @@ python seed.py --reset
 
 The seed refresh is safe to rerun during development. It updates the documented default users in place, resets the expected dev passwords, relinks `teacher1` to `teacher6` to `Year 1` to `Year 6`, ensures Year 6 SATs mode defaults exist, and rebuilds sample data.
 
+Seed or refresh the Maths Fundamentals question bank separately:
+
+```bash
+flask --app wsgi:app fundamentals seed
+```
+
+This command is safe to rerun and does not delete attempts or responses.
+
 ### 6) Run the application
 
 ```bash
@@ -302,8 +310,12 @@ This repository is ready for Render deployment using:
 ### Render build command
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt && flask --app wsgi:app db upgrade
 ```
+
+The committed Render blueprint uses this command, so every release installs
+dependencies and completes Alembic migrations before Gunicorn starts. The web
+process does not create or alter tables at import/startup.
 
 ### Render start command
 
@@ -322,19 +334,24 @@ Notes:
 - If the URL starts with `postgres://`, it is normalized to `postgresql://` automatically for SQLAlchemy compatibility.
 - SQLite fallback is used only when `DATABASE_URL` is not set (local development).
 
-### Migrations on Render
+### Maths Fundamentals question bank
 
-Run migrations after deploy (or via a Render one-off shell):
+The question bank is not seeded by a web-process restart. After the first
+deployment of the Fundamentals migration, run this once from a Render Shell:
 
 ```bash
-flask --app run.py db upgrade
+flask --app wsgi:app fundamentals seed
 ```
 
-Optional (only when schema changes are introduced locally):
+The command is idempotent: it creates missing strands, levels and questions,
+updates existing questions by their stable `QuestionID`, preserves attempts and
+responses, and reports created/updated/unchanged counts. Run it again only when
+deploying an intentional question-bank revision.
+
+To apply migrations manually (for example after a failed build), run:
 
 ```bash
-flask --app run.py db migrate -m "describe change"
-flask --app run.py db upgrade
+flask --app wsgi:app db upgrade
 ```
 
 ### First admin bootstrap (production-safe)
@@ -342,13 +359,13 @@ flask --app run.py db upgrade
 Create the initial admin user once (does not reset DB, does not seed demo data):
 
 ```bash
-flask --app run.py create-admin --username <admin_username>
+flask --app wsgi:app create-admin --username <admin_username>
 ```
 
 You can also supply credentials with env vars for non-interactive use:
 
 ```bash
-ADMIN_USERNAME=<admin_username> ADMIN_PASSWORD='<strong-password>' flask --app run.py create-admin
+ADMIN_USERNAME=<admin_username> ADMIN_PASSWORD='<strong-password>' flask --app wsgi:app create-admin
 ```
 
 Behaviour:
