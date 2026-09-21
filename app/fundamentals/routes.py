@@ -26,6 +26,7 @@ from app.models import (
     Pupil,
     SchoolClass,
 )
+from app.services import get_school_working_academic_year
 from app.utils import current_school_id
 from . import fundamentals_bp
 
@@ -234,10 +235,10 @@ def _selected_fundamentals_filters(classes, strands):
     return selected_class_id, selected_strand_id, filtered_class_ids
 
 
-def _latest_completed_attempts_for_pupils(class_ids, strand_id):
+def _latest_completed_attempts_for_pupils(class_ids, strand_id, academic_year=None):
     if not class_ids or not strand_id:
         return []
-    attempts = (FundamentalPupilAttempt.query
+    query = (FundamentalPupilAttempt.query
         .join(FundamentalSession, FundamentalPupilAttempt.session_id == FundamentalSession.id)
         .join(SchoolClass, FundamentalSession.class_id == SchoolClass.id)
         .join(Pupil, FundamentalPupilAttempt.pupil_id == Pupil.id)
@@ -249,7 +250,13 @@ def _latest_completed_attempts_for_pupils(class_ids, strand_id):
             SchoolClass.is_active.is_(True),
             Pupil.is_active.is_(True),
             Pupil.is_archived.is_(False),
-        )
+        ))
+    if academic_year:
+        query = query.filter(or_(
+            FundamentalSession.academic_year == academic_year,
+            FundamentalSession.academic_year.is_(None),
+        ))
+    attempts = (query
         .order_by(
             FundamentalPupilAttempt.pupil_id,
             FundamentalPupilAttempt.completed_at.desc(),
@@ -323,6 +330,13 @@ def _active_classes_for_user():
     return query.order_by(SchoolClass.year_group, SchoolClass.name).all()
 
 
+def _fundamentals_academic_year(classes) -> str | None:
+    """Return the selected school's stored year for current Fundamentals views."""
+    if not classes:
+        return None
+    return get_school_working_academic_year(classes[0].school_id).name
+
+
 def format_fundamental_question_text(question: FundamentalQuestion) -> str:
     text = (question.question_text or '').strip()
     question_type = (question.question_type or '').strip().lower()
@@ -358,10 +372,18 @@ def home():
     strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
     classes = _active_classes_for_user()
     class_ids = [c.id for c in classes]
+    academic_year = _fundamentals_academic_year(classes)
     active_sessions = []
     if class_ids:
         active_sessions = (FundamentalSession.query
-            .filter(FundamentalSession.class_id.in_(class_ids), FundamentalSession.is_active.is_(True))
+            .filter(
+                FundamentalSession.class_id.in_(class_ids),
+                or_(
+                    FundamentalSession.academic_year == academic_year,
+                    FundamentalSession.academic_year.is_(None),
+                ),
+                FundamentalSession.is_active.is_(True),
+            )
             .order_by(FundamentalSession.created_at.desc()).all())
     return render_template('fundamentals_home.html', strands=strands, classes=classes, active_sessions=active_sessions)
 
@@ -394,7 +416,15 @@ def start():
             flash('Please choose a valid start level for the selected strand.', 'danger')
             return redirect(url_for('fundamentals.start', class_id=school_class.id, strand_id=strand.id))
         FundamentalSession.query.filter_by(class_id=school_class.id, strand_id=strand.id, is_active=True).update({'is_active': False})
-        session = FundamentalSession(class_id=school_class.id, teacher_id=current_user.id, strand_id=strand.id, start_level=start_level, is_active=True)
+        academic_year = get_school_working_academic_year(school_class.school_id).name
+        session = FundamentalSession(
+            class_id=school_class.id,
+            teacher_id=current_user.id,
+            strand_id=strand.id,
+            academic_year=academic_year,
+            start_level=start_level,
+            is_active=True,
+        )
         db.session.add(session)
         db.session.commit()
         current_app.logger.info(
@@ -528,7 +558,9 @@ def levels():
             .order_by(FundamentalLevel.level_number)
             .all())
 
-    latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+    latest_attempts = _latest_completed_attempts_for_pupils(
+        class_ids, selected_strand_id, _fundamentals_academic_year(classes)
+    )
     rows = []
     for level in levels:
         rows.append({
@@ -553,7 +585,9 @@ def interventions():
     classes = _active_classes_for_user()
     strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
     selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
-    latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+    latest_attempts = _latest_completed_attempts_for_pupils(
+        class_ids, selected_strand_id, _fundamentals_academic_year(classes)
+    )
     groups = _intervention_groups_for_attempts(latest_attempts, selected_strand_id)
 
     return render_template(
@@ -573,7 +607,9 @@ def interventions_print():
     strands = FundamentalStrand.query.order_by(FundamentalStrand.name).all()
     selected_class_id, selected_strand_id, class_ids = _selected_fundamentals_filters(classes, strands)
     selected_class, selected_strand = _selected_filter_labels(classes, strands, selected_class_id, selected_strand_id)
-    latest_attempts = _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+    latest_attempts = _latest_completed_attempts_for_pupils(
+        class_ids, selected_strand_id, _fundamentals_academic_year(classes)
+    )
     groups = _intervention_groups_for_attempts(latest_attempts, selected_strand_id)
 
     return render_template(
@@ -598,7 +634,9 @@ def level_pupils(level_number: int):
     if selected_strand_id:
         level = FundamentalLevel.query.filter_by(strand_id=selected_strand_id, level_number=level_number).first_or_404()
     attempts = [
-        attempt for attempt in _latest_completed_attempts_for_pupils(class_ids, selected_strand_id)
+        attempt for attempt in _latest_completed_attempts_for_pupils(
+            class_ids, selected_strand_id, _fundamentals_academic_year(classes)
+        )
         if attempt.intervention_level == level_number
     ]
     attempts.sort(key=lambda attempt: (attempt.pupil.last_name, attempt.pupil.first_name))

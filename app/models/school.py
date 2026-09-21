@@ -22,9 +22,12 @@ class School(db.Model):
     current_academic_year_id = db.Column(
         db.Integer,
         db.ForeignKey('academic_years.id'),
+        # Production migrations enforce NOT NULL. Kept nullable in metadata so
+        # isolated legacy/test databases can be constructed before assignment.
         nullable=True,
         index=True,
     )
+    academic_year_reminder_dismissed_for = db.Column(db.String(20), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

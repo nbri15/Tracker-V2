@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from weasyprint import HTML
 
-from app.models import AcademicYear, Intervention, Pupil, SatsResult, SchoolClass, SimpleSatsExamTab, SimpleSatsSetting, SubjectResult, User, WritingResult
+from app.models import AcademicYear, Intervention, Pupil, SatsResult, School, SchoolClass, SimpleSatsExamTab, SimpleSatsSetting, SubjectResult, User, WritingResult
 from app.services import (
     BOOLEAN_FILTER_CHOICES,
     CLASS_SORT_OPTIONS,
@@ -28,7 +28,7 @@ from app.services import (
     get_gender_filter_options,
     get_tracker_mode,
     get_tracker_mode_label,
-    is_academic_year_rollover_due,
+    should_show_academic_year_reminder,
     sort_class_rows,
 )
 from app.utils import (
@@ -153,6 +153,7 @@ def admin_dashboard():
     )
     academic_year = selected_year.name
     calendar_year = get_current_academic_year()
+    school = db.session.get(School, school_id)
     term = (request.args.get("term") or "Summer").strip()
     if term not in ("Autumn", "Spring", "Summer", "All"):
         term = "Summer"
@@ -184,7 +185,7 @@ def admin_dashboard():
         'academic_year': academic_year,
         'working_academic_year': working_year.name,
         'calendar_academic_year': calendar_year,
-        'rollover_required': is_academic_year_rollover_due(working_year.name, calendar_year),
+        'rollover_required': should_show_academic_year_reminder(school),
         'selected_year': selected_year,
         'academic_year_options': build_academic_year_options(academic_year),
         'term': term,

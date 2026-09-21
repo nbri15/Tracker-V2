@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.extensions import db
 from app.models import AcademicYear, AssessmentSetting, Pupil, PupilClassHistory, School, SchoolClass, TrackerModeSetting, User
-from .assessments import get_current_academic_year, get_setting_defaults, is_academic_year_rollover_due
+from .assessments import get_current_academic_year, get_setting_defaults
 
 
 @dataclass(frozen=True)
@@ -222,14 +222,17 @@ def get_promotion_mapping_options(school_id: int) -> list[dict]:
 def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_mapping: dict[int, int | None] | None = None) -> dict:
     if school_id is None:
         raise ValueError('A school must be selected before promoting pupils.')
-    school = db.session.get(School, school_id)
+    school = (
+        School.query
+        .filter(School.id == school_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
     if not school:
         raise ValueError('The selected school could not be found.')
     if school.current_academic_year and school.current_academic_year.name != source_year:
         raise ValueError(f'This school is already working in {school.current_academic_year.name}. Refresh before promoting again.')
-    if not is_academic_year_rollover_due(source_year):
-        raise ValueError(f'{source_year} is not ready to roll over yet.')
-
     snapshot_count = snapshot_pupil_history(source_year, school_id)
     target_year = build_next_academic_year(source_year)
     if int(target_year.split('/')[0]) <= int(source_year.split('/')[0]):
@@ -237,6 +240,7 @@ def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_m
     ensure_academic_year(source_year, archived=True)
     target_record = ensure_academic_year(target_year)
     school.current_academic_year = target_record
+    school.academic_year_reminder_dismissed_for = None
     db.session.add(school)
 
     normalized_mapping = class_mapping or {}

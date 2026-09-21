@@ -55,6 +55,9 @@ class FundamentalSession(db.Model):
     class_id = db.Column(db.Integer, db.ForeignKey('school_classes.id'), nullable=False, index=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     strand_id = db.Column(db.Integer, db.ForeignKey('fundamental_strands.id'), nullable=False, index=True)
+    # Legacy sessions pre-date year snapshots and remain NULL rather than being
+    # assigned a potentially incorrect historical year.
+    academic_year = db.Column(db.String(20), nullable=True, index=True)
     start_level = db.Column(db.Integer, nullable=False, default=1)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))

@@ -211,6 +211,10 @@ def get_writing_outcome_theme(band: str | None) -> str | None:
 
 
 def get_current_academic_year(today: datetime | None = None) -> str:
+    """Return the calendar academic year for reminder/display purposes only.
+
+    A school's active year must always come from School.current_academic_year.
+    """
     today = today or datetime.now(timezone.utc)
     year = today.year
     start_year = year if today.month >= 9 else year - 1
@@ -218,12 +222,36 @@ def get_current_academic_year(today: datetime | None = None) -> str:
 
 
 def is_academic_year_rollover_due(working_year: str, calendar_year: str | None = None) -> bool:
-    """Return true only when the calendar has advanced beyond the working year."""
+    """Return whether a reminder may be useful; never changes active data."""
     calendar_year = calendar_year or get_current_academic_year()
     try:
         return int(calendar_year.split('/')[0]) > int(working_year.split('/')[0])
     except (AttributeError, TypeError, ValueError):
         return False
+
+
+def should_show_academic_year_reminder(school, today: datetime | None = None) -> bool:
+    """Return whether a September-only rollover reminder should be displayed."""
+    today = today or datetime.now(timezone.utc)
+    if today.month != 9 or not school or not school.current_academic_year:
+        return False
+    calendar_year = get_current_academic_year(today)
+    return (
+        is_academic_year_rollover_due(school.current_academic_year.name, calendar_year)
+        and school.academic_year_reminder_dismissed_for != calendar_year
+    )
+
+
+def build_school_academic_year_choices(stored_year: str, years_before: int = 2, years_after: int = 3) -> list[str]:
+    """Build dynamic correction choices around a school's stored year."""
+    try:
+        start_year = int(stored_year.split('/', 1)[0])
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError('The school has an invalid stored academic year.') from exc
+    return [
+        f'{year}/{str(year + 1)[-2:]}'
+        for year in range(start_year - years_before, start_year + years_after + 1)
+    ]
 
 
 def get_current_term(today: datetime | None = None) -> str:
@@ -313,24 +341,15 @@ def get_selected_current_academic_year() -> str:
 def get_school_working_academic_year(school_id: int | None) -> AcademicYear:
     """Resolve a school's operational year without consulting the viewing session.
 
-    A school's explicit setting is authoritative. The legacy global current flag is
-    retained as a migration fallback, followed by the calendar-derived year. In
-    particular, the newest database row and dashboard/report selection are never
-    treated as the school's working year.
+    A school's explicit setting is authoritative. There is deliberately no global,
+    session, newest-row, or calendar-derived fallback.
     """
     from app.models import School
 
     school = db.session.get(School, school_id) if school_id is not None else None
     if school and school.current_academic_year:
         return school.current_academic_year
-
-    current = AcademicYear.query.filter_by(is_current=True).order_by(AcademicYear.name.desc()).first()
-    if current:
-        return current
-
-    fallback_name = get_current_academic_year()
-    fallback = AcademicYear.query.filter_by(name=fallback_name).first()
-    return fallback or AcademicYear(name=fallback_name, is_current=False)
+    raise ValueError('This school does not have a current academic year configured.')
 
 
 def is_current_academic_year(academic_year: str | None) -> bool:

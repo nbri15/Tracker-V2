@@ -45,6 +45,7 @@ from app.models import (
     User,
     WritingResult,
 )
+from app.services import build_academic_year_options, get_or_create_academic_year
 from app.services.admin_ops import initialise_school_data
 from app.utils import executive_admin_required, log_audit_event
 
@@ -262,7 +263,17 @@ def schools():
         try:
             if action == 'create':
                 name, slug = _validate_school_payload(request.form.get('name', ''), request.form.get('slug', ''))
-                school = School(name=name, slug=slug, is_active=request.form.get('is_active') == 'on', is_demo=request.form.get('is_demo') == 'on')
+                academic_year_name = (request.form.get('academic_year') or '').strip()
+                if not academic_year_name:
+                    raise ValueError('Choose the school current academic year.')
+                academic_year = get_or_create_academic_year(academic_year_name)
+                school = School(
+                    name=name,
+                    slug=slug,
+                    is_active=request.form.get('is_active') == 'on',
+                    is_demo=request.form.get('is_demo') == 'on',
+                    current_academic_year=academic_year,
+                )
                 db.session.add(school)
                 db.session.commit()
                 initialise_school_data(school.id)
@@ -293,7 +304,13 @@ def schools():
         for school in schools_list
         for can_delete, reason in [_can_delete_school(school)]
     }
-    return render_template('executive/schools.html', schools=schools_list, school_delete_state=school_delete_state, show_archived=show_archived)
+    return render_template(
+        'executive/schools.html',
+        schools=schools_list,
+        school_delete_state=school_delete_state,
+        show_archived=show_archived,
+        academic_year_options=build_academic_year_options(),
+    )
 
 
 @executive_bp.route('/users')

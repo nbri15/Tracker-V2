@@ -10,7 +10,7 @@ from app.models import School, User
 from app.services import (
     get_current_academic_year,
     get_school_working_academic_year,
-    is_academic_year_rollover_due,
+    should_show_academic_year_reminder,
 )
 from app.utils import is_demo_mode_enabled
 
@@ -19,14 +19,14 @@ from .forms import ChangePasswordForm, LoginForm
 
 
 def _login_rollover_years(user: User) -> tuple[str, str] | None:
-    """Return working/calendar years when a school admin must review rollover."""
+    """Return stored/calendar years for an undismissed September reminder."""
     if not user.is_school_admin or not user.school_id:
+        return None
+    if not should_show_academic_year_reminder(user.school):
         return None
     working_year = get_school_working_academic_year(user.school_id).name
     calendar_year = get_current_academic_year()
-    if is_academic_year_rollover_due(working_year, calendar_year):
-        return working_year, calendar_year
-    return None
+    return working_year, calendar_year
 
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
@@ -62,8 +62,8 @@ def login():
             if rollover_years:
                 working_year, calendar_year = rollover_years
                 flash(
-                    f'The new academic year is {calendar_year}. Review pupil promotion '
-                    f'before changing your school from {working_year}.',
+                    f"It's September {calendar_year.split('/')[0]} and your school is currently set to "
+                    f'{working_year}. Would you like to review the academic-year rollover?',
                     'warning',
                 )
                 return redirect(url_for('admin.promotion', rollover_prompt='1'))

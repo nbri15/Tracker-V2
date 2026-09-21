@@ -4,8 +4,12 @@
 {% block content %}
 {% if request.args.get('rollover_prompt') == '1' %}
 <div class="alert alert-warning" role="alert">
-  <strong>Academic-year rollover needs your review.</strong>
-  Your school is still working in {{ academic_year }}. Check the class destinations below, then confirm promotion into {{ next_year }}. Nothing changes until you confirm.
+  <strong>Academic-year rollover review.</strong>
+  Your school is currently set to {{ academic_year }}. Nothing changes unless you explicitly confirm promotion below.
+  <form method="post" action="{{ url_for('admin.dismiss_academic_year_reminder') }}" class="mt-2">
+    <input type="hidden" name="reminder_year" value="{{ calendar_academic_year }}">
+    <button class="btn btn-sm btn-outline-secondary">Keep {{ academic_year }} for now</button>
+  </form>
 </div>
 {% endif %}
 <div class="row g-4 mb-4">

@@ -111,6 +111,7 @@ from app.services import (
     SatsColumnValidationError,
     apply_admin_pupil_filters,
     build_academic_year_options,
+    build_school_academic_year_choices,
     build_admin_pupil_filter_state,
     build_sort_indicator,
     build_table_sort_state,
@@ -153,6 +154,8 @@ from app.services import (
     get_next_sort_direction,
     get_history_rows,
     get_or_create_assessment_setting,
+    get_or_create_academic_year,
+    get_current_academic_year,
     get_promotion_mapping_options,
     get_reception_class,
     get_sats_columns,
@@ -1607,17 +1610,31 @@ def settings():
         action = request.form.get('action', 'create')
         try:
             if action == 'set-active-academic-year':
-                year = AcademicYear.query.get(int(request.form.get('academic_year_id', '0')))
                 school_id = _selected_school_id_for_admin_actions()
-                school = School.query.get(school_id) if school_id else None
-                if not year:
-                    flash('Academic year could not be found.', 'danger')
-                elif not school:
+                school = db.session.get(School, school_id) if school_id else None
+                if not school:
                     flash('Select a school before setting its working year.', 'warning')
+                elif request.form.get('confirm_academic_year_change') != 'yes':
+                    flash('Confirm the academic-year change before saving it.', 'warning')
                 else:
+                    expected_year = (request.form.get('expected_academic_year') or '').strip()
+                    if expected_year != school.current_academic_year.name:
+                        raise ValueError(
+                            f'The school year changed to {school.current_academic_year.name} while this page was open. Refresh and try again.'
+                        )
+                    year_name = (request.form.get('academic_year') or '').strip()
+                    valid_choices = build_school_academic_year_choices(school.current_academic_year.name)
+                    if year_name not in valid_choices:
+                        raise ValueError('Choose a valid academic year from the list.')
+                    year = get_or_create_academic_year(year_name)
                     school.current_academic_year = year
+                    school.academic_year_reminder_dismissed_for = None
+                    session['selected_academic_year_id'] = year.id
                     db.session.commit()
-                    flash(f'School working academic year set to {year.name}.', 'success')
+                    flash(
+                        f'Current academic year changed to {year.name}. No pupils or classes were promoted.',
+                        'success',
+                    )
                 return redirect(url_for('admin.settings'))
             if action == 'generate-academic-years':
                 created_years = generate_next_missing_academic_years()
@@ -1683,6 +1700,7 @@ def settings():
             form.on_track_threshold_percent.data = defaults['on_track_threshold_percent']
             form.exceeding_threshold_percent.data = defaults['exceeding_threshold_percent']
 
+    selected_year = get_school_working_academic_year(_selected_school_id_for_admin_actions())
     return render_template(
         'admin/settings.html',
         settings=settings,
@@ -1693,7 +1711,8 @@ def settings():
         filter_term_choices=[('', 'All terms')] + TERMS,
         form=form,
         terms=TERMS,
-        selected_year=get_school_working_academic_year(_selected_school_id_for_admin_actions()),
+        selected_year=selected_year,
+        school_academic_year_choices=build_school_academic_year_choices(selected_year.name),
         academic_year_options=build_academic_year_options(),
     )
 
@@ -1944,6 +1963,11 @@ def promotion():
                 db.session.commit()
                 flash(f'Archived {count} pupil class history record(s) for {academic_year}.', 'success')
             elif action == 'promote':
+                submitted_source_year = (request.form.get('academic_year') or '').strip()
+                if submitted_source_year != academic_year:
+                    raise ValueError(
+                        f'This rollover page is out of date. The school is currently set to {academic_year}; refresh before continuing.'
+                    )
                 if request.form.get('confirm_promotion') != 'yes':
                     raise ValueError(f'Confirm promotion from {academic_year} into {next_year} before continuing.')
                 class_mapping: dict[int, int | None] = {}
@@ -1976,9 +2000,32 @@ def promotion():
         'admin/promotion.html',
         academic_year=academic_year,
         next_year=next_year,
+        calendar_academic_year=get_current_academic_year(),
         history_rows=history_rows,
         mapping_rows=mapping_rows,
     )
+
+
+@admin_bp.route('/academic-year/reminder/dismiss', methods=['POST'])
+@login_required
+@admin_required
+def dismiss_academic_year_reminder():
+    """Dismiss this September's reminder without changing any school data."""
+    school_id = _selected_school_id_for_admin_actions()
+    school = db.session.get(School, school_id) if school_id else None
+    if not school:
+        flash('Select a school before dismissing the reminder.', 'warning')
+        return redirect(url_for('dashboards.admin_dashboard'))
+
+    calendar_year = get_current_academic_year()
+    submitted_year = (request.form.get('reminder_year') or '').strip()
+    if submitted_year != calendar_year:
+        flash('That reminder is no longer current. Nothing was changed.', 'warning')
+    else:
+        school.academic_year_reminder_dismissed_for = calendar_year
+        db.session.commit()
+        flash(f'Your school remains set to {school.current_academic_year.name}.', 'info')
+    return redirect(url_for('dashboards.admin_dashboard'))
 
 
 def _log_operational_error(*, route_name: str, import_type: str, retry_attempted: bool) -> None:
