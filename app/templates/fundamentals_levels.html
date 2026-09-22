@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
-{% block title %}Maths Fundamentals Level Overview{% endblock %}
+{% block title %}Maths Fundamentals Levels &amp; Questions{% endblock %}
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
-  <div><h1>Level Overview</h1><p class="text-muted mb-0">See where pupils are secure and where intervention is needed.</p></div>
+  <div><h1>Levels &amp; Questions</h1><p class="text-muted mb-0">See what each level assesses and where pupils need support.</p></div>
   <div class="btn-group" role="group" aria-label="Maths Fundamentals navigation">
     <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.home') }}">Current Sessions</a>
     <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.scores') }}">Previous Scores</a>
-    <a class="btn btn-primary" href="{{ url_for('fundamentals.levels') }}">Level Overview</a>
+    <a class="btn btn-primary" href="{{ url_for('fundamentals.levels') }}">Levels &amp; Questions</a>
     <a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions') }}">Intervention Dashboard</a>
   </div>
 </div>
@@ -19,7 +19,7 @@
   </form>
 </div></div>
 <div class="card shadow-sm"><div class="card-body"><div class="table-responsive"><table class="table table-striped align-middle">
-  <thead><tr><th>Level</th><th>Skill</th><th>Expected Year</th><th>Pupils stuck here</th><th>Pupils secure here+</th><th>View pupils</th></tr></thead>
-  <tbody>{% for row in rows %}<tr><td>Level {{ row.level.level_number }}</td><td>{{ row.level.skill }}</td><td>{{ row.level.expected_year or '—' }}</td><td>{{ row.stuck_count }}</td><td>{{ row.secure_count }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('fundamentals.level_pupils', level_number=row.level.level_number, class_id=selected_class_id, strand_id=selected_strand_id) }}">View pupils</a></td></tr>{% else %}<tr><td colspan="6" class="text-muted">No levels found for this strand.</td></tr>{% endfor %}</tbody>
+  <thead><tr><th>Level</th><th>Skill</th><th>What is being assessed</th><th>Expected Year</th><th>Example question / representation</th><th>Pupils stuck here</th><th>Pupils secure here+</th><th>View pupils</th></tr></thead>
+  <tbody>{% for row in rows %}<tr><td>Level {{ row.level.level_number }}</td><td>{{ row.level.skill }}</td><td>{{ row.level.diagnostic_intent or '—' }}</td><td>{{ row.level.expected_year or '—' }}</td><td>{% if row.example_question %}<div>{{ row.example_question.question_text }}</div>{% if row.example_question.representation_type %}<span class="badge text-bg-light border mt-1">{{ row.example_question.representation_type }}</span>{% endif %}{% else %}—{% endif %}</td><td>{{ row.stuck_count }}</td><td>{{ row.secure_count }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('fundamentals.level_pupils', level_number=row.level.level_number, class_id=selected_class_id, strand_id=selected_strand_id) }}">View pupils</a></td></tr>{% else %}<tr><td colspan="8" class="text-muted">No levels found for this strand.</td></tr>{% endfor %}</tbody>
 </table></div></div></div>
 {% endblock %}

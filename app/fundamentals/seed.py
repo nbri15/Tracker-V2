@@ -8,13 +8,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.fundamentals import early_number_sense_seed, number_bonds_seed
+from app.fundamentals import early_number_sense_seed, number_bonds_seed, place_value_seed
 from app.models import FundamentalLevel, FundamentalQuestion, FundamentalStrand
 
 
 SEED_DATASETS = (
     early_number_sense_seed,
     number_bonds_seed,
+    place_value_seed,
 )
 
 # A transaction-scoped PostgreSQL advisory lock prevents concurrent operators
@@ -104,6 +105,9 @@ def _seed_once() -> SeedSummary:
                     'skill': _get(row, 'Skill', 'skill'),
                     'expected_year': _get(row, 'ExpectedYear', 'expected_year'),
                     'pass_mark': int(_get(row, 'PassMark', 'pass_mark') or 70),
+                    'diagnostic_intent': _get(row, 'DiagnosticIntent', 'SuccessCriteria', 'diagnostic_intent'),
+                    'key_representations': _get(row, 'KeyRepresentations', 'key_representations'),
+                    'mastery_emphasis': _get(row, 'MasteryEmphasis', 'mastery_emphasis'),
                 },
                 summary.levels,
                 created=created,
@@ -125,6 +129,11 @@ def _seed_once() -> SeedSummary:
                     'question_type': _get(row, 'QuestionType', 'question_type'),
                     'question_text': _get(row, 'Question', 'question_text'),
                     'answer': str(_get(row, 'Answer', 'answer')),
+                    'skill': _get(row, 'Skill', 'skill'),
+                    'representation_type': _get(row, 'RepresentationType', 'representation_type'),
+                    'mastery_focus': _get(row, 'MasteryFocus', 'mastery_focus'),
+                    'rendering_notes': _get(row, 'RenderingSuggestion', 'rendering_notes'),
+                    'visual_data': _get(row, 'VisualData', 'visual_data'),
                 },
                 summary.questions,
                 created=created,

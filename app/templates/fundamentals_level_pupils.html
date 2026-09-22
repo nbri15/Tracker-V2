@@ -3,7 +3,7 @@
 {% block content %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
   <div><h1>Level {{ level_number }} pupils</h1><p class="text-muted mb-0">{{ level.skill if level else '' }}{% if level and level.expected_year %} · Expected {{ level.expected_year }}{% endif %}</p></div>
-  <div class="d-flex gap-2"><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels', class_id=selected_class_id, strand_id=selected_strand_id) }}">Level Overview</a><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions', class_id=selected_class_id, strand_id=selected_strand_id) }}">Intervention Dashboard</a></div>
+  <div class="d-flex gap-2"><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.levels', class_id=selected_class_id, strand_id=selected_strand_id) }}">Levels &amp; Questions</a><a class="btn btn-outline-primary" href="{{ url_for('fundamentals.interventions', class_id=selected_class_id, strand_id=selected_strand_id) }}">Intervention Dashboard</a></div>
 </div>
 <div class="card shadow-sm mb-4"><div class="card-body"><form method="get" class="row g-3 align-items-end">
   {% if current_user.is_executive_admin and selected_school_id %}<input type="hidden" name="school_id" value="{{ selected_school_id }}">{% endif %}

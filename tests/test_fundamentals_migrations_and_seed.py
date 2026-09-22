@@ -114,6 +114,17 @@ def test_migrations_upgrade_a_clean_database_with_complete_fundamentals_schema(m
         assert nullable['question_id'] is False
         assert nullable['question_text'] is False
         assert nullable['answer'] is False
+        assert {
+            'skill', 'representation_type', 'mastery_focus',
+            'rendering_notes', 'visual_data',
+        } <= set(nullable)
+        level_columns = {
+            column['name']
+            for column in inspector.get_columns('fundamental_levels')
+        }
+        assert {
+            'diagnostic_intent', 'key_representations', 'mastery_emphasis',
+        } <= level_columns
 
         question_fks = inspector.get_foreign_keys('fundamental_questions')
         assert any(
@@ -164,26 +175,40 @@ def test_explicit_seed_can_run_twice_and_creates_expected_bank(migrated_app):
     runner = migrated_app.test_cli_runner()
     first = runner.invoke(args=['fundamentals', 'seed'])
     assert first.exit_code == 0, first.output
-    assert 'Strands: 2 created, 0 updated, 0 unchanged.' in first.output
-    assert 'Levels: 27 created, 0 updated, 0 unchanged.' in first.output
-    assert 'Questions: 810 created, 0 updated, 0 unchanged.' in first.output
+    assert 'Strands: 3 created, 0 updated, 0 unchanged.' in first.output
+    assert 'Levels: 47 created, 0 updated, 0 unchanged.' in first.output
+    assert 'Questions: 1410 created, 0 updated, 0 unchanged.' in first.output
 
     second = runner.invoke(args=['fundamentals', 'seed'])
     assert second.exit_code == 0, second.output
-    assert 'Strands: 0 created, 0 updated, 2 unchanged.' in second.output
-    assert 'Levels: 0 created, 0 updated, 27 unchanged.' in second.output
-    assert 'Questions: 0 created, 0 updated, 810 unchanged.' in second.output
+    assert 'Strands: 0 created, 0 updated, 3 unchanged.' in second.output
+    assert 'Levels: 0 created, 0 updated, 47 unchanged.' in second.output
+    assert 'Questions: 0 created, 0 updated, 1410 unchanged.' in second.output
 
     with migrated_app.app_context():
-        assert FundamentalStrand.query.count() == 2
-        assert FundamentalLevel.query.count() == 27
-        assert FundamentalQuestion.query.count() == 810
+        assert FundamentalStrand.query.count() == 3
+        assert FundamentalLevel.query.count() == 47
+        assert FundamentalQuestion.query.count() == 1410
         ens = FundamentalStrand.query.filter_by(code='ENS').one()
         nb = FundamentalStrand.query.filter_by(code='NB').one()
+        pv = FundamentalStrand.query.filter_by(code='PV').one()
         assert FundamentalLevel.query.filter_by(strand_id=ens.id).count() == 15
         assert FundamentalQuestion.query.filter_by(strand_id=ens.id).count() == 450
         assert FundamentalLevel.query.filter_by(strand_id=nb.id).count() == 12
         assert FundamentalQuestion.query.filter_by(strand_id=nb.id).count() == 360
+        assert FundamentalLevel.query.filter_by(strand_id=pv.id).count() == 20
+        assert FundamentalQuestion.query.filter_by(strand_id=pv.id).count() == 600
+        place_value_ids = {
+            question.question_id
+            for question in FundamentalQuestion.query.filter_by(strand_id=pv.id).all()
+        }
+        assert len(place_value_ids) == 600
+        assert {'PV01-01', 'PV20-30'} <= place_value_ids
+        visual = FundamentalQuestion.query.filter_by(strand_id=pv.id, question_id='PV03-01').one()
+        assert visual.skill == 'Tens and ones / unitising'
+        assert visual.representation_type == 'base ten'
+        assert visual.mastery_focus == 'representation matching'
+        assert visual.visual_data['blocks'] == {'ten': 8, 'one': 7}
 
 
 def test_seed_updates_existing_question_instead_of_duplicating(migrated_app):
@@ -196,7 +221,7 @@ def test_seed_updates_existing_question_instead_of_duplicating(migrated_app):
 
     result = migrated_app.test_cli_runner().invoke(args=['fundamentals', 'seed'])
     assert result.exit_code == 0, result.output
-    assert 'Questions: 0 created, 1 updated, 809 unchanged.' in result.output
+    assert 'Questions: 0 created, 1 updated, 1409 unchanged.' in result.output
 
     with migrated_app.app_context():
         assert FundamentalQuestion.query.count() == original_count

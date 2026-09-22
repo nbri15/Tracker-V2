@@ -104,6 +104,10 @@ flask --app wsgi:app fundamentals seed
 ```
 
 This command is safe to rerun and does not delete attempts or responses.
+It refreshes all official banks: Early Number Sense, Number Bonds and Place
+Value. Place Value is imported from the mastery workbook using its stable
+`PV01-01` to `PV20-30` question IDs and retains its representation, mastery and
+visual-rendering metadata.
 
 ### 6) Run the application
 
@@ -347,6 +351,18 @@ The command is idempotent: it creates missing strands, levels and questions,
 updates existing questions by their stable `QuestionID`, preserves attempts and
 responses, and reports created/updated/unchanged counts. Run it again only when
 deploying an intentional question-bank revision.
+
+For the Place Value release, deploy in this order:
+
+```bash
+flask --app wsgi:app db upgrade
+flask --app wsgi:app fundamentals seed
+gunicorn wsgi:app --timeout 180
+```
+
+Render already runs the migration in `buildCommand`. The explicit seed remains
+a one-off post-migration Render Shell command and is never run during app
+startup.
 
 To apply migrations manually (for example after a failed build), run:
 
