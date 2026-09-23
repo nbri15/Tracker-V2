@@ -1,0 +1,73 @@
+{% macro base_ten_group(blocks, label='') -%}
+  <div class="pv-base-ten-group">
+    {% if label %}<div class="pv-model-label">{{ label }}</div>{% endif %}
+    {% for unit, count in blocks.items() %}
+      <div class="pv-unit-group" aria-label="{{ count }} {{ unit.replace('_', ' ') }} blocks">
+        <span class="pv-unit-label">{{ count }} × {{ unit.replace('_', ' ') }}</span>
+        <div class="pv-blocks pv-blocks-{{ unit }}">
+          {% for unused in range(count) %}<span class="pv-block pv-block-{{ unit }}" aria-hidden="true"></span>{% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{%- endmacro %}
+
+{% if presentation.visual %}
+  {% set visual = presentation.visual %}
+  <figure class="pv-visual pv-visual-{{ visual.kind }}" role="img" aria-label="{{ presentation.visual_alt }}">
+    {% if visual.kind == 'base_ten' %}
+      {{ base_ten_group(visual.blocks) }}
+    {% elif visual.kind == 'base_ten_exchange' %}
+      <div class="pv-exchange">
+        {{ base_ten_group(visual.before, 'Before exchange') }}
+        <span class="pv-exchange-arrow" aria-hidden="true">→</span>
+        {{ base_ten_group(visual.after, 'After exchange') }}
+      </div>
+    {% elif visual.kind in ['place_value_chart', 'place_value_charts'] %}
+      {% set charts = visual['charts'] if visual.kind == 'place_value_charts' else [{'label': '', 'values': visual['values']}] %}
+      <div class="pv-chart-set">
+      {% for chart in charts %}
+        <div>
+          {% if chart['label'] %}<div class="pv-model-label">{{ chart['label'] }}</div>{% endif %}
+          <table class="pv-chart">
+            <thead><tr>{% for column in visual.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr></thead>
+            <tbody><tr>{% for column in visual.columns %}<td>{{ chart['values'].get(column, '') }}</td>{% endfor %}</tr></tbody>
+          </table>
+        </div>
+      {% endfor %}
+      </div>
+    {% elif visual.kind == 'number_line' %}
+      <div class="pv-number-line-wrap {% if visual.orientation == 'vertical' %}pv-number-line-vertical{% endif %}">
+        <div class="pv-number-line">
+          {% for tick in visual.ticks %}
+            <span class="pv-line-tick" style="left:{{ '%.3f'|format(tick.position) }}%">
+              <span class="pv-tick-mark" aria-hidden="true"></span>
+              <span class="pv-tick-label">{{ tick.label if tick.label is not none else '?' }}</span>
+            </span>
+          {% endfor %}
+          {% if visual.marker %}<span class="pv-line-marker" style="left:{{ '%.3f'|format(visual.marker.position) }}%" aria-label="marked point"><span aria-hidden="true">◆</span></span>{% endif %}
+        </div>
+      </div>
+    {% elif visual.kind == 'counters' %}
+      <div class="pv-counter-groups">{% for group in visual.groups %}<div class="pv-counter-group">{% for unused in range(group) %}<span class="pv-counter" aria-hidden="true"></span>{% endfor %}</div>{% endfor %}</div>
+    {% elif visual.kind == 'counter_comparison' %}
+      <div class="pv-counter-groups pv-counter-comparison">{% for count in visual.counts %}<div class="pv-counter-group {% if loop.last %}pv-counter-spread{% endif %}">{% for unused in range(count) %}<span class="pv-counter" aria-hidden="true"></span>{% endfor %}</div>{% endfor %}</div>
+    {% elif visual.kind == 'ten_frame' %}
+      <div class="pv-ten-frame">{% for index in range(10) %}<span class="pv-ten-cell {% if index < visual.filled %}is-filled{% endif %}">{% if index < visual.filled %}<span class="pv-counter" aria-hidden="true"></span>{% endif %}</span>{% endfor %}</div>
+      {% if visual.extra %}<div class="pv-extra-counters">{% for unused in range(visual.extra) %}<span class="pv-counter" aria-hidden="true"></span>{% endfor %}</div>{% endif %}
+    {% elif visual.kind == 'part_whole' %}
+      <div class="pv-part-whole">
+        <div class="pv-whole">{{ visual.whole if visual.whole is not none else '?' }}</div>
+        <div class="pv-part-lines" aria-hidden="true"></div>
+        <div class="pv-parts"><div>{{ visual.parts[0] if visual.parts[0] is not none else '?' }}</div><div>{{ visual.parts[1] if visual.parts[1] is not none else '?' }}</div></div>
+      </div>
+    {% elif visual.kind == 'hundred_square' %}
+      <div class="pv-hundred-square">{% for cell in visual.cells %}<span class="{% if cell in visual.highlighted %}is-highlighted{% endif %}">{{ cell }}</span>{% endfor %}</div>
+    {% elif visual.kind == 'decimal_grid' %}
+      <div class="pv-decimal-grid" style="--pv-grid-columns:{{ visual.columns }}">{% for index in range(visual.rows * visual.columns) %}<span class="{% if index < visual.shaded %}is-shaded{% endif %}"></span>{% endfor %}</div>
+    {% elif visual.kind == 'decimal_partition' %}
+      <div class="pv-decimal-parts">{% for part in visual.parts %}<div><strong>{{ part.count }}</strong><span>{{ part.label }}</span></div>{% endfor %}</div>
+    {% endif %}
+    <figcaption class="visually-hidden">{{ presentation.visual_alt }}</figcaption>
+  </figure>
+{% endif %}

@@ -28,6 +28,9 @@ class FundamentalLevel(db.Model):
     skill = db.Column(db.String(255), nullable=False)
     expected_year = db.Column(db.String(80), nullable=True)
     pass_mark = db.Column(db.Integer, nullable=False, default=70)
+    diagnostic_intent = db.Column(db.Text, nullable=True)
+    key_representations = db.Column(db.String(255), nullable=True)
+    mastery_emphasis = db.Column(db.String(255), nullable=True)
 
     strand = db.relationship('FundamentalStrand', back_populates='levels')
 
@@ -43,6 +46,11 @@ class FundamentalQuestion(db.Model):
     question_type = db.Column(db.String(80), nullable=True)
     question_text = db.Column(db.Text, nullable=False)
     answer = db.Column(db.String(255), nullable=False)
+    skill = db.Column(db.String(255), nullable=True)
+    representation_type = db.Column(db.String(80), nullable=True)
+    mastery_focus = db.Column(db.String(80), nullable=True)
+    rendering_notes = db.Column(db.Text, nullable=True)
+    visual_data = db.Column(db.JSON, nullable=True)
 
     strand = db.relationship('FundamentalStrand', back_populates='questions')
     responses = db.relationship('FundamentalResponse', back_populates='question')

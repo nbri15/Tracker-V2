@@ -37,6 +37,25 @@ def seed_command() -> None:
             f'Missing: {", ".join(missing)}.'
         )
 
+    required_columns = {
+        'fundamental_levels': {
+            'diagnostic_intent', 'key_representations', 'mastery_emphasis',
+        },
+        'fundamental_questions': {
+            'skill', 'representation_type', 'mastery_focus',
+            'rendering_notes', 'visual_data',
+        },
+    }
+    missing_columns = []
+    for table_name, required in required_columns.items():
+        actual = {column['name'] for column in inspector.get_columns(table_name)}
+        missing_columns.extend(f'{table_name}.{column}' for column in sorted(required - actual))
+    if missing_columns:
+        raise click.ClickException(
+            'Maths Fundamentals schema is not current. Run "flask --app wsgi:app db upgrade" first. '
+            f'Missing columns: {", ".join(missing_columns)}.'
+        )
+
     try:
         summary = seed_service.seed_fundamentals()
     except IntegrityError as error:

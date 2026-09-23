@@ -3,6 +3,7 @@
 {% block content %}
 <h1>Start Maths Fundamentals session</h1>
 <form method="post" class="card card-body col-lg-6">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label class="form-label">Class</label>
   <select class="form-select mb-3" name="class_id" required>
     {% for class in classes %}<option value="{{ class.id }}" {% if selected_class and selected_class.id==class.id %}selected{% endif %}>{{ class.name }} (Year {{ class.year_group }})</option>{% endfor %}

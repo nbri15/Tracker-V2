@@ -29,6 +29,7 @@ from app.models import (
 from app.services import get_school_working_academic_year
 from app.utils import current_school_id
 from . import fundamentals_bp
+from .presentation import answers_match, question_presentation
 
 
 SESSION_TOKEN_SALT = 'maths-fundamentals-session-v1'
@@ -188,11 +189,29 @@ NUMBER_BONDS_INTERVENTIONS = (
     ('decimal bonds to 10', 'Partition whole numbers and decimals to find complements to 10.'),
 )
 
+PLACE_VALUE_INTERVENTIONS = (
+    ('unitising', 'Use base-ten blocks to exchange 10 ones for 1 ten and 10 tens for 1 hundred.'),
+    ('cross tens', 'Count forwards and backwards across tens boundaries using base-ten blocks and number lines.'),
+    ('cross hundreds', 'Model exchanges across hundreds with place-value counters and number lines.'),
+    ('cross thousands', 'Use place-value charts and equal jumps to cross 1,000 and 10,000 boundaries.'),
+    ('flexible partitioning', 'Build the same number in several ways, including regrouped and zero-placeholder partitions.'),
+    ('number lines', 'Mark endpoints, intervals and midpoints before estimating each number position.'),
+    ('more or less', 'Use a place-value chart to identify which digits change and which stay the same.'),
+    ('powers of ten', 'Use place-value charts to track digit value when multiplying or dividing by 10.'),
+    ('rounding', 'Locate numbers between adjacent multiples and reason from the midpoint.'),
+    ('negative', 'Count and compare on a number line that crosses zero.'),
+    ('tenths and hundredths', 'Connect decimal grids, place-value charts and decimal number lines.'),
+    ('decimal composition', 'Compose and partition decimals using tenths, hundredths and thousandths.'),
+)
+
 
 def suggested_intervention_for_level(skill):
     """Return a short practical teaching suggestion based on skill text."""
     skill_text = (skill or '').casefold()
     for skill_fragment, suggestion in NUMBER_BONDS_INTERVENTIONS:
+        if skill_fragment in skill_text:
+            return suggestion
+    for skill_fragment, suggestion in PLACE_VALUE_INTERVENTIONS:
         if skill_fragment in skill_text:
             return suggestion
     if 'subitise' in skill_text:
@@ -361,6 +380,16 @@ def _get_session_or_404(session_id: int) -> FundamentalSession:
 
 
 def _default_start_level(school_class: SchoolClass, strand: FundamentalStrand | None = None) -> int:
+    if strand and (strand.code or '').casefold() == 'pv':
+        return {
+            0: 1,
+            1: 2,
+            2: 5,
+            3: 6,
+            4: 10,
+            5: 12,
+            6: 15,
+        }.get(school_class.year_group, 1)
     if strand and (strand.code or '').casefold() == 'nb':
         return 5 if school_class.year_group and school_class.year_group >= 3 else 1
     return 5 if school_class.year_group and school_class.year_group >= 3 else 1
@@ -561,14 +590,25 @@ def levels():
     latest_attempts = _latest_completed_attempts_for_pupils(
         class_ids, selected_strand_id, _fundamentals_academic_year(classes)
     )
+    example_questions = {}
+    if selected_strand_id:
+        for question in (FundamentalQuestion.query
+                .filter_by(strand_id=selected_strand_id)
+                .order_by(FundamentalQuestion.level_number, FundamentalQuestion.question_id)
+                .all()):
+            example_questions.setdefault(question.level_number, question)
     rows = []
     for level in levels:
         rows.append({
             'level': level,
+            'example_question': example_questions.get(level.level_number),
             'stuck_count': sum(1 for attempt in latest_attempts if attempt.intervention_level == level.level_number),
             'secure_count': sum(1 for attempt in latest_attempts if attempt.secure_level is not None and attempt.secure_level >= level.level_number),
         })
 
+    selected_class, selected_strand = _selected_filter_labels(
+        classes, strands, selected_class_id, selected_strand_id
+    )
     return render_template(
         'fundamentals_levels.html',
         classes=classes,
@@ -576,6 +616,7 @@ def levels():
         rows=rows,
         selected_class_id=selected_class_id,
         selected_strand_id=selected_strand_id,
+        selected_strand=selected_strand,
     )
 
 
@@ -590,6 +631,9 @@ def interventions():
     )
     groups = _intervention_groups_for_attempts(latest_attempts, selected_strand_id)
 
+    selected_class, selected_strand = _selected_filter_labels(
+        classes, strands, selected_class_id, selected_strand_id
+    )
     return render_template(
         'fundamentals_interventions.html',
         classes=classes,
@@ -597,6 +641,7 @@ def interventions():
         groups=groups,
         selected_class_id=selected_class_id,
         selected_strand_id=selected_strand_id,
+        selected_strand=selected_strand,
     )
 
 
@@ -735,7 +780,7 @@ def pupil_question(attempt_token: str):
         if question.level_number != attempt.current_level or token_level != attempt.current_level:
             abort(404)
         pupil_answer = (request.form.get('answer') or '').strip()
-        is_correct = pupil_answer.casefold() == (question.answer or '').strip().casefold()
+        is_correct = answers_match(pupil_answer, question.answer)
         db.session.add(FundamentalResponse(
             attempt_id=attempt.id,
             question_id=question.id,
@@ -783,6 +828,7 @@ def pupil_question(attempt_token: str):
         question_token=_make_question_token(attempt, question),
         current_level_obj=level,
         answered_this_level=answered_this_level,
+        presentation=question_presentation(question),
     )
 
 
