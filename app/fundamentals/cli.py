@@ -43,7 +43,8 @@ def seed_command() -> None:
         },
         'fundamental_questions': {
             'skill', 'representation_type', 'mastery_focus',
-            'rendering_notes', 'visual_data',
+            'rendering_notes', 'visual_data', 'answer_type', 'renderer_spec',
+            'stem_reasoning_prompt', 'misconception_target', 'accepted_answers',
         },
     }
     missing_columns = []

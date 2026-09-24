@@ -86,10 +86,12 @@ def fundamentals_app(tmp_path, monkeypatch):
         ens = FundamentalStrand.query.filter_by(code='ENS').one()
         nb = FundamentalStrand.query.filter_by(code='NB').one()
         pv = FundamentalStrand.query.filter_by(code='PV').one()
+        add_sub = FundamentalStrand.query.filter_by(code='AS').one()
         sessions = {
             'a_ens': FundamentalSession(class_id=class_a.id, teacher_id=teacher_a.id, strand_id=ens.id, start_level=1),
             'a_nb': FundamentalSession(class_id=class_a.id, teacher_id=teacher_a.id, strand_id=nb.id, start_level=1),
             'a_pv': FundamentalSession(class_id=class_a.id, teacher_id=teacher_a.id, strand_id=pv.id, start_level=1, academic_year='2025/26'),
+            'a_as': FundamentalSession(class_id=class_a.id, teacher_id=teacher_a.id, strand_id=add_sub.id, start_level=7, academic_year='2025/26'),
             'b_ens': FundamentalSession(class_id=class_b.id, teacher_id=teacher_b.id, strand_id=ens.id, start_level=1),
         }
         db.session.add_all(sessions.values())
@@ -104,6 +106,7 @@ def fundamentals_app(tmp_path, monkeypatch):
             'a_ens': sessions['a_ens'].id,
             'a_nb': sessions['a_nb'].id,
             'a_pv': sessions['a_pv'].id,
+            'a_as': sessions['a_as'].id,
             'b_ens': sessions['b_ens'].id,
         }
 
@@ -126,6 +129,20 @@ def _start_attempt(client, join_path, pupil_id):
         data={'csrf_token': csrf_token, 'pupil_id': pupil_id},
         follow_redirects=False,
     )
+
+
+def _new_addition_subtraction_join_path(app, start_level=7):
+    ids = app.config['FUNDAMENTALS_TEST_IDS']
+    with app.app_context():
+        strand = FundamentalStrand.query.filter_by(code='AS').one()
+        session = FundamentalSession(
+            class_id=ids['class_a'], teacher_id=ids['teacher_a'], strand_id=strand.id,
+            start_level=start_level, academic_year='2025/26',
+        )
+        db.session.add(session)
+        db.session.commit()
+        token = fundamentals_routes.make_session_token(session)
+        return f'/fundamentals/join/{token}', session.id, strand.id
 
 
 def test_session_qr_is_exact_and_school_scoped(fundamentals_app, monkeypatch):
@@ -174,6 +191,14 @@ def test_session_qr_is_exact_and_school_scoped(fundamentals_app, monkeypatch):
     assert 'Place Value' in pv_body
     assert 'Alice Alpha' in pv_body
     assert 'Ben Beta' not in pv_body
+
+    assert client.get(f"/fundamentals/qr/{ids['a_as']}").status_code == 200
+    add_sub_page = client.get(urlsplit(captured_urls[-1]).path)
+    add_sub_body = add_sub_page.get_data(as_text=True)
+    assert add_sub_page.status_code == 200
+    assert 'Addition &amp; Subtraction' in add_sub_body
+    assert 'Alice Alpha' in add_sub_body
+    assert 'Ben Beta' not in add_sub_body
 
 
 def test_cross_school_pupil_and_attempt_are_rejected(fundamentals_app):
@@ -377,3 +402,97 @@ def test_place_value_reporting_and_intervention_skill_are_integrated(fundamental
     intervention_body = interventions.get_data(as_text=True)
     assert 'Place Value' in intervention_body
     assert 'Level 7: Cross hundreds boundaries' in intervention_body
+
+
+def test_teacher_can_start_addition_subtraction_with_default_or_override(fundamentals_app):
+    ids = fundamentals_app.config['FUNDAMENTALS_TEST_IDS']
+    client = fundamentals_app.test_client()
+    _login(client, ids['teacher_a'])
+    with fundamentals_app.app_context():
+        strand_id = FundamentalStrand.query.filter_by(code='AS').one().id
+
+    start_page = client.get(f'/fundamentals/start?class_id={ids["class_a"]}&strand_id={strand_id}')
+    body = start_page.get_data(as_text=True)
+    assert start_page.status_code == 200
+    assert 'Addition &amp; Subtraction' in body
+    assert re.search(r'value="7" data-strand-id="\d+" selected', body)
+
+    response = client.post('/fundamentals/start', data={
+        'csrf_token': _hidden_value(start_page, 'csrf_token'),
+        'class_id': ids['class_a'], 'strand_id': strand_id, 'start_level': 10,
+    }, follow_redirects=False)
+    assert response.status_code == 302
+    with fundamentals_app.app_context():
+        session = FundamentalSession.query.filter_by(
+            class_id=ids['class_a'], strand_id=strand_id, is_active=True,
+        ).one()
+        assert session.start_level == 10
+        assert session.academic_year == '2025/26'
+
+
+def test_addition_subtraction_sampling_and_shared_progression_engine(fundamentals_app, monkeypatch):
+    ids = fundamentals_app.config['FUNDAMENTALS_TEST_IDS']
+    join_path, session_id, _ = _new_addition_subtraction_join_path(fundamentals_app, start_level=7)
+    client = fundamentals_app.test_client()
+    start = _start_attempt(client, join_path, ids['pupil_a'])
+    question_path = urlsplit(start.location).path
+
+    original_choice = fundamentals_routes.random.choice
+    monkeypatch.setattr(
+        fundamentals_routes.random, 'choice',
+        lambda questions: next((question for question in questions if question.question_id == 'AS07-01'), original_choice(questions)),
+    )
+    page = client.get(question_path)
+    body = page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert 'Level 7: Two-digit ± one-digit' in body
+    assert 'pv-visual-base10' in body
+    with fundamentals_app.app_context():
+        strand = FundamentalStrand.query.filter_by(code='AS').one()
+        assert FundamentalQuestion.query.filter_by(strand_id=strand.id, level_number=7).count() == 30
+
+    monkeypatch.setattr(fundamentals_routes.random, 'choice', original_choice)
+    question_path = _submit_level(fundamentals_app, client, question_path, 6)
+    with fundamentals_app.app_context():
+        attempt = FundamentalPupilAttempt.query.filter_by(session_id=session_id, pupil_id=ids['pupil_a']).one()
+        assert (attempt.current_level, attempt.intervention_level, attempt.below_70_streak) == (8, 7, 1)
+    question_path = _submit_level(fundamentals_app, client, question_path, 7)
+    with fundamentals_app.app_context():
+        attempt = FundamentalPupilAttempt.query.filter_by(session_id=session_id, pupil_id=ids['pupil_a']).one()
+        assert (attempt.current_level, attempt.secure_level, attempt.intervention_level, attempt.below_70_streak) == (9, 8, 7, 0)
+    question_path = _submit_level(fundamentals_app, client, question_path, 6)
+    question_path = _submit_level(fundamentals_app, client, question_path, 6)
+    with fundamentals_app.app_context():
+        attempt = FundamentalPupilAttempt.query.filter_by(session_id=session_id, pupil_id=ids['pupil_a']).one()
+        assert (attempt.current_level, attempt.secure_level, attempt.intervention_level, attempt.below_70_streak, attempt.is_complete) == (11, 8, 7, 2, True)
+    assert '/fundamentals/pupil/complete/' in question_path
+
+
+def test_addition_subtraction_reporting_uses_precise_level_skill(fundamentals_app):
+    ids = fundamentals_app.config['FUNDAMENTALS_TEST_IDS']
+    with fundamentals_app.app_context():
+        strand = FundamentalStrand.query.filter_by(code='AS').one()
+        session = FundamentalSession(
+            class_id=ids['class_a'], teacher_id=ids['teacher_a'], strand_id=strand.id,
+            start_level=4, academic_year='2025/26', is_active=False,
+        )
+        attempt = FundamentalPupilAttempt(
+            session=session, pupil_id=ids['pupil_a'], current_level=6,
+            secure_level=4, intervention_level=5, below_70_streak=2,
+            is_complete=True, completed_at=datetime.now(timezone.utc),
+        )
+        db.session.add_all([session, attempt])
+        db.session.commit()
+        strand_id = strand.id
+
+    client = fundamentals_app.test_client()
+    _login(client, ids['teacher_a'])
+    scores = client.get(f'/fundamentals/scores?strand_id={strand_id}')
+    levels = client.get(f'/fundamentals/levels?class_id={ids["class_a"]}&strand_id={strand_id}')
+    interventions = client.get(f'/fundamentals/interventions?class_id={ids["class_a"]}&strand_id={strand_id}')
+    assert scores.status_code == levels.status_code == interventions.status_code == 200
+    assert 'Addition &amp; Subtraction' in scores.get_data(as_text=True)
+    assert 'Bridge 10 when subtracting' in levels.get_data(as_text=True)
+    intervention_body = interventions.get_data(as_text=True)
+    assert 'Addition &amp; Subtraction' in intervention_body
+    assert 'Level 5: Bridge 10 when subtracting' in intervention_body

@@ -51,6 +51,11 @@ class FundamentalQuestion(db.Model):
     mastery_focus = db.Column(db.String(80), nullable=True)
     rendering_notes = db.Column(db.Text, nullable=True)
     visual_data = db.Column(db.JSON, nullable=True)
+    answer_type = db.Column(db.String(20), nullable=True)
+    renderer_spec = db.Column(db.Text, nullable=True)
+    stem_reasoning_prompt = db.Column(db.Text, nullable=True)
+    misconception_target = db.Column(db.Text, nullable=True)
+    accepted_answers = db.Column(db.JSON, nullable=True)
 
     strand = db.relationship('FundamentalStrand', back_populates='questions')
     responses = db.relationship('FundamentalResponse', back_populates='question')

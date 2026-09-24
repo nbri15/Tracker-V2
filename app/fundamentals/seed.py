@@ -8,7 +8,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.fundamentals import early_number_sense_seed, number_bonds_seed, place_value_seed
+from app.fundamentals import (
+    addition_subtraction_seed,
+    early_number_sense_seed,
+    number_bonds_seed,
+    place_value_seed,
+)
 from app.models import FundamentalLevel, FundamentalQuestion, FundamentalStrand
 
 
@@ -16,6 +21,7 @@ SEED_DATASETS = (
     early_number_sense_seed,
     number_bonds_seed,
     place_value_seed,
+    addition_subtraction_seed,
 )
 
 # A transaction-scoped PostgreSQL advisory lock prevents concurrent operators
@@ -134,6 +140,11 @@ def _seed_once() -> SeedSummary:
                     'mastery_focus': _get(row, 'MasteryFocus', 'mastery_focus'),
                     'rendering_notes': _get(row, 'RenderingSuggestion', 'rendering_notes'),
                     'visual_data': _get(row, 'VisualData', 'visual_data'),
+                    'answer_type': _get(row, 'AnswerType', 'answer_type'),
+                    'renderer_spec': _get(row, 'RendererSpec', 'renderer_spec'),
+                    'stem_reasoning_prompt': _get(row, 'StemReasoningPrompt', 'stem_reasoning_prompt'),
+                    'misconception_target': _get(row, 'MisconceptionTarget', 'misconception_target'),
+                    'accepted_answers': _get(row, 'AcceptedAnswers', 'accepted_answers'),
                 },
                 summary.questions,
                 created=created,

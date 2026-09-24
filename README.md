@@ -104,10 +104,10 @@ flask --app wsgi:app fundamentals seed
 ```
 
 This command is safe to rerun and does not delete attempts or responses.
-It refreshes all official banks: Early Number Sense, Number Bonds and Place
-Value. Place Value is imported from the mastery workbook using its stable
-`PV01-01` to `PV20-30` question IDs and retains its representation, mastery and
-visual-rendering metadata.
+It refreshes all official banks: Early Number Sense, Number Bonds, Place Value,
+and Addition & Subtraction. The mastery workbooks retain stable `PV01-01` to
+`PV20-30` and `AS01-01` to `AS22-30` question IDs together with representation,
+mastery, answer-type, diagnostic and visual-rendering metadata.
 
 ### 6) Run the application
 
@@ -340,19 +340,18 @@ Notes:
 
 ### Maths Fundamentals question bank
 
-The question bank is not seeded by a web-process restart. After the first
-deployment of the Fundamentals migration, run this once from a Render Shell:
+The question bank is not seeded by a web-process restart. Render refreshes it
+in the build phase, after migrations and before the new web process starts:
 
 ```bash
-flask --app wsgi:app fundamentals seed
+pip install -r requirements.txt && flask --app wsgi:app db upgrade && flask --app wsgi:app fundamentals seed
 ```
 
 The command is idempotent: it creates missing strands, levels and questions,
 updates existing questions by their stable `QuestionID`, preserves attempts and
-responses, and reports created/updated/unchanged counts. Run it again only when
-deploying an intentional question-bank revision.
+responses, and reports created/updated/unchanged counts.
 
-For the Place Value release, deploy in this order:
+The deployment order is:
 
 ```bash
 flask --app wsgi:app db upgrade
@@ -360,9 +359,8 @@ flask --app wsgi:app fundamentals seed
 gunicorn wsgi:app --timeout 180
 ```
 
-Render already runs the migration in `buildCommand`. The explicit seed remains
-a one-off post-migration Render Shell command and is never run during app
-startup.
+The seed is idempotent and runs in `buildCommand`; it is never run during Flask
+or Gunicorn application startup.
 
 To apply migrations manually (for example after a failed build), run:
 
