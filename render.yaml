@@ -3,9 +3,9 @@ services:
     name: tracker-v2
     env: python
     plan: starter
-    # Schema changes are completed before Gunicorn starts. Application startup
-    # itself never creates tables or seeds the Fundamentals question bank.
-    buildCommand: pip install -r requirements.txt && flask --app wsgi:app db upgrade
+    # Schema changes and the idempotent question-bank refresh complete before
+    # Gunicorn starts. Application startup itself never creates or seeds data.
+    buildCommand: pip install -r requirements.txt && flask --app wsgi:app db upgrade && flask --app wsgi:app fundamentals seed
     startCommand: gunicorn wsgi:app --timeout 180
     envVars:
       - key: PYTHON_VERSION

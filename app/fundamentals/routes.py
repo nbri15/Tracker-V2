@@ -29,6 +29,7 @@ from app.models import (
 from app.services import get_school_working_academic_year
 from app.utils import current_school_id
 from . import fundamentals_bp
+from .addition_subtraction_seed import STARTING_LEVELS as ADDITION_SUBTRACTION_STARTING_LEVELS
 from .presentation import answers_match, question_presentation
 
 
@@ -204,6 +205,25 @@ PLACE_VALUE_INTERVENTIONS = (
     ('decimal composition', 'Compose and partition decimals using tenths, hundredths and thousandths.'),
 )
 
+ADDITION_SUBTRACTION_INTERVENTIONS = (
+    ('additive structures', 'Model combining, partitioning, augmentation and reduction with counters, stories and part-whole models.'),
+    ('facts within 10', 'Use ten frames, doubles and related facts to build fluent addition and subtraction facts.'),
+    ('fact families', 'Build fact-family triangles and vary the position of the unknown in linked equations.'),
+    ('bridge 10 when adding', 'Use a ten frame to partition the addend, complete 10 and then add the remainder.'),
+    ('bridge 10 when subtracting', 'Partition the subtrahend, subtract to 10 and then subtract the remainder.'),
+    ('difference', 'Align comparison bars or count on along a number line to find the difference.'),
+    ('regrouping', 'Combine Dienes by place and exchange 10 ones for 1 ten while preserving the total.'),
+    ('with exchange', 'Exchange one higher-value unit for 10 lower-value units before subtracting.'),
+    ('bridging 100', 'Use complements and an open number line to bridge through 100 efficiently.'),
+    ('mental calculation', 'Partition by place value and compare compensation with direct mental methods.'),
+    ('column addition', 'Align digits by place and annotate each exchange in the written addition.'),
+    ('column subtraction', 'Align digits by place and rehearse the exchange path, including through zero.'),
+    ('efficient mental strategies', 'Compare count-on, compensation, place-value and written methods before calculating.'),
+    ('estimate, inverse and check', 'Estimate first, calculate, then use the inverse to check reasonableness.'),
+    ('decimal addition', 'Align decimal points and use a labelled place-value chart for tenths and hundredths.'),
+    ('mixed problems', 'Represent the known and unknown quantities with a bar model before choosing an operation.'),
+)
+
 
 def suggested_intervention_for_level(skill):
     """Return a short practical teaching suggestion based on skill text."""
@@ -212,6 +232,9 @@ def suggested_intervention_for_level(skill):
         if skill_fragment in skill_text:
             return suggestion
     for skill_fragment, suggestion in PLACE_VALUE_INTERVENTIONS:
+        if skill_fragment in skill_text:
+            return suggestion
+    for skill_fragment, suggestion in ADDITION_SUBTRACTION_INTERVENTIONS:
         if skill_fragment in skill_text:
             return suggestion
     if 'subitise' in skill_text:
@@ -380,6 +403,8 @@ def _get_session_or_404(session_id: int) -> FundamentalSession:
 
 
 def _default_start_level(school_class: SchoolClass, strand: FundamentalStrand | None = None) -> int:
+    if strand and (strand.code or '').casefold() == 'as':
+        return ADDITION_SUBTRACTION_STARTING_LEVELS.get(school_class.year_group, 1)
     if strand and (strand.code or '').casefold() == 'pv':
         return {
             0: 1,
@@ -780,7 +805,12 @@ def pupil_question(attempt_token: str):
         if question.level_number != attempt.current_level or token_level != attempt.current_level:
             abort(404)
         pupil_answer = (request.form.get('answer') or '').strip()
-        is_correct = answers_match(pupil_answer, question.answer)
+        is_correct = answers_match(
+            pupil_answer,
+            question.answer,
+            accepted_answers=question.accepted_answers,
+            answer_type=question.answer_type,
+        )
         db.session.add(FundamentalResponse(
             attempt_id=attempt.id,
             question_id=question.id,
