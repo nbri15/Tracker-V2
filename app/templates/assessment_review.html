@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Assessment review{% endblock %}
+{% set page_heading = 'Review assessment change' if review.kind == 'setup' else 'Import preview' %}
+{% block content %}
+<div class="alert alert-info">{{ review.payload.academic_year }} · Nothing has been applied. Check this preview, then confirm. Reviews expire after 30 minutes.</div>
+{% if review.kind == 'setup' %}
+<div class="card shadow-sm mb-4"><div class="card-body"><h3 class="h5">{{ format_subject_name(review.payload.subject) }} · Year {{ review.payload.year_group }} · {{ get_term_label(review.payload.term) }}</h3>
+<table class="table"><thead><tr><th>Setting</th><th>Current</th><th>Proposed</th></tr></thead><tbody>{% for key,label in [('paper_1_max','Paper 1 maximum'),('paper_2_max','Paper 2 maximum'),('combined_max','Combined maximum'),('below_are_threshold_percent','Expected Standard %'),('exceeding_threshold_percent','Greater Depth %')] %}<tr><td>{{ label }}</td><td>{{ review.payload.current[key] }}</td><td>{{ review.payload.proposed[key] }}</td></tr>{% endfor %}</tbody></table>
+<p><strong>{{ report.checked }}</strong> pupil results checked · <strong>{{ report.changed }}</strong> would change band · <strong>{{ report.unchanged }}</strong> unchanged.</p><p class="small">Applying this change recalculates these results for {{ review.payload.academic_year }} only. Current-year automatic interventions are refreshed; historical intervention records are preserved.</p></div></div>
+{% else %}
+<div class="card shadow-sm mb-4"><div class="card-body"><h3 class="h5">Validation summary</h3>
+<p>{{ report.total|default(report.checked|default(0)) }} pupils/rows checked · {{ report.matched|default(0) }} matched · {{ report.added|default(0) }} results to add · {{ report.changed_results|default(report.updated|default(0)) }} to update · {{ report.errors|length }} blocking problems.</p>
+{% if report.created %}<p class="text-warning-emphasis">{{ report.created }} pupils will be created by this roster import. Check new names carefully.</p>{% endif %}
+{% if report.skipped %}<p>{{ report.skipped }} protected/blank rows will be skipped.</p>{% endif %}
+{% if report.blank %}<p>{{ report.blank }} pupils have both scores blank; existing results will be kept.</p>{% endif %}
+{% if report.missing %}<p class="text-warning-emphasis">{{ report.missing|length }} pupils absent from the file: {{ report.missing|join(', ') }}.</p>{% endif %}
+{% if report.without_score is defined %}<p>{{ report.without_score }} pupils would remain without complete scores.</p>{% endif %}
+{% for warning in report.warnings|default([]) %}<p class="small text-warning-emphasis">{{ warning }}</p>{% endfor %}</div></div>
+{% endif %}
+{% if report.errors %}<div class="alert alert-danger"><strong>Resolve these problems before importing/applying:</strong><ul>{% for error in report.errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+{% if report.rows %}<div class="card shadow-sm mb-4"><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Pupil / row</th><th>{{ 'Current band' if review.kind == 'setup' else 'Validation / planned action' }}</th>{% if review.kind == 'setup' %}<th>Proposed band</th>{% endif %}</tr></thead><tbody>{% for row in report.rows %}<tr class="{{ 'table-danger' if row.status == 'error' else 'table-warning' if row.status == 'warning' else '' }}"><td>{{ row.pupil|default(row.sheet|default('') ~ ' row ' ~ row.row_number|default('')) }}</td><td>{{ row.current if review.kind == 'setup' else row.detail }}</td>{% if review.kind == 'setup' %}<td>{{ row.proposed }}</td>{% endif %}</tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{% if expired %}<div class="alert alert-warning">This preview has expired. Create a fresh review before confirming.</div>{% endif %}
+{% if review.confirmed_at %}<div class="alert alert-success">This change has already been applied.</div>{% endif %}
+<form method="post" class="d-flex gap-3"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="school_id" value="{{ review.school_id }}"><button class="btn btn-primary" name="action" value="apply" {% if report.errors or expired or review.confirmed_at %}disabled{% endif %}>{{ 'Apply change & recalculate' if review.kind == 'setup' else 'Confirm import' }}</button><button class="btn btn-outline-secondary" name="action" value="cancel">Cancel</button><a class="btn btn-link" href="{{ back }}">{{ 'Back to assessment setup' if review.kind == 'setup' else 'Back to assessment' if review.kind == 'subject' else 'Back to imports' }}</a></form>
+{% endblock %}

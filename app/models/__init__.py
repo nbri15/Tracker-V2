@@ -12,6 +12,7 @@ from .assessment import (
     TimesTableScore,
     TimesTableTestColumn,
 )
+from .assessment_review import AssessmentConfiguration, AssessmentReview
 from .audit import AuditLog
 from .fundamentals import (
     FundamentalLevel,

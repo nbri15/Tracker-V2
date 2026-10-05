@@ -51,6 +51,7 @@ def register_extensions(app: Flask) -> None:
 def register_blueprints(app: Flask) -> None:
     """Register all blueprint modules."""
 
+    from .assessment_workflow import assessment_bp
     from .admin import admin_bp
     from .auth import auth_bp
     from .dashboards import dashboards_bp
@@ -60,6 +61,7 @@ def register_blueprints(app: Flask) -> None:
     from .legal import legal_bp
     from .fundamentals import fundamentals_bp
 
+    app.register_blueprint(assessment_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboards_bp)
     app.register_blueprint(teacher_bp)

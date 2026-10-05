@@ -54,6 +54,7 @@
         <a class="nav-link text-white {% if request.endpoint == 'admin.reception_tracker' %}active{% endif %}" href="{{ url_for('admin.reception_tracker') }}">Reception tracker</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.foundation_tracker' %}active{% endif %}" href="{{ url_for('admin.foundation_tracker') }}">Foundation tracker</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.promotion' %}active{% endif %}" href="{{ url_for('admin.promotion') }}">Promotion & history</a>
+        <a class="nav-link text-white {% if request.endpoint == 'assessment_workflow.setup' %}active{% endif %}" href="{{ url_for('assessment_workflow.setup') }}">Assessment Setup</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
         <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports</a>

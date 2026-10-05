@@ -29,7 +29,7 @@
 
     <div class="card shadow-sm border-primary mt-4">
       <div class="card-body">
-        <h5>Download combined CSV template</h5>
+        <h5>Download combined CSV template</h5><a href="{{ url_for('admin.classes') }}">View class assessments & analysis</a>
         <p class="text-muted small">Use the combined CSV when adding pupils and assessment data. Each row is one pupil.</p>
         <a class="btn btn-primary" href="{{ url_for('admin.download_import_template', template_type='combined') }}">Download combined CSV template</a>
       </div>
@@ -38,9 +38,9 @@
     <div class="card shadow-sm mt-4">
       <div class="card-header bg-white"><strong>Combined CSV Import</strong></div>
       <div class="card-body">
-        <p class="small text-muted">Upload one CSV sheet containing pupil details, classes, and assessment columns. If a row has an academic_year value it overrides the selected year below.</p>
+        <p class="small text-muted">Upload one CSV sheet containing pupil details, classes, and assessment columns. All rows must belong to the selected academic year. Upload → validate → preview → confirm.</p>
         <form method="post" enctype="multipart/form-data" class="form-grid">
-          <input type="hidden" name="import_type" value="combined">
+          <input type="hidden" name="import_type" value="combined"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-md-4">
             <label class="form-label">Academic year this data belongs to</label>
             <select name="academic_year_id" class="form-select" required>
@@ -50,12 +50,13 @@
             </select>
           </div>
           <div class="col-md-4"><label class="form-label">CSV file</label><input type="file" name="csv_file" class="form-control" accept=".csv,text/csv" required></div>
-          <div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-primary w-100" name="confirm_save" value="0">Preview</button></div>
-          <div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100" name="confirm_save" value="1">Confirm import</button></div>
+          <div class="col-md-2 d-flex align-items-end"><button class="btn btn-outline-primary w-100" >Validate & preview</button></div>
+
         </form>
       </div>
     </div>
 
+    <div class="card shadow-sm mt-4"><div class="card-body"><h3 class="h5">Workbook import</h3><p class="small text-muted">Core results, pupils, Phonics and SATs use the same review/confirmation protection. Other populated tracker sheets must use their dedicated import.</p><a href="{{ url_for('admin.download_full_template_xlsx') }}">Download school workbook</a><form method="post" enctype="multipart/form-data" action="{{ url_for('admin.import_full_workbook') }}" class="mt-3"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="academic_year_id" value="{{ selected_year_id }}"><label class="form-label">{{ selected_year }} workbook (.xlsx)</label><input type="file" name="workbook_file" class="form-control mb-3" accept=".xlsx" required><button class="btn btn-primary">Validate & preview workbook</button></form></div></div>
     <div class="card shadow-sm mt-4">
       <div class="card-header bg-white"><strong>Exports</strong></div>
       <div class="card-body d-flex flex-wrap gap-2">

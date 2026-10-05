@@ -15,6 +15,8 @@ from app.extensions import db
 from app.models import (
     AcademicYear,
     AssessmentSetting,
+    AssessmentConfiguration,
+    AssessmentReview,
     AuditLog,
     FoundationResult,
     FundamentalPupilAttempt,
@@ -202,6 +204,8 @@ def _permanently_delete_school_data(school: School) -> None:
 
     GapQuestion.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     GapTemplate.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    AssessmentReview.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    AssessmentConfiguration.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     AssessmentSetting.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     PhonicsTestColumn.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     TimesTableTestColumn.query.filter_by(school_id=school_id).delete(synchronize_session=False)

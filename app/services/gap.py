@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 import logging
+import math
+from app.utils import current_school_id
 
 from app.extensions import db
 from app.models import GapQuestion, GapScore, GapTemplate, SubjectResult
@@ -18,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 def get_or_create_gap_template(year_group: int, subject: str, term: str, academic_year: str) -> GapTemplate:
-    template = GapTemplate.query.filter_by(year_group=year_group, subject=subject, term=term, academic_year=academic_year).first()
+    template = GapTemplate.query.filter_by(school_id=current_school_id(), year_group=year_group, subject=subject, term=term, academic_year=academic_year).first()
     if template:
         return template
-    template = GapTemplate(year_group=year_group, subject=subject, term=term, academic_year=academic_year)
+    template = GapTemplate(school_id=current_school_id(), year_group=year_group, subject=subject, term=term, academic_year=academic_year)
     db.session.add(template)
     db.session.flush()
     return template
@@ -52,6 +54,10 @@ def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
         if max_score < 0:
             raise AssessmentValidationError(f'Question {label}: max score cannot be negative.')
         question = GapQuestion.query.get(int(question_id)) if question_id else GapQuestion(template_id=template.id)
+        if question.template_id and question.template_id != template.id:
+            raise AssessmentValidationError('The question is not part of this assessment template.')
+        if paper_key not in {'paper_1', 'paper_2'}:
+            raise AssessmentValidationError('Choose a valid paper for this question.')
         question.school_id = template.school_id
         question.paper_key = paper_key
         question.question_label = label
@@ -96,6 +102,8 @@ def save_gap_scores(pupils, questions: list[GapQuestion], form, *, school_id: in
                 score_value = float(raw_value)
             except ValueError as exc:
                 raise AssessmentValidationError(f'{pupil.full_name} question {question.question_label}: score must be numeric.') from exc
+            if not math.isfinite(score_value):
+                raise AssessmentValidationError(f'{pupil.full_name}: enter a finite score.')
             if score_value < 0:
                 raise AssessmentValidationError(f'{pupil.full_name} question {question.question_label}: score cannot be negative.')
             if question.max_score is not None and score_value > question.max_score:
@@ -157,7 +165,7 @@ def sync_gap_totals_to_subject_results(
         pupil_totals, pupil_paper_totals = build_gap_totals_from_saved_scores(pupils, questions)
 
     template = questions[0].template
-    setting = get_subject_setting(template.year_group, template.subject, template.term)
+    setting = get_subject_setting(template.year_group, template.subject, template.term, template.academic_year, school_id=template.school_id)
     effective_school_id = school_id if school_id is not None else template.school_id
     pupil_ids = [pupil.id for pupil in pupils]
 
@@ -170,10 +178,28 @@ def sync_gap_totals_to_subject_results(
         ).filter(SubjectResult.pupil_id.in_(pupil_ids)).all()
     }
 
+    from .assessment_reliability import apply_result, setting_for_result
+    saved_scores = {(score.pupil_id, score.question_id): score.score for score in GapScore.query.filter(GapScore.question_id.in_([question.id for question in questions])).all()}
     updated = 0
     total_scores_synced = 0
     for pupil in pupils:
-        per_paper = pupil_paper_totals.get(pupil.id, {})
+        per_paper = dict(pupil_paper_totals.get(pupil.id, {}))
+        for paper in list(per_paper):
+            paper_questions = [question for question in questions if (question.paper_key or 'paper_1') == paper]
+            if any(saved_scores.get((pupil.id, question.id)) is None for question in paper_questions):
+                per_paper.pop(paper)
+                warnings.append(f'{pupil.full_name}: {paper} is incomplete; its assessment score was kept.')
+        if not per_paper:
+            continue
+        if any(total is not None and int(total) != total for total in per_paper.values()):
+            warnings.append(f'{pupil.full_name}: fractional GAP total kept in GAP; assessment paper scores require whole marks.')
+            continue
+        for paper in list(per_paper):
+            maximum = setting.paper_1_max if paper == 'paper_1' else setting.paper_2_max
+            question_maximum = sum(question.max_score or 0 for question in questions if (question.paper_key or 'paper_1') == paper)
+            if question_maximum != maximum:
+                warnings.append(f'{pupil.full_name}: {paper} questions total {question_maximum} marks, but assessment maximum is {maximum}; assessment score kept.')
+                per_paper.pop(paper)
         if not per_paper:
             continue
         result = existing_results.get(pupil.id)
@@ -193,19 +219,16 @@ def sync_gap_totals_to_subject_results(
         if 'paper_2' in per_paper:
             result.paper_2_score = _normalise_score(per_paper['paper_2'])
             total_scores_synced += 1
-        computed = compute_subject_result_values(setting, result.paper_1_score, result.paper_2_score, validate_scores=False)
-        result.combined_score = computed['combined_score']
-        result.combined_percent = computed['combined_percent']
-        result.band_label = resolve_subject_band_label(
-            percent=computed['combined_percent'],
-            setting=setting,
-            pupil_year_group=template.year_group,
-            assessment_year_group=result.assessment_year_group,
-        )
-        result.source = 'gap'
-        db.session.add(result)
+        result.pupil = pupil
+        effective_setting = setting_for_result(result, setting)
+        apply_result(result, effective_setting, result.paper_1_score, result.paper_2_score,
+            cohort=template.year_group, assessment_year_group=result.assessment_year_group, source='gap')
         updated += 1
 
+    if updated:
+        from app.utils import log_audit_event
+        log_audit_event('assessment_bulk_results_changed', 'gap_template', template.id, school_id=effective_school_id,
+            details=f'GAP synced {updated} {template.subject} results; {template.academic_year} {template.term}')
     logger.info(
         'QLA/GAP totals synced to subject results: assessment_id=%s subject=%s paper=%s pupils_updated=%s total_scores_synced=%s',
         template.id,
