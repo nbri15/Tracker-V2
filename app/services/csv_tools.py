@@ -267,14 +267,14 @@ def _parse_year_group(value: str | None) -> int:
     return aliases[raw]
 
 
-def _get_or_create_class(class_name: str, year_group: int) -> tuple[SchoolClass, bool]:
+def _get_or_create_class(class_name: str, year_group: int, academic_year: str | None = None) -> tuple[SchoolClass, bool]:
     school_id = current_school_id()
     if school_id is None:
         raise CsvImportError('Select a school before importing CSV data.')
     school_class = SchoolClass.query.filter_by(school_id=school_id, name=class_name).first()
     if school_class:
-        if school_class.year_group != year_group:
-            school_class.year_group = year_group
+        if school_class.year_group != year_group and (not academic_year or academic_year == get_selected_current_academic_year()):
+            raise CsvImportError('The class year group does not match. Use Promotion & history to move classes.')
         school_class.is_active = True
         db.session.add(school_class)
         return school_class, False
@@ -297,12 +297,14 @@ def _find_combined_pupil(row: dict, first_name: str, last_name: str, pupil_name:
     return Pupil.query.filter(Pupil.school_id == school_id, Pupil.class_id == school_class.id, (Pupil.first_name + ' ' + Pupil.last_name) == pupil_name).first()
 
 
-def _save_class_history(pupil: Pupil, school_class: SchoolClass, academic_year: str) -> None:
+def _save_class_history(pupil: Pupil, school_class: SchoolClass, academic_year: str, year_group: int | None = None) -> None:
     history = PupilClassHistory.query.filter_by(school_id=school_class.school_id, pupil_id=pupil.id, academic_year=academic_year).first()
+    if history and academic_year != get_selected_current_academic_year():
+        return
     if not history:
         history = PupilClassHistory(school_id=school_class.school_id, pupil_id=pupil.id, academic_year=academic_year)
     history.class_name = school_class.name
-    history.year_group = school_class.year_group
+    history.year_group = year_group if year_group is not None else school_class.year_group
     history.teacher_username = school_class.teacher.username if school_class.teacher else None
     db.session.add(history)
 
@@ -392,6 +394,10 @@ def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> 
         'class_id': school_class.id,
         'is_active': True,
     }
+    for field in ('pupil_premium', 'laps', 'service_child', 'send'):
+        raw = _get_send_value(row) if field == 'send' else row.get(field)
+        if raw is None or _clean_value(raw) == '':
+            updates.pop(field, None)
     if any(key in row for key in ('join_year_group', 'year_joined', 'joined_year_group')):
         updates['join_year_group'] = _parse_join_year_group(row)
     if 'join_date' in row:
@@ -425,18 +431,12 @@ def _write_subject_result(existing: SubjectResult | None, *, pupil: Pupil, acade
     allowed, reason = _can_write_subject_result(existing)
     if not allowed:
         return None, reason
-    setting = get_subject_setting(pupil.school_class.year_group, subject, term)
-    result = existing or SubjectResult(pupil_id=pupil.id, academic_year=academic_year, term=term, subject=subject)
+    from .assessment_reliability import apply_result, cohort_year_group, setting_for_result
+    result = existing or SubjectResult(pupil=pupil, pupil_id=pupil.id, school_id=pupil.school_id, academic_year=academic_year, term=term, subject=subject)
+    setting = setting_for_result(result)
     merged_paper_1 = paper_1_score if paper_1_score is not None else result.paper_1_score
     merged_paper_2 = paper_2_score if paper_2_score is not None else result.paper_2_score
-    computed = compute_subject_result_values(setting, merged_paper_1, merged_paper_2)
-    result.paper_1_score = merged_paper_1
-    result.paper_2_score = merged_paper_2
-    result.combined_score = computed['combined_score']
-    result.combined_percent = computed['combined_percent']
-    result.band_label = computed['band_label']
-    result.source = 'csv'
-    db.session.add(result)
+    apply_result(result, setting, merged_paper_1, merged_paper_2, cohort=cohort_year_group(pupil, academic_year), assessment_year_group=result.assessment_year_group, source='csv')
     return result, None
 
 
@@ -499,7 +499,7 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
             academic_year = _require_value(row, 'academic_year', label='academic_year')
             get_or_create_academic_year(academic_year)
 
-            school_class, class_created = _get_or_create_class(class_name, year_group)
+            school_class, class_created = _get_or_create_class(class_name, year_group, academic_year)
             pupil = _find_combined_pupil(row, first_name, last_name, pupil_name, school_class)
             progress = RowProgress()
             if class_created:
@@ -524,14 +524,15 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                 db.session.flush()
                 progress.pupil_created = True
             else:
-                progress.pupil_updated = _update_pupil_fields(pupil, row, school_class)
-                pupil.first_name = first_name
-                pupil.last_name = last_name
+                progress.pupil_updated = _update_pupil_fields(pupil, row, school_class) if academic_year == get_selected_current_academic_year() else False
+                if academic_year == get_selected_current_academic_year():
+                    pupil.first_name = first_name
+                    pupil.last_name = last_name
                 pupil.school_id = school_class.school_id
                 db.session.add(pupil)
-            _save_class_history(pupil, school_class, academic_year)
+            _save_class_history(pupil, school_class, academic_year, year_group)
 
-            if year_group in {1, 2, 3, 4, 5}:
+            if year_group in {1, 2, 3, 4, 5, 6}:
                 for subject, terms in COMBINED_SUBJECT_SCORE_COLUMNS.items():
                     for term, (paper_1_column, paper_2_column) in terms.items():
                         paper_1_score = _parse_optional_int(row.get(paper_1_column), paper_1_column)
@@ -588,10 +589,15 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
                 for exam in range(1, 5):
                     vals = {field: _parse_optional_int(row.get(f'sats_exam{exam}_{field}'), f'sats_exam{exam}_{field}') for field in SATS_COMBINED_FIELDS}
                     if any(value is not None for value in vals.values()):
-                        rec = SatsResult.query.filter_by(pupil_id=pupil.id, academic_year=academic_year, exam_number=exam).first() or SatsResult(pupil_id=pupil.id, academic_year=academic_year, exam_number=exam, subject='combined', assessment_point=exam, school_id=school_class.school_id)
-                        rec.arithmetic_score = vals['arithmetic']; rec.reasoning_1_score = vals['reasoning1']; rec.reasoning_2_score = vals['reasoning2']; rec.maths_scaled_score = vals['maths_scaled']
-                        rec.reading_score = vals['reading']; rec.reading_scaled_score = vals['reading_scaled']; rec.spelling_score = vals['spelling']; rec.grammar_score = vals['grammar']; rec.spag_scaled_score = vals['spag_scaled']
-                        db.session.add(rec); summary.tracker_entries_created += 1
+                        from .assessment_imports import save_sats_result
+                        rec, new = save_sats_result(pupil, academic_year, exam, {
+                            'arithmetic_score': vals['arithmetic'], 'reasoning_1_score': vals['reasoning1'], 'reasoning_2_score': vals['reasoning2'],
+                            'maths_scaled_score': vals['maths_scaled'], 'reading_score': vals['reading'], 'reading_scaled_score': vals['reading_scaled'],
+                            'spelling_score': vals['spelling'], 'grammar_score': vals['grammar'], 'spag_scaled_score': vals['spag_scaled'],
+                        })
+                        summary.tracker_entries_created += int(new)
+                        summary.tracker_entries_updated += int(not new)
+
 
             if year_group in {1, 2, 3, 4, 5}:
                 for term in ('autumn', 'spring', 'summer'):
@@ -619,7 +625,12 @@ def import_combined_results(rows: list[dict]) -> CsvImportSummary:
         except Exception as exc:
             summary.rows_skipped += 1
             summary.skipped += 1
-            summary.add_error(f'Row {index}: {exc}')
+            if isinstance(exc, ValueError):
+                summary.add_error(f'Row {index}: {exc}')
+            else:
+                from flask import current_app
+                current_app.logger.exception('CSV row validation failed')
+                summary.add_error(f'Row {index}: this row could not be validated. No import can be confirmed until it is corrected.')
     db.session.flush()
     return summary
 
@@ -693,7 +704,12 @@ def import_reception_tracker(rows: list[dict]) -> CsvImportSummary:
         except Exception as exc:
             summary.rows_skipped += 1
             summary.skipped += 1
-            summary.add_error(f'Row {index}: {exc}')
+            if isinstance(exc, ValueError):
+                summary.add_error(f'Row {index}: {exc}')
+            else:
+                from flask import current_app
+                current_app.logger.exception('CSV row validation failed')
+                summary.add_error(f'Row {index}: this row could not be validated. No import can be confirmed until it is corrected.')
     summary.pupils_matched = len(processed_pupil_ids)
     return summary
 
@@ -714,36 +730,30 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
             academic_year = _require_value(row, 'academic_year', label='academic_year')
             get_or_create_academic_year(academic_year)
             exam_number = int(_require_value(row, 'exam_number', label='exam_number'))
-            per_row_changes = 0
-            rec = SatsResult.query.filter_by(
-                school_id=pupil.school_id, pupil_id=pupil.id, academic_year=academic_year, exam_number=exam_number
-            ).first()
-            if rec is None:
-                rec = SatsResult(school_id=pupil.school_id, pupil_id=pupil.id, academic_year=academic_year, exam_number=exam_number, subject='maths', assessment_point=exam_number)
-                summary.created += 1
-            else:
-                summary.updated += 1
-            for csv_column, field in [('arithmetic', 'arithmetic_score'), ('reasoning_1', 'reasoning_1_score'), ('reasoning_2', 'reasoning_2_score'), ('maths_scaled_score', 'maths_scaled_score'), ('reading', 'reading_score'), ('reading_scaled_score', 'reading_scaled_score'), ('spelling', 'spelling_score'), ('grammar', 'grammar_score'), ('spag_scaled_score', 'spag_scaled_score')]:
-                raw_value = _clean_value(row.get(csv_column))
-                if raw_value == '':
-                    continue
-                score = _parse_optional_int(raw_value, csv_column)
-                if score is None:
-                    continue
-                setattr(rec, field, score)
-                per_row_changes += 1
-            rec.maths_combined_score = (rec.arithmetic_score or 0) + (rec.reasoning_1_score or 0) + (rec.reasoning_2_score or 0)
-            rec.spag_combined_score = (rec.spelling_score or 0) + (rec.grammar_score or 0)
-            db.session.add(rec)
-
-            if per_row_changes == 0:
+            from .assessment_imports import save_sats_result
+            values = {field: _parse_optional_int(row.get(column), column) for column, field in [
+                ('arithmetic','arithmetic_score'), ('reasoning_1','reasoning_1_score'), ('reasoning_2','reasoning_2_score'),
+                ('maths_scaled_score','maths_scaled_score'), ('reading','reading_score'), ('reading_scaled_score','reading_scaled_score'),
+                ('spelling','spelling_score'), ('grammar','grammar_score'), ('spag_scaled_score','spag_scaled_score')]}
+            if not any(value is not None for value in values.values()):
                 summary.rows_skipped += 1
                 summary.skipped += 1
                 summary.add_message(f'Row {index}: no SATs values supplied; row skipped.')
+                continue
+            rec, created = save_sats_result(pupil, academic_year, exam_number, values)
+            summary.created += int(created)
+            summary.updated += int(not created)
+            summary.tracker_entries_created += int(created)
+            summary.tracker_entries_updated += int(not created)
         except Exception as exc:
             summary.rows_skipped += 1
             summary.skipped += 1
-            summary.add_error(f'Row {index}: {exc}')
+            if isinstance(exc, ValueError):
+                summary.add_error(f'Row {index}: {exc}')
+            else:
+                from flask import current_app
+                current_app.logger.exception('CSV row validation failed')
+                summary.add_error(f'Row {index}: this row could not be validated. No import can be confirmed until it is corrected.')
 
     summary.pupils_matched = len(processed_pupil_ids)
     return summary

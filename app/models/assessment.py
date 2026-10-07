@@ -60,6 +60,9 @@ class SubjectResult(db.Model):
     notes = db.Column(db.Text, nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+    configuration_snapshot = db.Column(db.JSON, nullable=True)
+    cohort_year_group = db.Column(db.Integer, nullable=True)
+
     pupil = db.relationship('Pupil', back_populates='subject_results')
 
     @staticmethod
@@ -76,7 +79,7 @@ class SubjectResult(db.Model):
 
         if combined_score is None or not combined_max:
             return None
-        percent = Decimal(str((combined_score / combined_max) * 100)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+        percent = (Decimal(str(combined_score)) * 100 / Decimal(str(combined_max))).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
         return float(percent)
 
     @staticmethod
@@ -104,7 +107,7 @@ class GapTemplate(db.Model):
 
     __tablename__ = 'gap_templates'
     __table_args__ = (
-        db.UniqueConstraint('year_group', 'subject', 'term', 'academic_year', name='uq_gap_template_scope'),
+        db.UniqueConstraint('school_id', 'year_group', 'subject', 'term', 'academic_year', name='uq_gap_template_school_scope'),
     )
 
     id = db.Column(db.Integer, primary_key=True)

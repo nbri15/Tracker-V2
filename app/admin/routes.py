@@ -1601,13 +1601,8 @@ def _parse_setting_form(prefix: str = '') -> dict:
 @login_required
 @admin_required
 def settings():
-    form = AssessmentSettingForm()
-    filter_year_group = request.args.get('year_group', '').strip()
-    filter_subject = request.args.get('subject', '').strip()
-    filter_term = request.args.get('term', '').strip()
-
     if request.method == 'POST':
-        action = request.form.get('action', 'create')
+        action = request.form.get('action', '')
         try:
             if action == 'set-active-academic-year':
                 school_id = _selected_school_id_for_admin_actions()
@@ -1643,78 +1638,14 @@ def settings():
                 else:
                     flash('Academic years are already up to date.', 'info')
                 return redirect(url_for('admin.settings'))
-            if action == 'create':
-                payload = validate_setting_payload(_parse_setting_form())
-                setting = get_or_create_assessment_setting(payload['year_group'], payload['subject'], payload['term'])
-                update_assessment_setting(setting, payload)
-                recalculate_subject_results_for_scope(setting.year_group, setting.subject, setting.term)
-                db.session.commit()
-                flash(f"Saved {format_subject_name(setting.subject)} {setting.term.title()} settings for Year {setting.year_group}.", 'success')
-            else:
-                setting_id = int(request.form.get('setting_id', '0'))
-                setting = AssessmentSetting.query.get_or_404(setting_id)
-                payload = validate_setting_payload(_parse_setting_form(prefix=str(setting.id)))
-                existing = AssessmentSetting.query.filter_by(year_group=payload['year_group'], subject=payload['subject'], term=payload['term']).first()
-                if existing and existing.id != setting.id:
-                    raise AssessmentValidationError('A setting already exists for that year group, subject, and term.')
-                update_assessment_setting(setting, payload)
-                recalculate_subject_results_for_scope(setting.year_group, setting.subject, setting.term)
-                db.session.commit()
-                flash(f"Updated {format_subject_name(setting.subject)} {setting.term.title()} settings for Year {setting.year_group}.", 'success')
-        except (ValueError, AssessmentValidationError) as exc:
+            flash('Use Assessment Setup to review assessment changes before applying them.', 'warning')
+            return redirect(url_for('assessment_workflow.setup', school_id=current_school_id()))
+        except ValueError as exc:
             db.session.rollback()
             flash(f'Settings could not be saved: {exc}', 'danger')
-
-    settings_query = AssessmentSetting.query
-    if filter_year_group:
-        settings_query = settings_query.filter(AssessmentSetting.year_group == int(filter_year_group))
-    if filter_subject:
-        settings_query = settings_query.filter(AssessmentSetting.subject == filter_subject)
-    if filter_term:
-        settings_query = settings_query.filter(AssessmentSetting.term == filter_term)
-
-    settings = settings_query.order_by(AssessmentSetting.year_group, AssessmentSetting.subject, AssessmentSetting.term).all()
-
-    if request.method == 'GET' and filter_year_group and filter_subject and filter_term:
-        form.year_group.data = int(filter_year_group)
-        form.subject.data = filter_subject
-        form.term.data = filter_term
-        setting = AssessmentSetting.query.filter_by(year_group=int(filter_year_group), subject=filter_subject, term=filter_term).first()
-        if setting:
-            form.paper_1_name.data = setting.paper_1_name
-            form.paper_1_max.data = setting.paper_1_max
-            form.paper_2_name.data = setting.paper_2_name
-            form.paper_2_max.data = setting.paper_2_max
-            form.combined_max.data = setting.combined_max
-            form.below_are_threshold_percent.data = setting.below_are_threshold_percent
-            form.on_track_threshold_percent.data = setting.on_track_threshold_percent
-            form.exceeding_threshold_percent.data = setting.exceeding_threshold_percent
-        elif filter_subject in CORE_SUBJECTS:
-            defaults = get_setting_defaults(filter_subject)
-            form.paper_1_name.data = defaults['paper_1_name']
-            form.paper_1_max.data = defaults['paper_1_max']
-            form.paper_2_name.data = defaults['paper_2_name']
-            form.paper_2_max.data = defaults['paper_2_max']
-            form.combined_max.data = defaults['combined_max']
-            form.below_are_threshold_percent.data = defaults['below_are_threshold_percent']
-            form.on_track_threshold_percent.data = defaults['on_track_threshold_percent']
-            form.exceeding_threshold_percent.data = defaults['exceeding_threshold_percent']
-
     selected_year = get_school_working_academic_year(_selected_school_id_for_admin_actions())
-    return render_template(
-        'admin/settings.html',
-        settings=settings,
-        filter_year_group=filter_year_group,
-        filter_subject=filter_subject,
-        filter_term=filter_term,
-        filter_subject_choices=[('', 'All subjects')] + [(subject, format_subject_name(subject)) for subject in CORE_SUBJECTS],
-        filter_term_choices=[('', 'All terms')] + TERMS,
-        form=form,
-        terms=TERMS,
-        selected_year=selected_year,
-        school_academic_year_choices=build_school_academic_year_choices(selected_year.name),
-        academic_year_options=build_academic_year_options(),
-    )
+    return render_template('admin/settings.html', selected_year=selected_year,
+        school_academic_year_choices=build_school_academic_year_choices(selected_year.name))
 
 
 
@@ -1724,89 +1655,9 @@ def settings():
 @login_required
 @admin_required
 def settings_quick_save():
-    print("AUTOSAVE HIT")
-    data = request.get_json(silent=True) or {}
-    field = (data.get('field') or '').strip()
-    field_aliases = {
-        'working_towards_pct': 'below_are_threshold_percent',
-        'exceeding_pct': 'exceeding_threshold_percent',
-    }
-    field = field_aliases.get(field, field)
-    allowed = {'year_group', 'term', 'subject', 'paper_1_name', 'paper_1_max', 'paper_2_name', 'paper_2_max', 'combined_max', 'below_are_threshold_percent', 'exceeding_threshold_percent'}
-    if field not in allowed:
-        return {'ok': False, 'error': 'Field not allowed'}, 400
+    return {'ok': False, 'error': 'Assessment settings require an impact preview. Open Admin → Assessment Setup.'}, 409
 
-    selected_school_id = current_school_id()
-    if current_user.is_executive_admin:
-        if selected_school_id is None:
-            return {'ok': False, 'error': 'Select a school before editing settings'}, 400
-        school_id = selected_school_id
-    else:
-        school_id = current_user.school_id
-        if school_id is None:
-            return {'ok': False, 'error': 'Your account is not linked to a school'}, 403
 
-    setting = None
-    try:
-        setting_id = int(data.get('record_id') or 0)
-    except (TypeError, ValueError):
-        setting_id = 0
-    if setting_id > 0:
-        setting = AssessmentSetting.query.get(setting_id)
-    if setting is None:
-        try:
-            year_group = int(data.get('year_group'))
-        except (TypeError, ValueError):
-            return {'ok': False, 'error': 'Missing record_id or valid row identity'}, 400
-        subject = (data.get('subject') or '').strip()
-        term = (data.get('term') or '').strip()
-        if not subject or not term:
-            return {'ok': False, 'error': 'Missing subject/term for row identity'}, 400
-        query = AssessmentSetting.query.filter_by(year_group=year_group, subject=subject, term=term)
-        if school_id is not None:
-            query = query.filter(AssessmentSetting.school_id == school_id)
-        setting = query.first()
-    if setting is None:
-        return {'ok': False, 'error': 'Setting row not found'}, 404
-    if setting.school_id != school_id:
-        return {'ok': False, 'error': 'Forbidden for selected school context', 'setting_school_id': setting.school_id, 'selected_school_id': school_id}, 403
-
-    raw_value = data.get('value')
-    try:
-        if field in {'paper_1_max', 'paper_2_max', 'combined_max'}:
-            if raw_value in (None, ''):
-                raise ValueError('Blank numeric value')
-            value = float(raw_value)
-            if not value.is_integer():
-                raise ValueError('Score maxima must be whole numbers')
-            value = int(value)
-        elif field == 'year_group':
-            if raw_value in (None, ''):
-                raise ValueError('Blank numeric value')
-            value = int(raw_value)
-        elif field in {'below_are_threshold_percent', 'exceeding_threshold_percent'}:
-            if raw_value in (None, ''):
-                raise ValueError('Blank numeric value')
-            value = float(raw_value)
-        else:
-            value = (raw_value or '').strip()
-        setattr(setting, field, value)
-        payload = validate_setting_payload({
-            'year_group': setting.year_group, 'subject': setting.subject, 'term': setting.term,
-            'paper_1_name': setting.paper_1_name, 'paper_1_max': setting.paper_1_max,
-            'paper_2_name': setting.paper_2_name, 'paper_2_max': setting.paper_2_max,
-            'combined_max': setting.combined_max, 'below_are_threshold_percent': setting.below_are_threshold_percent,
-            'on_track_threshold_percent': setting.below_are_threshold_percent, 'exceeding_threshold_percent': setting.exceeding_threshold_percent,
-        })
-        update_assessment_setting(setting, payload)
-        db.session.add(setting); db.session.commit()
-    except ValueError as exc:
-        db.session.rollback()
-        return {'ok': False, 'error': str(exc) or 'Invalid value'}, 400
-    except AssessmentValidationError as exc:
-        db.session.rollback()
-        return {'ok': False, 'error': str(exc) or 'Invalid value'}, 400
-    return {'ok': True, 'message': 'Saved'}
 @admin_bp.route('/interventions')
 @login_required
 @admin_required
@@ -2076,38 +1927,11 @@ def _run_import_with_single_retry(import_type: str, rows: list[dict]):
 @login_required
 @admin_required
 def imports():
+    if request.method == 'POST':
+        from app.assessment_workflow.routes import upload_admin_csv
+        return upload_admin_csv()
     summary = None
     selected_import_type = 'combined'
-    if request.method == 'POST':
-        selected_import_type = request.form.get('import_type', 'combined')
-        try:
-            rows = parse_uploaded_csv(request.files.get('csv_file'))
-            selected_year_record = AcademicYear.query.filter_by(id=request.form.get('academic_year_id')).first() if request.form.get('academic_year_id') else None
-            fallback_year = selected_year_record.name if selected_year_record else get_selected_current_academic_year()
-            for row in rows:
-                if not (row.get('academic_year') or '').strip():
-                    row['academic_year'] = fallback_year
-            summary = import_combined_results(rows) if selected_import_type == 'combined' else _run_import_with_single_retry(selected_import_type, rows)[0]
-            if request.form.get('confirm_save') == '1':
-                _safe_import_commit(route_name='admin.imports', import_type=selected_import_type)
-                action_label = 'Import finished'
-            else:
-                db.session.rollback()
-                action_label = 'Preview finished (nothing saved)'
-            if summary.errors:
-                for error in summary.errors[:20]:
-                    flash(error, 'warning')
-            flash(
-                f'{action_label}: total rows {summary.rows_processed}, pupils to create/created {summary.pupils_created}, '
-                f'pupils to update/updated {summary.pupils_updated}, pupils matched {summary.pupils_matched}, '
-                f'assessment results to import/imported {summary.subject_results_created + summary.subject_results_updated + summary.writing_results_created + summary.writing_results_updated + summary.tracker_entries_created + summary.tracker_entries_updated}, '
-                f'rows skipped {summary.rows_skipped}, warnings/errors {summary.validation_errors}.',
-                'success',
-            )
-        except CsvImportError as exc:
-            db.session.rollback()
-            flash(f'Import failed: {exc}', 'danger')
-
     overview = {
         'teachers': school_scoped_query(User, User.query.filter_by(role='teacher', is_demo=current_user.is_demo)).count(),
         'classes': demo_filter_classes(SchoolClass.query).count(),
@@ -2170,26 +1994,24 @@ def download_full_template_xlsx():
 @login_required
 @admin_required
 def import_full_workbook():
-    file = request.files.get('workbook_file')
-    if not file or not file.filename.lower().endswith('.xlsx'):
-        flash('Please upload a .xlsx workbook.', 'danger')
-        return redirect(url_for('admin.imports'))
-    wb = load_workbook(file, data_only=True)
+    from app.assessment_workflow.routes import upload_workbook
+    return upload_workbook()
+
+
+def _process_full_workbook(wb, academic_year):
+    """Legacy tracker mapping, called only inside a reviewed transaction."""
     start_time = time.perf_counter()
     preview_errors = []
     preview_table = []
     created = 0
     updated = 0
     seen_pupil_rows = set()
+    results_added = results_updated = 0
     valid_genders = {'male', 'female', 'm', 'f', ''}
     school_id = _selected_school_id_for_admin_actions()
     if school_id is None:
         flash('Select a school before importing workbook data.', 'warning')
         return redirect(url_for('admin.imports'))
-    selected_year_id = (request.form.get('academic_year_id') or '').strip()
-    selected_year = AcademicYear.query.filter_by(id=selected_year_id).first() if selected_year_id else None
-    selected_academic_year = (selected_year.name if selected_year else '').strip()
-    academic_year = selected_academic_year or get_selected_current_academic_year()
     current_academic_year = get_selected_current_academic_year()
     batch_size = 200
     processed_rows = 0
@@ -2254,18 +2076,6 @@ def import_full_workbook():
 
     subject_results = SubjectResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
     subject_result_map = {(r.pupil_id, r.term, r.subject): r for r in subject_results}
-    writing_results = WritingResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
-    writing_result_map = {(r.pupil_id, r.term): r for r in writing_results}
-    foundation_results = FoundationResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
-    foundation_result_map = {(r.pupil_id, r.term, r.subject): r for r in foundation_results}
-    reception_results = ReceptionTrackerEntry.query.filter_by(school_id=school_id, academic_year=academic_year).all()
-    reception_result_map = {(r.pupil_id, r.tracking_point, r.area_key): r for r in reception_results}
-    sats_results = SatsResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
-    sats_result_map = {(r.pupil_id, r.exam_number): r for r in sats_results}
-    sats_column_results = SatsColumnResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
-    sats_column_result_map = {(r.pupil_id, r.column_id): r for r in sats_column_results}
-    sats_writing_results = SatsWritingResult.query.filter_by(school_id=school_id, academic_year=academic_year).all()
-    sats_writing_result_map = {(r.pupil_id, r.assessment_point): r for r in sats_writing_results}
     phonics_results = PhonicsScore.query.filter_by(school_id=school_id, academic_year=academic_year).all()
     phonics_result_map = {(r.pupil_id, r.phonics_test_column_id): r for r in phonics_results}
     times_table_results = TimesTableScore.query.filter_by(school_id=school_id, academic_year=academic_year).all()
@@ -2291,13 +2101,6 @@ def import_full_workbook():
 
     if academic_year != current_academic_year:
         _refresh_historical_lookup()
-    sats_tabs = get_sats_exam_tabs(6, include_inactive=True) if 'SATs' in wb.sheetnames else []
-    sats_tabs_by_name = {_norm(tab.name).lower(): tab for tab in sats_tabs}
-    sats_column_maps_by_tab = {
-        tab.id: {_norm(column.column_key): column for column in get_sats_columns(6, exam_tab_id=tab.id, active_only=False) if column.column_key}
-        for tab in sats_tabs
-    }
-
     phonics_columns = PhonicsTestColumn.query.filter_by(school_id=school_id).all()
     phonics_column_map: dict[tuple[int, str], PhonicsTestColumn] = {}
     phonics_display_order_by_year: dict[int, int] = {}
@@ -2383,20 +2186,25 @@ def import_full_workbook():
             )
             db.session.add(history_row)
             history_result_map[pupil.id] = history_row
-        else:
+        elif academic_year == current_academic_year:
             history_row.class_name = school_class.name
             history_row.year_group = school_class.year_group
             history_row.teacher_username = school_class.teacher.username if school_class.teacher else None
         if academic_year == current_academic_year:
             pupil.gender = normalize_gender(_norm(gender_value)) or pupil.gender or ''
-            pupil.pupil_premium = _norm(pp_value).lower() in {'1', 'true', 'yes', 'y'}
-            pupil.laps = _norm(laps_value).lower() in {'1', 'true', 'yes', 'y'}
-            pupil.service_child = _norm(service_value).lower() in {'1', 'true', 'yes', 'y'}
-            pupil.send = _norm(send_value).lower() in {'1', 'true', 'yes', 'y'}
-            try:
-                pupil.join_year_group = int(year_group_value) if year_group_value not in (None, '') else pupil.join_year_group
-            except (TypeError, ValueError):
-                pass
+            if pp_value not in (None, ''):
+                pupil.pupil_premium = _norm(pp_value).lower() in {'1', 'true', 'yes', 'y'}
+            if laps_value not in (None, ''):
+                pupil.laps = _norm(laps_value).lower() in {'1', 'true', 'yes', 'y'}
+            if service_value not in (None, ''):
+                pupil.service_child = _norm(service_value).lower() in {'1', 'true', 'yes', 'y'}
+            if send_value not in (None, ''):
+                pupil.send = _norm(send_value).lower() in {'1', 'true', 'yes', 'y'}
+            if 'join_year_group' in pupil_headers:
+                try:
+                    pupil.join_year_group = int(_value(row, pupil_headers, 'join_year_group'))
+                except (TypeError, ValueError):
+                    preview_errors.append(f'Pupils row {row_idx}: invalid year joined school.')
         pupil_by_class_and_name[(_norm_key(school_class.name), _norm_key(_pupil_display_name(pupil)))] = pupil
         updated += 1
         _flush_batch('Pupils', row_idx)
@@ -2415,7 +2223,11 @@ def import_full_workbook():
                 preview_errors.append(f'{sheet} row {row_idx}: invalid term {term}')
                 _preview_row(sheet, row_idx, 'warning', f'Invalid term "{_norm(row[2])}".', 'Use Autumn, Spring, or Summer.')
                 continue
+            if _value(row, headers, 'arithmetic', 'paper_1', 'spelling', default_index=3) in (None, '') and _value(row, headers, 'reasoning', 'paper_2', 'grammar', default_index=4) in (None, ''):
+                _preview_row(sheet, row_idx, 'skipped', f'{pupil.full_name}: scores blank; existing results kept.')
+                continue
             r = subject_result_map.get((pupil.id, term, subject))
+            was_new = r is None
             if not r:
                 r=SubjectResult(pupil_id=pupil.id, school_id=school_id, academic_year=academic_year, term=term, subject=subject)
                 db.session.add(r)
@@ -2429,7 +2241,15 @@ def import_full_workbook():
                 preview_errors.append(f'{sheet} row {row_idx}: invalid score value.')
                 _preview_row(sheet, row_idx, 'warning', 'Invalid score format.', 'Use numeric values only.')
                 continue
-            r.combined_score=(r.paper_1_score or 0)+(r.paper_2_score or 0) if r.paper_1_score is not None and r.paper_2_score is not None else None
+            from app.services.assessment_reliability import apply_result, setting_for_result
+            r.pupil = pupil
+            try:
+                apply_result(r, setting_for_result(r), r.paper_1_score, r.paper_2_score, assessment_year_group=r.assessment_year_group, source='csv')
+            except AssessmentValidationError as exc:
+                preview_errors.append(f'{sheet} row {row_idx}: {pupil.full_name}: {exc}')
+                continue
+            results_added += int(was_new)
+            results_updated += int(not was_new)
             r.notes=_norm(_value(row, headers, 'notes', default_index=5))
             _preview_row(sheet, row_idx, 'updated', f'Will import {sheet} data for {_norm(pupil_name)}.')
             _flush_batch(sheet, row_idx)
@@ -2442,12 +2262,14 @@ def import_full_workbook():
                 preview_errors.append(f'Phonics row {row_idx}: pupil not matched {_norm(pupil_name)}')
                 continue
             test_name = _norm(_value(row, headers, 'test_name', default_index=2))
+            if not test_name and _value(row, headers, 'score', default_index=3) in (None, ''):
+                continue
             if not test_name:
                 preview_errors.append(f'Phonics: missing test_name for {_norm(pupil_name)}')
                 continue
             score_raw = _value(row, headers, 'score', default_index=3)
             if score_raw in (None, ''):
-                preview_errors.append(f'Phonics: missing score for {_norm(pupil_name)} ({test_name})')
+                _preview_row('Phonics', row_idx, 'skipped', f'No score for {_norm(pupil_name)} ({test_name}); existing score kept.')
                 continue
             try:
                 score_value = int(score_raw)
@@ -2466,9 +2288,9 @@ def import_full_workbook():
                 phonics_column_map[col_key] = column
                 is_new_column = True
             if is_new_column:
-                preview_errors.append(f'Phonics: new test column will be created ({column.name}, Year {column.year_group})')
+                _preview_row('Phonics', row_idx, 'new', f'New column: {column.name}.')
             else:
-                preview_errors.append(f'Phonics: existing test column used ({column.name}, Year {column.year_group})')
+                pass
             result = phonics_result_map.get((pupil.id, column.id))
             if not result:
                 result = PhonicsScore(
@@ -2482,107 +2304,8 @@ def import_full_workbook():
             result.score = score_value
             _preview_row('Phonics', row_idx, 'updated', f'Will save score for {_norm(pupil_name)} ({column.name}).')
             _flush_batch('Phonics', row_idx)
-    if 'SATs' in wb.sheetnames:
-        headers = sheet_headers.get('SATs', {})
-        for row in wb['SATs'].iter_rows(min_row=_data_start_row('SATs'), values_only=True):
-            pupil = _pupil_from_assessment_row(row, headers)
-            pupil_name = _value(row, headers, 'pupil', 'pupil_name', 'full_name', default_index=1)
-            if not pupil:
-                preview_errors.append(f'SATs: pupil not matched {_norm(pupil_name)}')
-                continue
-            pupil_year_group = pupil.school_class.year_group if pupil.school_class else pupil.join_year_group
-            if pupil_year_group != 6:
-                preview_errors.append(f'SATs: skipped non-Year 6 pupil {_norm(pupil_name)}')
-                continue
-            assessment_point = _norm(_value(row, headers, 'assessment_point', 'exam_number', default_index=2))
-            if assessment_point not in SATS_ASSESSMENT_POINTS:
-                preview_errors.append(f'SATs: invalid assessment_point "{assessment_point}" for {_norm(pupil_name)}')
-                continue
-            tab = sats_tabs_by_name.get(assessment_point.lower())
-            if not tab:
-                preview_errors.append(f'SATs: assessment tab missing for {assessment_point}')
-                continue
-            column_map = sats_column_maps_by_tab.get(tab.id, {})
-            imported_values = []
-            sats_import_aliases = {
-                'reading_raw': ('reading_raw', 'reading_paper', 'reading'),
-                'reading_scaled': ('reading_scaled', 'reading_scaled_score'),
-                'maths_arithmetic_raw': ('maths_arithmetic_raw', 'arithmetic'),
-                'maths_reasoning_raw': ('maths_reasoning_raw', 'reasoning_1', 'reasoning'),
-                'maths_scaled': ('maths_scaled', 'maths_scaled_score'),
-                'spag_grammar_raw': ('spag_grammar_raw', 'grammar'),
-                'spag_spelling_raw': ('spag_spelling_raw', 'spelling'),
-                'spag_scaled': ('spag_scaled', 'spag_scaled_score'),
-            }
-            for csv_key in SATS_FIXED_COLUMNS.keys():
-                raw_value = _value(row, headers, *sats_import_aliases.get(csv_key, (csv_key,)))
-                if raw_value in (None, ''):
-                    continue
-                column = column_map.get(csv_key)
-                if not column:
-                    preview_errors.append(f'SATs: fixed column missing "{csv_key}" ({assessment_point})')
-                    continue
-                try:
-                    score_value = int(raw_value)
-                except (TypeError, ValueError):
-                    preview_errors.append(f'SATs: invalid value for {csv_key} on {_norm(pupil_name)}')
-                    continue
-                result = sats_column_result_map.get((pupil.id, column.id))
-                action = 'will update existing row' if result else 'will create new row'
-                if not result:
-                    result = SatsColumnResult(school_id=school_id, pupil_id=pupil.id, academic_year=academic_year, column_id=column.id)
-                    sats_column_result_map[(pupil.id, column.id)] = result
-                result.raw_score = score_value
-                db.session.add(result)
-                imported_values.append(f'{csv_key}={score_value}')
-                preview_errors.append(f'SATs: {_norm(pupil_name)} {assessment_point} {csv_key} -> {action}')
-
-            writing_band_raw = _value(row, headers, 'writing_band') if 'writing_band' in headers else None
-            band_value = _normalize_writing_band(writing_band_raw)
-            if _norm(writing_band_raw) and not band_value:
-                preview_errors.append(f'SATs: invalid writing_band "{_norm(writing_band_raw)}" for {_norm(pupil_name)}')
-            elif band_value:
-                ap_index = SATS_ASSESSMENT_POINTS.index(assessment_point) + 1
-                writing_row = sats_writing_result_map.get((pupil.id, ap_index))
-                action = 'will update existing row' if writing_row else 'will create new row'
-                if not writing_row:
-                    writing_row = SatsWritingResult(school_id=school_id, pupil_id=pupil.id, academic_year=academic_year, assessment_point=ap_index)
-                    sats_writing_result_map[(pupil.id, ap_index)] = writing_row
-                writing_row.band = band_value
-                writing_row.notes = _norm(_value(row, headers, 'notes'))
-                db.session.add(writing_row)
-                preview_errors.append(f'SATs: {_norm(pupil_name)} {assessment_point} writing_band={_norm(writing_band_raw)} -> {action}')
-            if imported_values:
-                preview_errors.append(f'SATs: values to import {_norm(pupil_name)} {assessment_point}: {", ".join(imported_values)}')
-    if request.form.get('confirm_save')!='1':
-        db.session.rollback()
-        session['workbook_import_preview'] = {
-            'academic_year': academic_year,
-            'rows': preview_table[:120],
-            'created': created,
-            'updated': updated,
-            'skipped': len([row for row in preview_table if row['status'] == 'skipped']),
-            'warnings': len([row for row in preview_table if row['status'] == 'warning']),
-        }
-        for e in preview_errors[:20]: flash(e,'warning')
-        flash(f'Preview complete. {created} pupils would be created/updated. Re-upload and click Save Workbook Import to apply.', 'info')
-        return redirect(url_for('admin.imports'))
-    try:
-        db.session.flush()
-        db.session.commit()
-    except OperationalError:
-        _log_operational_error(route_name='admin.import_full_workbook', import_type='full_workbook', retry_attempted=False)
-        db.session.rollback()
-        db.session.remove()
-        raise
-    ensure_academic_year(academic_year, mark_current=False)
-    log_audit_event('import_full_workbook', 'school', school_id, school_id=school_id, details=f'academic_year={academic_year};created={created};updated={updated};warnings={len(preview_errors)}')
-    for subject in ('maths', 'reading', 'spag'):
-        for term in ('autumn', 'spring', 'summer'):
-            recalculate_subject_results_for_scope(6, subject, term, academic_year=academic_year)
-    for e in preview_errors[:20]: flash(e,'warning')
-    flash('Workbook import complete.', 'success')
-    return redirect(url_for('admin.imports'))
+    return {'errors': preview_errors, 'rows': preview_table, 'created': created, 'updated': updated, 'added':results_added, 'changed_results':results_updated,
+            'checked': len(preview_table), 'skipped': len([row for row in preview_table if row['status'] == 'skipped'])}
 
 
 @admin_bp.route('/imports/full-workbook/export.xlsx')

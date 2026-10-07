@@ -107,18 +107,19 @@ def suggest_interventions_for_scope(school_class, subject: str, term: str, acade
             Pupil.class_id == school_class.id,
             Pupil.school_id == school_class.school_id,
             SubjectResult.combined_percent.isnot(None),
-            SubjectResult.combined_percent < pass_threshold,
         )
         .order_by(SubjectResult.combined_percent.desc(), Pupil.last_name, Pupil.first_name)
         .all()
     )
+    from .assessment_reliability import setting_for_result
+    results = [result for result in results if result.combined_percent < setting_for_result(result).below_are_threshold_percent]
     suggestions = []
     for result in results[:6]:
         suggestions.append(
             {
                 'pupil': result.pupil,
                 'subject_result': result,
-                'gap_to_pass': round(pass_threshold - result.combined_percent, 1),
+                'gap_to_pass': round(setting_for_result(result).below_are_threshold_percent - result.combined_percent, 1),
                 'reason': AUTO_REASON,
             }
         )

@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Assessment Setup{% endblock %}
+{% set page_heading = 'Assessment Setup' %}
+{% block content %}
+<p class="text-muted">Configure paper marks and attainment boundaries for one academic year. Changes are reviewed before applying and never recalculate another year.</p>
+<div class="card shadow-sm mb-4"><div class="card-body">
+<form method="get" class="row g-3 align-items-end">
+<input type="hidden" name="school_id" value="{{ selected_school_id }}">
+<div class="col-md-3"><label class="form-label">Academic year</label><select name="year" class="form-select">{% for year in years %}<option value="{{ year.id }}" {% if year.name == academic_year %}selected{% endif %}>{{ year.name }}</option>{% endfor %}</select></div>
+<div class="col-md-2"><label class="form-label">Year group</label><select name="year_group" class="form-select">{% for value in range(1,7) %}<option value="{{ value }}" {% if group == value %}selected{% endif %}>Year {{ value }}</option>{% endfor %}</select></div>
+<div class="col-md-2"><label class="form-label">Subject</label><select name="subject" class="form-select">{% for value in subjects %}<option value="{{ value }}" {% if subject == value %}selected{% endif %}>{{ format_subject_name(value) }}</option>{% endfor %}</select></div>
+<div class="col-md-2"><label class="form-label">Term</label><select name="term" class="form-select">{% for value,label in terms %}<option value="{{ value }}" {% if term == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="col-md-3"><button class="btn btn-outline-primary">Choose assessment</button></div>
+</form></div></div>
+<div class="card shadow-sm mb-4"><div class="card-header bg-white"><strong>{{ format_subject_name(subject) }} · Year {{ group }} · {{ academic_year }} · {{ get_term_label(term) }}</strong></div><div class="card-body">
+<form method="post" class="row g-4" id="assessment-setup">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="school_id" value="{{ selected_school_id }}"><input type="hidden" name="year" value="{{ selected_year.id }}"><input type="hidden" name="year_group" value="{{ group }}"><input type="hidden" name="subject" value="{{ subject }}"><input type="hidden" name="term" value="{{ term }}">
+{% for paper in [1,2] %}<div class="col-md-6"><label class="form-label">Paper {{ paper }} name</label><input class="form-control mb-2" name="paper_{{ paper }}_name" value="{{ setting['paper_' ~ paper ~ '_name'] }}" maxlength="100" required><label class="form-label">Maximum marks</label><input class="form-control" type="number" name="paper_{{ paper }}_max" value="{{ setting['paper_' ~ paper ~ '_max'] }}" min="1" step="1" required></div>{% endfor %}
+<div class="col-12 p-3 bg-light rounded">Combined maximum: <strong id="combined-maximum">{{ setting.combined_max }}</strong>. Calculated from both papers.</div>
+<div class="col-md-6"><label class="form-label">Expected Standard (AT / On Track) %</label><input class="form-control" type="number" name="below_are_threshold_percent" value="{{ setting.below_are_threshold_percent }}" min="0" max="100" step="0.1" required><p class="small mt-2">Current boundary: <strong>{{ at_boundary }} / {{ setting.combined_max }}</strong>. Below this boundary is Working Towards.</p></div>
+<div class="col-md-6"><label class="form-label">Greater Depth (GDS / Exceeding) %</label><input class="form-control" type="number" name="exceeding_threshold_percent" value="{{ setting.exceeding_threshold_percent }}" min="0" max="100" step="0.1" required><p class="small mt-2">Current boundary: <strong>{{ gds_boundary }} / {{ setting.combined_max }}</strong>. This boundary and above is Exceeding.</p></div>
+<p class="small text-muted mb-0">Percentage bands use the displayed one-decimal percentage. A below-year-group paper still gives Working Towards. Year 6 SATs scaled scores use the separate SATs tracker. Existing legacy outcomes stay as saved until you explicitly apply a recalculation here.</p>
+<div class="col-12"><button class="btn btn-primary">Preview impact</button></div>
+</form></div></div>
+<div class="card shadow-sm"><div class="card-header bg-white"><strong>Assessment history</strong></div><div class="card-body">{% for event in history %}<p class="small"><strong>{{ event.created_at.strftime('%d %b %Y %H:%M') }} UTC · {{ event.user.username if event.user else 'User' }}</strong> — {{ event.action.replace('assessment_', '').replace('_', ' ').capitalize() }}<br><span class="text-muted">{{ event.details }}</span></p>{% else %}<p class="text-muted mb-0">Confirmed assessment changes will appear here.</p>{% endfor %}</div></div>
+<script>document.getElementById('assessment-setup').addEventListener('input', function(){ const first=Number(this.paper_1_max.value), second=Number(this.paper_2_max.value); document.getElementById('combined-maximum').textContent=first+second; });</script>
+{% endblock %}

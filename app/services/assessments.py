@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
+from types import SimpleNamespace
 
 from flask import has_request_context, request, session
 from sqlalchemy import or_
@@ -14,6 +16,7 @@ from app.extensions import db
 from app.models import (
     AcademicYear,
     AssessmentSetting,
+    AssessmentConfiguration,
     FoundationResult,
     Intervention,
     PhonicsScore,
@@ -374,7 +377,6 @@ def get_class_pupil_query(school_class: SchoolClass, academic_year: str | None =
         PupilClassHistory.school_id == school_class.school_id,
         PupilClassHistory.academic_year == academic_year,
         PupilClassHistory.class_name == school_class.name,
-        PupilClassHistory.year_group == school_class.year_group,
     ).first() is not None
     if not history_exists:
         return current_membership_query
@@ -386,8 +388,7 @@ def get_class_pupil_query(school_class: SchoolClass, academic_year: str | None =
             PupilClassHistory.school_id == school_class.school_id,
             PupilClassHistory.academic_year == academic_year,
             PupilClassHistory.class_name == school_class.name,
-            PupilClassHistory.year_group == school_class.year_group,
-            Pupil.school_id == school_class.school_id,
+                Pupil.school_id == school_class.school_id,
         )
     )
 
@@ -409,18 +410,26 @@ def validate_setting_payload(data: dict) -> dict:
     cleaned['paper_1_name'] = cleaned['paper_1_name'].strip() or 'Paper 1'
     cleaned['paper_2_name'] = cleaned['paper_2_name'].strip() or 'Paper 2'
 
+    if any(len(cleaned[key]) > 100 for key in ('paper_1_name', 'paper_2_name')):
+        raise AssessmentValidationError('Paper names must be no more than 100 characters.')
     calculated_combined = cleaned['paper_1_max'] + cleaned['paper_2_max']
     combined_max = cleaned.get('combined_max')
     cleaned['combined_max'] = combined_max or calculated_combined
 
-    if cleaned['paper_1_max'] < 0 or cleaned['paper_2_max'] < 0 or cleaned['combined_max'] <= 0:
-        raise AssessmentValidationError('Max scores must be zero or above, and combined max must be greater than 0.')
+    if any(not isinstance(cleaned[key], int) or cleaned[key] <= 0 for key in ('paper_1_max', 'paper_2_max', 'combined_max')):
+        raise AssessmentValidationError('Maximum marks for both papers must be positive whole numbers.')
+    if cleaned['combined_max'] != calculated_combined:
+        raise AssessmentValidationError('Combined maximum must equal the two paper maxima added together.')
 
     below = float(cleaned['below_are_threshold_percent'])
     exceeding = float(cleaned['exceeding_threshold_percent'])
     on_track = float(cleaned.get('on_track_threshold_percent', below))
     if not 0 <= below <= 100 or not 0 <= exceeding <= 100 or not 0 <= on_track <= 100:
         raise AssessmentValidationError('Threshold percentages must be between 0 and 100.')
+    if not all(math.isfinite(value) for value in (below, on_track, exceeding)):
+        raise AssessmentValidationError('Enter finite threshold percentages.')
+    if on_track != below:
+        raise AssessmentValidationError('Expected Standard must use one boundary: On Track and below-ARE percentages must match.')
     if below > exceeding:
         raise AssessmentValidationError('Working Towards threshold must be less than or equal to the Exceeding threshold.')
 
@@ -431,19 +440,23 @@ def validate_setting_payload(data: dict) -> dict:
 
 
 def get_or_create_assessment_setting(year_group: int, subject: str, term: str) -> AssessmentSetting:
-    setting = AssessmentSetting.query.filter_by(year_group=year_group, subject=subject, term=term).first()
-    if setting:
-        return setting
-
-    defaults = get_setting_defaults(subject)
-    setting = AssessmentSetting(year_group=year_group, subject=subject, term=term, **defaults)
-    db.session.add(setting)
-    db.session.flush()
-    return setting
+    """Compatibility accessor; reads never create or change legacy templates."""
+    return get_subject_setting(year_group, subject, term)
 
 
-def get_subject_setting(year_group: int, subject: str, term: str) -> AssessmentSetting:
-    return get_or_create_assessment_setting(year_group, subject, term)
+def get_subject_setting(year_group: int, subject: str, term: str, academic_year: str | None = None, *, school_id: int | None = None):
+    if subject not in CORE_SUBJECTS or term not in TERM_SEQUENCE or year_group not in range(0, 7):
+        raise AssessmentValidationError('Choose a valid subject, term and year group.')
+    school_id = school_id if school_id is not None else current_school_id()
+    if academic_year is None and school_id is not None:
+        academic_year = get_school_working_academic_year(school_id).name
+    if school_id is not None and academic_year:
+        configured = AssessmentConfiguration.query.filter_by(school_id=school_id, academic_year=academic_year, year_group=year_group, subject=subject, term=term).first()
+        if configured:
+            return configured
+    # Null-school templates are deliberately not shared with authenticated schools.
+    legacy = AssessmentSetting.query.filter_by(school_id=school_id, year_group=year_group, subject=subject, term=term).first()
+    return legacy or SimpleNamespace(id=None, school_id=school_id, academic_year=academic_year, year_group=year_group, subject=subject, term=term, **get_setting_defaults(subject))
 
 
 def update_assessment_setting(setting: AssessmentSetting, payload: dict) -> AssessmentSetting:
@@ -460,12 +473,16 @@ def compute_subject_result_values(
     *,
     validate_scores: bool = True,
 ) -> dict:
+    if not setting.combined_max or setting.combined_max <= 0 or setting.paper_1_max is None or setting.paper_2_max is None:
+        raise AssessmentValidationError('Maximum marks are missing or invalid. Ask an admin to check Assessment Setup.')
     for label, score, max_score in (
         (setting.paper_1_name, paper_1_score, setting.paper_1_max),
         (setting.paper_2_name, paper_2_score, setting.paper_2_max),
     ):
         if score is None or not validate_scores:
             continue
+        if not isinstance(score, (int, float)) or not math.isfinite(score) or int(score) != score:
+            raise AssessmentValidationError(f'{label} score must be a whole number.')
         if score < 0:
             raise AssessmentValidationError(f'{label} score cannot be below 0.')
         if score > max_score:
@@ -587,28 +604,17 @@ def get_latest_previous_assessment(
 
 
 def recalculate_subject_results_for_scope(year_group: int, subject: str, term: str, *, academic_year: str | None = None, class_id: int | None = None) -> int:
-    setting = get_subject_setting(year_group, subject, term)
-    query = (
-        SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class)
-        .options(joinedload(SubjectResult.pupil).joinedload(Pupil.school_class))
-        .filter(SubjectResult.subject == subject, SubjectResult.term == term, SchoolClass.year_group == year_group)
-    )
-    if academic_year:
-        query = query.filter(SubjectResult.academic_year == academic_year)
-    if class_id:
-        query = query.filter(Pupil.class_id == class_id)
-
-    results = query.all()
+    """Only recalculate an explicitly selected school/year, never all history."""
+    from .assessment_reliability import apply_result, cohort_year_group, scope_results
+    school_id = current_school_id()
+    if school_id is None or not academic_year:
+        raise AssessmentValidationError('Select a school and academic year before recalculating results.')
+    setting = get_subject_setting(year_group, subject, term, academic_year, school_id=school_id)
+    results = scope_results(school_id, academic_year, year_group, subject, term)
+    results = [row for row in results if not class_id or row.pupil.class_id == class_id]
     for result in results:
-        if result.paper_1_score is None or result.paper_2_score is None:
-            continue
-        computed = compute_subject_result_values(setting, result.paper_1_score, result.paper_2_score, validate_scores=False)
-        result.combined_score = computed['combined_score']
-        result.combined_percent = computed['combined_percent']
-        result.band_label = computed['band_label']
-        db.session.add(result)
+        apply_result(result, setting, result.paper_1_score, result.paper_2_score, cohort=cohort_year_group(result.pupil, academic_year), assessment_year_group=result.assessment_year_group)
     return len(results)
-
 
 
 
@@ -868,25 +874,10 @@ def _build_summary_payload(
 
 def _counts_from_band_labels(rows: list[SubjectResult]) -> dict:
     counts = {'Working Towards': 0, 'On Track': 0, 'Exceeding': 0}
-    setting_cache: dict[tuple[int, str, str], AssessmentSetting] = {}
     for row in rows:
         if row.combined_percent is None:
             continue
-        year_group = row.pupil.school_class.year_group if row.pupil and row.pupil.school_class else None
-        if year_group is None:
-            band_label = row.band_label
-        else:
-            cache_key = (year_group, row.subject, row.term)
-            setting = setting_cache.get(cache_key)
-            if setting is None:
-                setting = get_subject_setting(year_group, row.subject, row.term)
-                setting_cache[cache_key] = setting
-            band_label = resolve_subject_band_label(
-                percent=row.combined_percent,
-                setting=setting,
-                pupil_year_group=year_group,
-                assessment_year_group=row.assessment_year_group,
-            )
+        band_label = row.band_label
         if band_label in counts:
             counts[band_label] += 1
     return counts
@@ -1031,22 +1022,7 @@ def _summary_from_grouped_rows(
         for row in latest_rows:
             if row.combined_percent is None:
                 continue
-            class_id = getattr(row.pupil, 'class_id', None)
-            year_group = class_year_groups.get(class_id)
-            if year_group is None:
-                band_label = row.band_label
-            else:
-                cache_key = (year_group, row.subject, row.term)
-                setting = setting_cache.get(cache_key)
-                if setting is None:
-                    setting = get_subject_setting(year_group, row.subject, row.term)
-                    setting_cache[cache_key] = setting
-                band_label = resolve_subject_band_label(
-                    percent=row.combined_percent,
-                    setting=setting,
-                    pupil_year_group=year_group,
-                    assessment_year_group=row.assessment_year_group,
-                )
+            band_label = row.band_label
             if band_label in counts:
                 counts[band_label] += 1
             percents.append(row.combined_percent)
@@ -1295,12 +1271,7 @@ def build_headline_report(
             cell = year_term_counts[row.pupil.school_class.year_group][row.term]
             cell['total'] += 1
             if subject in CORE_SUBJECTS:
-                setting = get_subject_setting(row.pupil.school_class.year_group, subject, row.term)
-                band_label = SubjectResult.calculate_band_label(
-                    row.combined_percent,
-                    setting.below_are_threshold_percent,
-                    setting.exceeding_threshold_percent,
-                )
+                band_label = row.band_label
             else:
                 band_label = None
             if subject in CORE_SUBJECTS and band_label == 'Exceeding':
@@ -1563,7 +1534,7 @@ def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_y
         return 'No data', []
 
     if subject in CORE_SUBJECTS:
-        setting = get_subject_setting(school_class.year_group, subject, latest_term)
+        setting = get_subject_setting(school_class.year_group, subject, latest_term, academic_year, school_id=school_class.school_id)
         rows = (
             SubjectResult.query.join(SubjectResult.pupil)
             .filter(
@@ -1582,11 +1553,7 @@ def _build_recent_table_rows(school_class: SchoolClass, subject: str, academic_y
                 'paper_2_score': row.paper_2_score,
                 'combined_score': row.combined_score,
                 'combined_percent': row.combined_percent,
-                'band_label': SubjectResult.calculate_band_label(
-                    row.combined_percent,
-                    setting.below_are_threshold_percent,
-                    setting.exceeding_threshold_percent,
-                ),
+                'band_label': row.band_label,
                 'source': row.source,
             }
             for row in rows
@@ -1643,7 +1610,7 @@ def _build_class_detail_subject_rows(
 
     pupil_ids = [pupil.id for pupil in pupils]
     if subject in CORE_SUBJECTS:
-        setting = get_subject_setting(school_class.year_group, subject, term)
+        setting = get_subject_setting(school_class.year_group, subject, term, academic_year, school_id=school_class.school_id)
         prev_term = previous_term(term)
         result_rows = SubjectResult.query.filter(
             SubjectResult.subject == subject,
@@ -1695,12 +1662,7 @@ def _build_class_detail_subject_rows(
                 'paper_2_score': result.paper_2_score if result else None,
                 'combined_score': result.combined_score if result else None,
                 'combined_percent': result.combined_percent if result else None,
-                'band_label': resolve_subject_band_label(
-                    percent=result.combined_percent if result else None,
-                    setting=setting,
-                    pupil_year_group=school_class.year_group,
-                    assessment_year_group=assessment_year_group,
-                ),
+                'band_label': result.band_label if result else None,
                 'assessment_year_group': assessment_year_group,
                 'below_expected_test': assessment_year_group < school_class.year_group if result else False,
                 'progress_delta': delta,

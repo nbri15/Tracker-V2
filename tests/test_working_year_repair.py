@@ -155,6 +155,11 @@ def test_school_admin_login_redirects_to_rollover_review(monkeypatch):
         db.session.commit()
 
         monkeypatch.setattr('app.auth.routes.get_current_academic_year', lambda: '2026/27')
+        # This is a September-only reminder; do not depend on the test run month.
+        from datetime import datetime, timezone
+        from app.services import should_show_academic_year_reminder
+        monkeypatch.setattr('app.auth.routes.should_show_academic_year_reminder',
+            lambda school: should_show_academic_year_reminder(school, datetime(2026, 9, 15, tzinfo=timezone.utc)))
         assert _login_rollover_years(admin) == ('2025/26', '2026/27')
         assert _login_rollover_years(teacher) is None
 

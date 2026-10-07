@@ -342,7 +342,7 @@ def gap_analysis(subject: str):
         db.session.add(template)
         db.session.flush()
     pupils = context['pupils']
-    setting = get_subject_setting(school_class.year_group, subject, context['term'])
+    setting = get_subject_setting(school_class.year_group, subject, context['term'], context['academic_year'], school_id=school_class.school_id)
     paper_tabs = [
         {'key': 'paper_1', 'label': setting.paper_1_name or 'Paper 1'},
         {'key': 'paper_2', 'label': setting.paper_2_name or 'Paper 2'},
@@ -442,8 +442,8 @@ def interventions():
         flash('No active class is assigned to your account yet.', 'warning')
         return render_template('teacher/interventions.html', interventions=[], school_class=None, subjects=['maths', 'reading', 'spag'], academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year), term=term, terms=TERMS, subject=subject, pupils=[], auto_reason=AUTO_REASON)
 
-    setting = get_subject_setting(school_class.year_group, subject, term)
-    sync_auto_interventions(school_class, subject, term, academic_year, setting.below_are_threshold_percent)
+    # Automatic suggestions are refreshed by explicit result/configuration saves.
+    # Merely viewing interventions must not alter historical records.
 
     if request.method == 'POST':
         action = request.form.get('action', 'update')
@@ -914,217 +914,116 @@ def export_teacher_subject_pdf(subject_key: str, context: dict, rows: list[dict]
 
 
 def render_subject_page(subject_key: str):
+    from app.services.assessment_reliability import apply_result, assessment_health, cohort_year_group, lock_school, school_fingerprint, setting_for_result
+    from app.services.assessment_imports import parse_score
+    from app.models import AuditLog
+    from app.utils import log_audit_event
+    from sqlalchemy.exc import SQLAlchemyError
     context = _base_subject_context(subject_key)
     school_class = context['school_class']
     if not school_class:
         flash('No active class is assigned to your account yet.', 'warning')
-        return render_template('teacher/subject_scores.html', rows=[], setting=None, active_interventions=[], **context)
-
-    setting = get_subject_setting(school_class.year_group, subject_key, context['term'])
-
-    if request.method == 'POST' and request.form.get('form_name') == 'settings':
+        return render_template('teacher/subject_scores.html', rows=[], setting=None, active_interventions=[], header_state=_table_header_state(context['sort_state'], SUBJECT_SORTABLE_COLUMNS), join_year_group_choices=JOIN_YEAR_GROUP_CHOICES, **context)
+    academic_year, term = context['academic_year'], context['term']
+    if term not in dict(TERMS):
+        from flask import abort
+        abort(400)
+    all_pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).all()
+    pupil_ids = [pupil.id for pupil in all_pupils]
+    group = cohort_year_group(all_pupils[0], academic_year) if all_pupils else school_class.year_group
+    setting = get_subject_setting(group, subject_key, term, academic_year, school_id=school_class.school_id)
+    results = SubjectResult.query.filter(SubjectResult.school_id == school_class.school_id, SubjectResult.pupil_id.in_(pupil_ids), SubjectResult.subject == subject_key, SubjectResult.academic_year == academic_year, SubjectResult.term == term).all()
+    existing = {result.pupil_id: result for result in results}
+    errors = []
+    posted = {}
+    if request.method == 'POST':
+        form_name = request.form.get('form_name')
+        if form_name == 'add_pupil':
+            return _handle_quick_add_pupil(school_class, redirect_endpoint=f'teacher.{subject_key}', context=context)
+        if form_name != 'results':
+            flash('Assessment settings are managed by an admin in Assessment Setup.', 'warning')
+            return redirect(url_for('teacher.' + subject_key, academic_year=academic_year, term=term))
         try:
-            payload = _build_setting_payload(subject_key)
-            payload.update({'year_group': school_class.year_group, 'term': context['term']})
-            payload = validate_setting_payload(payload)
-            update_assessment_setting(setting, payload)
-            recalculated_count = recalculate_subject_results_for_scope(school_class.year_group, subject_key, context['term'], academic_year=context['academic_year'], class_id=school_class.id)
-            db.session.commit()
-            flash(
-                f"{format_subject_name(subject_key)} settings saved for Year {school_class.year_group} {context['term'].title()}. Recalculated {recalculated_count} saved result(s).",
-                'success',
-            )
-            return redirect(
-                url_for(
-                    f'teacher.{subject_key}',
-                    year=context['selected_year'].id,
-                    academic_year=context['academic_year'],
-                    term=context['term'],
-                    search=context['filters']['search'],
-                    gender=context['filters']['gender'],
-                    pupil_premium=context['filters']['pupil_premium'],
-                    laps=context['filters']['laps'],
-                    service_child=context['filters']['service_child'],
-                    send=context['filters']['send'],
-                    sort=context['sort_state']['column'],
-                    direction=context['sort_state']['direction'],
-                )
-            )
+            lock_school(school_class.school_id)
+            if request.form.get('baseline') != school_fingerprint(school_class.school_id):
+                raise AssessmentValidationError('School data changed while this page was open. Refresh before saving; your submitted scores have been kept below.')
+            submitted_ids = {int(key.rsplit('_', 1)[-1]) for key in request.form if key.startswith('paper_1_score_') and key.rsplit('_', 1)[-1].isdigit()}
+            if not submitted_ids.issubset(set(pupil_ids)):
+                raise AssessmentValidationError('A submitted pupil is outside this class and academic year.')
+            saved = created = 0
+            for pupil in context['pupils']:
+                first_key, second_key = f'paper_1_score_{pupil.id}', f'paper_2_score_{pupil.id}'
+                if first_key not in request.form or second_key not in request.form:
+                    continue
+                raw_first, raw_second = request.form[first_key], request.form[second_key]
+                notes = request.form.get(f'notes_{pupil.id}', '').strip()
+                posted[pupil.id] = {'paper_1_score': raw_first, 'paper_2_score': raw_second, 'notes': notes, 'assessment_year_group': request.form.get(f'assessment_year_group_{pupil.id}', str(group))}
+                try:
+                    result = existing.get(pupil.id)
+                    row_setting = setting_for_result(result, setting) if result else setting
+                    first, second = parse_score(raw_first, row_setting.paper_1_name), parse_score(raw_second, row_setting.paper_2_name)
+                    test_group = int(request.form.get(f'assessment_year_group_{pupil.id}', str(group)))
+                    if test_group not in range(7):
+                        raise AssessmentValidationError('Test level must be between Reception and Year 6.')
+                    # Clearing a saved score is deliberate, never inferred from a blank CSV/form.
+                    if result and first is None and second is None and request.form.get(f'clear_scores_{pupil.id}') != 'yes':
+                        raise AssessmentValidationError('Both scores are blank. Tick “clear scores” to confirm clearing this pupil’s saved scores.')
+                    if not result and first is None and second is None and not notes:
+                        continue
+                    if result is None:
+                        created += 1
+                        result = SubjectResult(pupil=pupil, pupil_id=pupil.id, school_id=school_class.school_id, academic_year=academic_year, term=term, subject=subject_key)
+                    apply_result(result, row_setting, first, second, cohort=cohort_year_group(pupil, academic_year), assessment_year_group=test_group, source='manual')
+                    result.notes = notes or None
+                    saved += 1
+                except (ValueError, AssessmentValidationError) as exc:
+                    errors.append(f'{pupil.full_name} — {exc}')
+            if errors:
+                db.session.rollback()
+            else:
+                if academic_year == context['current_year']:
+                    sync_auto_interventions(school_class, subject_key, term, academic_year, setting.below_are_threshold_percent)
+                if created:
+                    log_audit_event('assessment_created', 'school_class', school_class.id, school_id=school_class.school_id, details=f'{created} new {subject_key} results; {academic_year} {term}')
+                log_audit_event('assessment_bulk_results_changed', 'school_class', school_class.id, school_id=school_class.school_id, details=f'{saved} {subject_key} results saved; {academic_year} {term}')
+                db.session.commit()
+                flash(f'All changes saved — {saved} {format_subject_name(subject_key)} results. Missing scores are shown in assessment health.', 'success')
+                return redirect(url_for('teacher.' + subject_key, academic_year=academic_year, term=term))
         except (ValueError, AssessmentValidationError) as exc:
             db.session.rollback()
-            flash(f'Settings could not be saved: {exc}', 'danger')
-            setting = get_subject_setting(school_class.year_group, subject_key, context['term'])
-    elif request.method == 'POST' and request.form.get('form_name') == 'add_pupil':
-        return _handle_quick_add_pupil(
-            school_class,
-            redirect_endpoint=f'teacher.{subject_key}',
-            context=context,
-        )
-
-    result_rows = (
-        SubjectResult.query.join(SubjectResult.pupil)
-        .filter(
-            SubjectResult.subject == subject_key,
-            SubjectResult.academic_year == context['academic_year'],
-            SubjectResult.term == context['term'],
-            SubjectResult.pupil.has(class_id=school_class.id),
-        )
-        .all()
-    )
-    existing_by_pupil = {result.pupil_id: result for result in result_rows}
-    previous_term_key = previous_term(context['term'])
-    previous_lookup: dict[int, SubjectResult] = {}
-    if previous_term_key:
-        previous_rows = (
-            SubjectResult.query.join(SubjectResult.pupil)
-            .filter(
-                SubjectResult.subject == subject_key,
-                SubjectResult.academic_year == context['academic_year'],
-                SubjectResult.term == previous_term_key,
-                SubjectResult.pupil.has(class_id=school_class.id),
-            )
-            .all()
-        )
-        previous_lookup = {result.pupil_id: result for result in previous_rows}
-    rows = []
-
-    if request.method == 'POST' and request.form.get('form_name') == 'results':
-        errors: list[str] = []
-        for pupil in context['pupils']:
-            paper_1_raw = request.form.get(f'paper_1_score_{pupil.id}', '')
-            paper_2_raw = request.form.get(f'paper_2_score_{pupil.id}', '')
-            notes = request.form.get(f'notes_{pupil.id}', '').strip()
-            existing = existing_by_pupil.get(pupil.id)
-            row = {
-                'pupil': pupil,
-                'assessment_year_group': (existing.assessment_year_group if existing and existing.assessment_year_group is not None else school_class.year_group),
-                'paper_1_score': paper_1_raw.strip(),
-                'paper_2_score': paper_2_raw.strip(),
-                'notes': notes,
-                'combined_score': existing.combined_score if existing else None,
-                'combined_percent': existing.combined_percent if existing else None,
-                'band_label': existing.band_label if existing else None,
-                'source': existing.source if existing else None,
-                'outcome_theme': get_result_outcome_theme(existing.band_label if existing else None),
-                'progress_delta': None,
-                'progress_label': '—',
-                'progress_theme': None,
-                'below_expected_test': False,
-            }
-            try:
-                paper_1_score = _parse_int(paper_1_raw)
-                paper_2_score = _parse_int(paper_2_raw)
-                assessment_year_group = _parse_int(request.form.get(f'assessment_year_group_{pupil.id}'))
-                if assessment_year_group is None:
-                    assessment_year_group = school_class.year_group
-                if assessment_year_group < 0 or assessment_year_group > 6:
-                    raise AssessmentValidationError('Test level must be between Reception and Year 6.')
-                if paper_1_score is None and paper_2_score is None and not notes:
-                    if existing:
-                        db.session.delete(existing)
-                    row.update({'combined_score': None, 'combined_percent': None, 'band_label': None, 'source': None})
-                else:
-                    computed = compute_subject_result_values(setting, paper_1_score, paper_2_score)
-                    result = existing or SubjectResult(pupil_id=pupil.id, academic_year=context['academic_year'], term=context['term'], subject=subject_key)
-                    result.assessment_year_group = assessment_year_group
-                    result.paper_1_score = paper_1_score
-                    result.paper_2_score = paper_2_score
-                    result.combined_score = computed['combined_score']
-                    result.combined_percent = computed['combined_percent']
-                    result.band_label = resolve_subject_band_label(
-                        percent=computed['combined_percent'],
-                        setting=setting,
-                        pupil_year_group=school_class.year_group,
-                        assessment_year_group=assessment_year_group,
-                    )
-                    result.source = 'manual'
-                    result.notes = notes or None
-                    db.session.add(result)
-                    prev_percent = previous_lookup.get(pupil.id).combined_percent if previous_lookup.get(pupil.id) else None
-                    delta = (result.combined_percent - prev_percent) if (result.combined_percent is not None and prev_percent is not None) else None
-                    row.update({
-                        'assessment_year_group': assessment_year_group,
-                        'paper_1_score': '' if paper_1_score is None else paper_1_score,
-                        'paper_2_score': '' if paper_2_score is None else paper_2_score,
-                        'combined_score': result.combined_score,
-                        'combined_percent': result.combined_percent,
-                        'band_label': result.band_label,
-                        'source': result.source,
-                        'outcome_theme': get_result_outcome_theme(result.band_label),
-                        'progress_delta': delta,
-                        'progress_label': format_progress_delta(delta),
-                        'progress_theme': progress_theme(delta),
-                        'below_expected_test': assessment_year_group < school_class.year_group,
-                    })
-            except ValueError:
-                errors.append(f'{pupil.full_name}: scores must be whole numbers.')
-            except AssessmentValidationError as exc:
-                errors.append(f'{pupil.full_name}: {exc}')
-            rows.append(row)
-
-        if errors:
+            errors.append(str(exc))
+            for pupil in context['pupils']:
+                posted[pupil.id] = {key: request.form.get(f'{key}_{pupil.id}', '') for key in ('paper_1_score', 'paper_2_score', 'notes', 'assessment_year_group')}
+        except SQLAlchemyError:
             db.session.rollback()
-            for error in errors:
-                flash(error, 'danger')
-        else:
-            sync_auto_interventions(school_class, subject_key, context['term'], context['academic_year'], setting.below_are_threshold_percent)
-            db.session.commit()
-            flash(f'{format_subject_name(subject_key)} results saved for {school_class.name}.', 'success')
-            return redirect(
-                url_for(
-                    f'teacher.{subject_key}',
-                    year=context['selected_year'].id,
-                    academic_year=context['academic_year'],
-                    term=context['term'],
-                    search=context['filters']['search'],
-                    gender=context['filters']['gender'],
-                    pupil_premium=context['filters']['pupil_premium'],
-                    laps=context['filters']['laps'],
-                    service_child=context['filters']['service_child'],
-                    send=context['filters']['send'],
-                    sort=context['sort_state']['column'],
-                    direction=context['sort_state']['direction'],
-                )
-            )
-    else:
-        rows = _build_subject_rows(context['pupils'], existing_by_pupil)
-        for row in rows:
-            prev_percent = previous_lookup.get(row['pupil'].id).combined_percent if previous_lookup.get(row['pupil'].id) else None
-            delta = (row['combined_percent'] - prev_percent) if (row['combined_percent'] is not None and prev_percent is not None) else None
-            row['progress_delta'] = delta
-            row['progress_label'] = format_progress_delta(delta)
-            row['progress_theme'] = progress_theme(delta)
-            row['below_expected_test'] = (row['assessment_year_group'] or school_class.year_group) < school_class.year_group
-            if row['combined_percent'] is not None:
-                row['band_label'] = resolve_subject_band_label(
-                    percent=row['combined_percent'],
-                    setting=setting,
-                    pupil_year_group=school_class.year_group,
-                    assessment_year_group=row['assessment_year_group'],
-                )
-                row['outcome_theme'] = get_result_outcome_theme(row['band_label'])
-
-    active_interventions = sync_auto_interventions(school_class, subject_key, context['term'], context['academic_year'], setting.below_are_threshold_percent)
-    db.session.commit()
+            current_app.logger.exception('Bulk assessment save failed')
+            errors.append('No changes were saved because the database could not complete the save. Retry after refreshing.')
+            for pupil in context['pupils']:
+                posted[pupil.id] = {key: request.form.get(f'{key}_{pupil.id}', '') for key in ('paper_1_score', 'paper_2_score', 'notes', 'assessment_year_group')}
+        for error in errors:
+            flash(error, 'danger')
+    rows = _build_subject_rows(context['pupils'], existing)
+    prior = previous_term(term)
+    previous = {row.pupil_id: row for row in SubjectResult.query.filter(SubjectResult.pupil_id.in_(pupil_ids), SubjectResult.academic_year == academic_year, SubjectResult.term == prior, SubjectResult.subject == subject_key).all()} if prior else {}
+    for row in rows:
+        result = existing.get(row['pupil'].id)
+        row_setting = setting_for_result(result, setting) if result else setting
+        row['paper_1_max'], row['paper_2_max'] = row_setting.paper_1_max, row_setting.paper_2_max
+        row['configuration_note'] = f'AT {row_setting.below_are_threshold_percent}% / GDS {row_setting.exceeding_threshold_percent}%; combined maximum {row_setting.combined_max}' if result and result.configuration_snapshot else 'Legacy configuration was not recorded; saved outcome preserved. An explicit edit/recalculation will record the configuration.'
+        row['cohort_year_group'] = cohort_year_group(row['pupil'], academic_year)
+        row['below_expected_test'] = row['assessment_year_group'] < row['cohort_year_group']
+        prev = previous.get(row['pupil'].id)
+        delta = row['combined_percent'] - prev.combined_percent if prev and prev.combined_percent is not None and row['combined_percent'] is not None else None
+        row.update(progress_delta=delta, progress_label=format_progress_delta(delta), progress_theme=progress_theme(delta))
+        row.update(posted.get(row['pupil'].id, {}))
     rows = sort_subject_result_rows(rows, context['sort_state']['column'], context['sort_state']['direction'])
-    context['setting'] = setting
     if request.args.get('pdf') == '1':
-        return export_teacher_subject_pdf(
-            subject_key=subject_key,
-            context=context,
-            rows=rows,
-            anonymise=request.args.get('anonymous') == '1' or request.args.get('anon') == '1',
-        )
-    context.pop('setting', None)
-    return render_template(
-        'teacher/subject_scores.html',
-        rows=rows,
-        setting=setting,
-        active_interventions=active_interventions,
-        header_state=_table_header_state(context['sort_state'], SUBJECT_SORTABLE_COLUMNS),
-        join_year_group_choices=JOIN_YEAR_GROUP_CHOICES,
-        **context,
-    )
+        context['setting'] = setting
+        return export_teacher_subject_pdf(subject_key, context, rows, anonymise=request.args.get('anonymous') == '1' or request.args.get('anon') == '1')
+    active_interventions = Intervention.query.filter_by(school_id=school_class.school_id, subject=subject_key, term=term, academic_year=academic_year, is_active=True).filter(Intervention.pupil_id.in_(pupil_ids)).all()
+    return render_template('teacher/subject_scores.html', rows=rows, setting=setting, active_interventions=active_interventions,
+        health=assessment_health(all_pupils, existing, setting), baseline=school_fingerprint(school_class.school_id), save_errors=bool(errors),
+        header_state=_table_header_state(context['sort_state'], SUBJECT_SORTABLE_COLUMNS), join_year_group_choices=JOIN_YEAR_GROUP_CHOICES, **context)
 
 
 def render_writing_page():
