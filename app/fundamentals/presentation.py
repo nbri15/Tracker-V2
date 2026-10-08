@@ -18,7 +18,7 @@ def _clean(value: str | None) -> str:
 
 
 def _decimal(value: str | None) -> Decimal | None:
-    cleaned = _clean(value).replace(',', '')
+    cleaned = _clean(value).replace(',', '').replace('£', '')
     if not NUMBER.fullmatch(cleaned):
         return None
     try:
@@ -41,7 +41,21 @@ def _numeric_sequence(value: str | None) -> list[Decimal] | None:
     return values if all(item is not None for item in values) else None
 
 
-def answers_match(pupil_answer: str | None, correct_answer: str | None) -> bool:
+def _money(value: str | None) -> Decimal | None:
+    cleaned = _clean(value).replace(',', '').replace('£', '')
+    if cleaned.casefold().endswith('p'):
+        pennies = _decimal(cleaned[:-1])
+        return pennies / 100 if pennies is not None else None
+    return _decimal(cleaned)
+
+
+def answers_match(
+    pupil_answer: str | None,
+    correct_answer: str | None,
+    *,
+    accepted_answers: list[str] | None = None,
+    answer_type: str | None = None,
+) -> bool:
     """Compare answers while preserving mathematical distinctions."""
 
     pupil = _clean(pupil_answer)
@@ -49,8 +63,12 @@ def answers_match(pupil_answer: str | None, correct_answer: str | None) -> bool:
     if not pupil:
         return False
 
-    pupil_number = _decimal(pupil)
-    correct_number = _decimal(correct)
+    if (answer_type or '').casefold() == 'money':
+        pupil_number = _money(pupil)
+        correct_number = _money(correct)
+    else:
+        pupil_number = _decimal(pupil)
+        correct_number = _decimal(correct)
     if pupil_number is not None and correct_number is not None:
         return pupil_number == correct_number
 
@@ -73,11 +91,32 @@ def answers_match(pupil_answer: str | None, correct_answer: str | None) -> bool:
 
     def normalise_text(value: str) -> str:
         value = value.casefold().replace('’', "'")
+        value = re.sub(r'\s*([+=\-])\s*', r'\1', value)
         value = re.sub(r'\s*([,;])\s*', r'\1', value)
         value = re.sub(r'\s+', ' ', value)
         return value.strip(' .')
 
-    return normalise_text(pupil) == normalise_text(correct)
+    acceptable = [correct, *(accepted_answers or [])]
+    pupil_text = normalise_text(pupil)
+    if any(pupil_text == normalise_text(candidate) for candidate in acceptable if candidate):
+        return True
+
+    if (answer_type or '').casefold() == 'choice':
+        equivalent_choices = {
+            'mental place-value addition': 'mental place-value calculation',
+            'mental place-value subtraction': 'mental place-value calculation',
+            'column addition': 'column calculation',
+            'column subtraction': 'column calculation',
+            'subtraction / difference': 'subtraction',
+            'find the difference / count on': 'count on / find the difference',
+        }
+        pupil_text = equivalent_choices.get(pupil_text, pupil_text)
+        return any(
+            pupil_text == equivalent_choices.get(normalise_text(candidate), normalise_text(candidate))
+            for candidate in acceptable
+            if candidate
+        )
+    return False
 
 
 def _inline_options(question_text: str) -> tuple[str, list[dict]]:
@@ -97,8 +136,21 @@ def question_presentation(question: FundamentalQuestion) -> dict:
 
     text = (question.question_text or '').strip()
     answer = _clean(question.answer)
+    answer_type = _clean(getattr(question, 'answer_type', None)).casefold()
+    visual = getattr(question, 'visual_data', None)
     stem, options = _inline_options(text)
-    if LETTER_ANSWER.fullmatch(answer) and options:
+    visual_options = (visual or {}).get('options') or []
+    if visual_options:
+        options = [{'value': option, 'label': option} for option in visual_options]
+    if answer_type == 'choice' and options:
+        answer_kind = 'choice'
+        display_text = stem if stem != text else text
+    elif answer_type == 'boolean':
+        answer_kind = 'choice'
+        labels = ('Yes', 'No') if answer.casefold() in {'yes', 'no'} else ('True', 'False')
+        options = [{'value': label, 'label': label} for label in labels]
+        display_text = text
+    elif LETTER_ANSWER.fullmatch(answer) and options:
         answer_kind = 'choice'
         display_text = stem
     elif re.match(r'^(true|false)\b', answer, re.IGNORECASE):
@@ -125,6 +177,12 @@ def question_presentation(question: FundamentalQuestion) -> dict:
         answer_kind = 'choice'
         options = [{'value': 'Chart A', 'label': 'Chart A'}, {'value': 'Chart B', 'label': 'Chart B'}]
         display_text = text
+    elif answer_type == 'money':
+        answer_kind = 'money'
+        display_text = text
+    elif answer_type in {'integer', 'decimal'}:
+        answer_kind = 'numeric'
+        display_text = text
     elif _numeric_sequence(answer) is not None:
         answer_kind = 'sequence'
         display_text = text
@@ -139,8 +197,11 @@ def question_presentation(question: FundamentalQuestion) -> dict:
         'text': display_text,
         'answer_kind': answer_kind,
         'options': options,
-        'visual': question.visual_data,
+        'visual': visual,
         'visual_alt': question.rendering_notes or question.question_text,
         'representation_type': question.representation_type,
         'mastery_focus': question.mastery_focus,
+        'stem_reasoning_prompt': getattr(question, 'stem_reasoning_prompt', None),
+        'misconception_target': getattr(question, 'misconception_target', None),
+        'input_prefix': '£' if answer_kind == 'money' else None,
     }

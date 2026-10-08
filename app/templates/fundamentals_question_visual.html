@@ -14,6 +14,134 @@
 
 {% if presentation.visual %}
   {% set visual = presentation.visual %}
+  {% if visual.category %}
+  <figure class="pv-visual as-visual pv-visual-{{ visual.kind }} as-visual-{{ visual.category }}" role="img" aria-label="{{ presentation.visual_alt }}">
+    {% if visual.category == 'counters' %}
+      <div class="as-counter-groups">
+        {% for group in visual.groups %}
+          <div class="as-counter-group">
+            <div class="pv-model-label">{{ group.label.replace('_', ' ') }}</div>
+            <div class="as-counter-grid">
+              {% for unused in range(group.count) %}<span class="pv-counter {% if loop.index is even %}as-counter-pattern{% endif %}" aria-hidden="true"></span>{% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% elif visual.category == 'ten_frame' %}
+      {% set start = visual.params.start|int if visual.params.start is defined else visual.params.filled|int %}
+      {% set filled_first = 10 if start > 10 else start %}
+      {% set filled_second = start - 10 if start > 10 else 0 %}
+      <div class="as-ten-frame-set">
+        <div class="pv-ten-frame">
+          {% for index in range(10) %}<span class="pv-ten-cell {% if index < filled_first %}is-filled{% endif %}">{% if index < filled_first %}<span class="pv-counter" aria-hidden="true"></span>{% endif %}</span>{% endfor %}
+        </div>
+        {% if filled_second or visual.kind == 'ten_frame_bridge' %}
+          <div class="pv-ten-frame">
+            {% for index in range(10) %}<span class="pv-ten-cell {% if index < filled_second %}is-filled{% endif %}">{% if index < filled_second %}<span class="pv-counter" aria-hidden="true"></span>{% endif %}</span>{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+      {% if visual.kind == 'ten_frame_bridge' %}
+        <div class="as-step-row"><span>{{ visual.params.start }}</span><span>+ {{ visual.params.to_ten }} to make 10</span><span>+ {{ visual.params.remainder }} more</span></div>
+      {% elif visual.kind == 'ten_frame_subtract_bridge' %}
+        <div class="as-step-row"><span>{{ visual.params.start }}</span><span>− {{ visual.params.remove_to_10 }} to reach 10</span><span>− {{ visual.params.remove_remaining }} more</span></div>
+      {% elif visual.params.add is defined %}
+        <div class="as-step-row"><span>{{ visual.params.filled }} shown</span><span>add {{ visual.params.add }}</span></div>
+      {% endif %}
+    {% elif visual.category == 'part_whole' %}
+      {% set whole = visual.params.whole if visual.params.whole is defined else '?' %}
+      {% set parts = visual.params.parts.split(',') if visual.params.parts is defined else ['?', '?'] %}
+      <div class="pv-part-whole">
+        <div class="pv-whole">{{ whole }}</div><div class="pv-part-lines" aria-hidden="true"></div>
+        <div class="pv-parts"><div>{{ parts[0] }}</div><div>{{ parts[1] if parts|length > 1 else '?' }}</div></div>
+      </div>
+      {% if visual.kind == 'fact_family' %}<div class="as-model-caption">The same whole and parts make a family of linked addition and subtraction facts.</div>{% endif %}
+    {% elif visual.category == 'first_then_now' %}
+      <div class="as-first-then-now">
+        <div><strong>First</strong><span>{{ visual.params.first }}</span></div>
+        <div><strong>Then</strong><span>{{ visual.params.change }}</span></div>
+        <div><strong>Now</strong><span>{{ visual.params.now }}</span></div>
+      </div>
+    {% elif visual.category == 'comparison' %}
+      {% if visual.params.pairs is defined %}
+        <div class="as-comparison-pairs">
+          {% for pair in visual.params.pairs.split(';') %}
+            {% set values = pair.split(',') %}
+            <div class="as-comparison-bars"><span style="--bar-value:{{ values[0] }}">{{ values[0] }}</span><span style="--bar-value:{{ values[1] }}">{{ values[1] }}</span></div>
+          {% endfor %}
+        </div>
+      {% else %}
+        {% set larger = visual.params.larger if visual.params.larger is defined else visual.params.A %}
+        {% set smaller = visual.params.smaller if visual.params.smaller is defined else visual.params.B %}
+        <div class="as-comparison-bars">
+          <span style="--bar-value:{{ larger }}">{{ larger }}</span>
+          <span style="--bar-value:{{ smaller }}">{{ smaller }}</span>
+          <div class="as-difference-label">Difference: {{ visual.params.difference if visual.params.difference is defined else '?' }}</div>
+        </div>
+      {% endif %}
+    {% elif visual.category == 'number_line' %}
+      {% set points = visual.line.points %}
+      {% if points %}
+        {% set line_min = points|min %}{% set line_max = points|max %}{% set line_span = line_max - line_min %}
+        <div class="pv-number-line-wrap"><div class="pv-number-line">
+          {% for point in points %}
+            {% set position = ((point - line_min) * 100 / line_span) if line_span else 50 %}
+            <span class="pv-line-tick" style="left:{{ '%.3f'|format(position) }}%"><span class="pv-tick-mark" aria-hidden="true"></span><span class="pv-tick-label">{% if visual.line.hidden_end and loop.last %}?{% else %}{{ point }}{% endif %}</span></span>
+          {% endfor %}
+        </div></div>
+      {% endif %}
+      {% if visual.line.jumps %}<div class="as-step-row">{% for jump in visual.line.jumps %}<span>{{ '+' if jump > 0 else '' }}{{ jump }}</span>{% endfor %}</div>{% endif %}
+    {% elif visual.category == 'base10' %}
+      <div class="as-base10-sequence">
+        {% if visual.top_blocks %}{{ base_ten_group(visual.top_blocks, 'First number') }}{% endif %}
+        {% if visual.bottom_blocks %}{{ base_ten_group(visual.bottom_blocks, visual.bottom_label if visual.bottom_label else 'Second number') }}{% endif %}
+        {% if visual.exchanged_blocks %}<div class="as-exchange-note">Exchange without changing the total value</div>{{ base_ten_group(visual.exchanged_blocks, 'After exchange') }}{% endif %}
+        {% if visual.combined_ones is defined and visual.combined_ones >= 10 %}<div class="as-exchange-note">{{ visual.combined_ones }} ones: exchange 10 ones for 1 ten</div>{% endif %}
+      </div>
+    {% elif visual.category == 'place_value_chart' and visual.place_value %}
+      <table class="pv-chart as-place-value-chart">
+        <thead><tr><th scope="col"></th>{% for column in visual.place_value.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in visual.place_value.rows %}<tr><th scope="row">{{ row.label }}</th>{% for digit in row.digits %}<td>{{ digit }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table>
+      {% if visual.place_value.operation %}<div class="as-model-caption">Operation: {{ visual.place_value.operation }}</div>{% endif %}
+    {% elif visual.category == 'column' %}
+      {% if visual.column %}
+        <div class="as-column-method" aria-label="Column calculation aligned by place value">
+          {% if visual.column.exchanged %}<div class="as-exchange-row">After exchange: {% for place, value in visual.column.exchanged.items() %}<span>{{ value }} {{ place.replace('_', ' ') }}{% if not loop.last %}, {% endif %}</span>{% endfor %}</div>{% endif %}
+          <div class="as-column-number">{{ visual.column.top }}</div>
+          <div class="as-column-number"><span class="as-column-operation">{{ visual.column.operation }}</span>{{ visual.column.bottom }}</div>
+          <div class="as-column-rule"></div>
+          <div class="as-column-number as-column-result">{{ visual.column.result if visual.column.result else '?' }}</div>
+        </div>
+      {% else %}<div class="as-model-caption">Align every digit with the same place value before calculating.</div>{% endif %}
+    {% elif visual.category == 'bar_model' %}
+      {% set parts = visual.params.parts.split(',') if visual.params.parts is defined else [] %}
+      <div class="as-bar-model">
+        {% if parts %}<div class="as-bar-parts">{% for part in parts %}<span>{{ part }}</span>{% endfor %}</div>{% endif %}
+        <div class="as-bar-whole">{{ visual.params.whole if visual.params.whole is defined else visual.params.total if visual.params.total is defined else '?' }}</div>
+        {% if visual.params.filled is defined %}<div class="as-hundred-bar"><span style="width:{{ visual.params.filled }}%">{{ visual.params.filled }}</span><span>{{ visual.params.missing }}</span></div>{% endif %}
+        {% if visual.params.cost is defined %}<div class="as-bar-parts"><span>£{{ visual.params.cost }}</span><span>change: {{ visual.params.change }}</span></div>{% endif %}
+        {% if visual.kind == 'multi_step_bar' %}
+          {% if visual.known_values %}<div class="as-known-values">Known values: {{ visual.known_values|join(' • ') }}</div>{% endif %}
+          <div class="as-intermediate-box">Step 1 result</div><div class="as-intermediate-box">Final unknown</div>
+        {% endif %}
+      </div>
+    {% elif visual.category == 'strategy' %}
+      <div class="as-strategy-cards">
+        {% for option in visual.options or [] %}<span>{{ option }}</span>{% endfor %}
+        {% if not visual.options %}{% for key, value in visual.params.items() %}<span><strong>{{ key.replace('_', ' ') }}</strong><small>{{ value.replace('_', ' ') }}</small></span>{% endfor %}{% endif %}
+      </div>
+    {% elif visual.category == 'money' %}
+      <div class="as-money-model">{% for amount in visual.params.amounts.split(',') %}<span>£{{ amount }}</span>{% endfor %}<strong>{{ visual.params.operation }}</strong></div>
+    {% else %}
+      {% if visual.params.layout is defined %}<div class="as-equation-card">{{ visual.params.layout }}</div>
+      {% elif visual.params.values is defined %}<div class="as-equation-card">{{ visual.params.values }}</div>
+      {% elif visual.options %}<div class="as-strategy-cards">{% for option in visual.options %}<span>{{ option }}</span>{% endfor %}</div>
+      {% else %}<div class="as-model-caption">Use the mathematical structure shown in the question.</div>{% endif %}
+    {% endif %}
+    <figcaption class="visually-hidden">{{ presentation.visual_alt }}</figcaption>
+  </figure>
+  {% else %}
   <figure class="pv-visual pv-visual-{{ visual.kind }}" role="img" aria-label="{{ presentation.visual_alt }}">
     {% if visual.kind == 'base_ten' %}
       {{ base_ten_group(visual.blocks) }}
@@ -70,4 +198,5 @@
     {% endif %}
     <figcaption class="visually-hidden">{{ presentation.visual_alt }}</figcaption>
   </figure>
+  {% endif %}
 {% endif %}
