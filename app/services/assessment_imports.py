@@ -49,6 +49,11 @@ def parse_csv_bytes(data):
         raise CsvImportError('The CSV could not be read. Save it as UTF-8 CSV using the template.') from exc
 
 
+def parse_paper_scores(row, setting):
+    from .assessments import paper_enabled
+    return tuple(parse_score(row.get(f'paper_{paper}_score'), getattr(setting, f'paper_{paper}_name')) if paper_enabled(setting, paper) else None for paper in (1, 2))
+
+
 def parse_score(value, label):
     text = str(value if value is not None else '').strip()
     if not text:
@@ -73,8 +78,10 @@ def process_subject(payload):
         by_name.setdefault(pupil.full_name.casefold(), []).append(pupil)
     setting = get_subject_setting(school_class.year_group, payload['subject'], payload['term'], payload['academic_year'], school_id=payload['school_id'])
     rows = payload['rows']
-    if not {'pupil_id', 'paper_1_score', 'paper_2_score'}.issubset(rows[0]) and not {'pupil', 'paper_1_score', 'paper_2_score'}.issubset(rows[0]):
-        raise CsvImportError('Use columns pupil_id (or pupil), paper_1_score and paper_2_score. Download this assessment’s template.')
+    from .assessments import paper_enabled
+    required = {f'paper_{paper}_score' for paper in (1, 2) if paper_enabled(setting, paper)}
+    if not required.issubset(rows[0]) or not ({'pupil_id', 'pupil'} & rows[0].keys()):
+        raise CsvImportError('Include pupil_id (or pupil) and a score column for each paper switched on. Download this assessment’s template.')
     existing = {row.pupil_id: row for row in SubjectResult.query.filter_by(school_id=payload['school_id'], academic_year=payload['academic_year'], subject=payload['subject'], term=payload['term']).filter(SubjectResult.pupil_id.in_(by_id)).all()}
     report = {'errors': [], 'rows': [], 'matched': 0, 'added': 0, 'updated': 0, 'blank': 0, 'total': len(pupils)}
     seen = set()
@@ -104,8 +111,7 @@ def process_subject(payload):
                 raise CsvImportError('Academic year does not match the selected assessment.')
             result = existing.get(pupil.id)
             row_setting = setting_for_result(result, setting) if result else setting
-            first = parse_score(row.get('paper_1_score'), row_setting.paper_1_name)
-            second = parse_score(row.get('paper_2_score'), row_setting.paper_2_name)
+            first, second = parse_paper_scores(row, row_setting)
             report['matched'] += 1
             if first is None and second is None:
                 report['blank'] += 1
@@ -121,7 +127,7 @@ def process_subject(payload):
             apply_result(result, row_setting, first, second, assessment_year_group=result.assessment_year_group, source='csv')
             action = 'updated' if pupil.id in existing else 'added'
             report[action] += 1
-            report['rows'].append({'pupil': label, 'detail': f"{action.title()}: {first if first is not None else 'blank'} + {second if second is not None else 'blank'}; {result.combined_percent if result.combined_percent is not None else 'incomplete'}; {result.band_label or 'no band'}", 'status': 'warning' if first is None or second is None else 'ready'})
+            report['rows'].append({'pupil': label, 'detail': f"{action.title()}: {first if first is not None else 'blank'} + {second if second is not None else 'blank'}; {result.combined_percent if result.combined_percent is not None else 'incomplete'}; {result.band_label or 'no band'}", 'status': 'warning' if result.combined_percent is None else 'ready'})
         except (CsvImportError, AssessmentValidationError) as exc:
             message = f'{label} — {exc}'
             report['errors'].append(message)

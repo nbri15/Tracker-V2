@@ -11,6 +11,10 @@ from app.extensions import db
 class AssessmentSetting(db.Model):
     """Editable assessment thresholds by year group, subject, and term."""
 
+    # Legacy settings predate optional papers; both remain enabled.
+    paper_1_enabled = True
+    paper_2_enabled = True
+
     __tablename__ = 'assessment_settings'
     __table_args__ = (
         db.UniqueConstraint('year_group', 'subject', 'term', name='uq_assessment_setting_scope'),

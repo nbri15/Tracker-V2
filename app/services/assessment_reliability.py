@@ -7,13 +7,13 @@ from sqlalchemy import select
 from app.extensions import db
 from app.models import AssessmentConfiguration, AssessmentReview, AuditLog, PupilClassHistory, School, SubjectResult
 from app.utils import log_audit_event
-from .assessments import AssessmentValidationError, compute_subject_result_values, get_subject_setting, resolve_subject_band_label
+from .assessments import AssessmentValidationError, compute_subject_result_values, get_subject_setting, resolve_subject_band_label, paper_enabled
 
-CONFIG_FIELDS = ('paper_1_name', 'paper_1_max', 'paper_2_name', 'paper_2_max', 'combined_max', 'below_are_threshold_percent', 'on_track_threshold_percent', 'exceeding_threshold_percent')
+CONFIG_FIELDS = ('paper_1_enabled', 'paper_2_enabled', 'paper_1_name', 'paper_1_max', 'paper_2_name', 'paper_2_max', 'combined_max', 'below_are_threshold_percent', 'on_track_threshold_percent', 'exceeding_threshold_percent')
 
 
 def configuration_values(setting):
-    return {key: getattr(setting, key) for key in CONFIG_FIELDS}
+    return {key: (getattr(setting, key, True) is not False) if key.endswith('_enabled') else getattr(setting, key) for key in CONFIG_FIELDS}
 
 
 def cohort_year_group(pupil, academic_year):
@@ -36,7 +36,10 @@ def apply_result(result, setting, paper_1, paper_2, *, cohort=None, assessment_y
     computed = compute_subject_result_values(setting, paper_1, paper_2)
     cohort = cohort if cohort is not None else cohort_year_group(result.pupil, result.academic_year)
     test_year = assessment_year_group if assessment_year_group is not None else cohort
-    result.paper_1_score, result.paper_2_score = paper_1, paper_2
+    if paper_enabled(setting, 1):
+        result.paper_1_score = paper_1
+    if paper_enabled(setting, 2):
+        result.paper_2_score = paper_2
     result.combined_score = computed['combined_score']
     result.combined_percent = computed['combined_percent']
     result.band_label = resolve_subject_band_label(percent=computed['combined_percent'], setting=setting, pupil_year_group=cohort, assessment_year_group=test_year)
@@ -61,7 +64,7 @@ def assessment_health(pupils, results, setting):
         values = configuration_values(setting)
         if any(values[key] is None or values[key] <= 0 for key in ('paper_1_max', 'paper_2_max', 'combined_max')):
             raise AssessmentValidationError('Maximum marks are missing or invalid.')
-        if values['combined_max'] != values['paper_1_max'] + values['paper_2_max']:
+        if values['combined_max'] != sum(values[f'paper_{paper}_max'] for paper in (1, 2) if paper_enabled(setting, paper)):
             raise AssessmentValidationError('Combined maximum does not match paper maxima.')
         if not 0 <= values['below_are_threshold_percent'] <= values['exceeding_threshold_percent'] <= 100:
             raise AssessmentValidationError('Expected Standard / Greater Depth thresholds are invalid.')
@@ -71,8 +74,10 @@ def assessment_health(pupils, results, setting):
     entered = 0
     for pupil in pupils:
         row = results.get(pupil.id)
-        if not row or (row.paper_1_score is None and row.paper_2_score is None):
-            reasons.append(f'{pupil.full_name}: both paper scores are missing.')
+        row_setting = setting_for_result(row, setting) if row else setting
+        missing = [paper for paper in (1, 2) if paper_enabled(row_setting, paper) and (not row or getattr(row, f'paper_{paper}_score') is None)]
+        if not row or len(missing) == sum(paper_enabled(row_setting, paper) for paper in (1, 2)):
+            reasons.append(f'{pupil.full_name}: required paper scores are missing.')
             continue
         entered += 1
         try:

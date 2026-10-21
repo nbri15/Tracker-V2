@@ -13,6 +13,8 @@ class AssessmentConfiguration(db.Model):
     year_group = db.Column(db.Integer, nullable=False)
     subject = db.Column(db.String(20), nullable=False)
     term = db.Column(db.String(20), nullable=False)
+    paper_1_enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
+    paper_2_enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
     paper_1_name = db.Column(db.String(100), nullable=False)
     paper_1_max = db.Column(db.Integer, nullable=False)
     paper_2_name = db.Column(db.String(100), nullable=False)

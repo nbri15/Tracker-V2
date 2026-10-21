@@ -214,7 +214,11 @@ def sync_gap_totals_to_subject_results(
     total_scores_synced = 0
     for pupil in pupils:
         per_paper = dict(pupil_paper_totals.get(pupil.id, {}))
+        from .assessments import paper_enabled
         for paper in list(per_paper):
+            if not paper_enabled(setting, int(paper[-1])):
+                per_paper.pop(paper)
+                continue
             paper_questions = [question for question in questions if (question.paper_key or 'paper_1') == paper]
             if any(saved_scores.get((pupil.id, question.id)) is None for question in paper_questions):
                 per_paper.pop(paper)

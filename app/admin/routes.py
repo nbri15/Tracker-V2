@@ -2747,10 +2747,13 @@ def data_quality():
         SubjectResult.academic_year == academic_year,
         SubjectResult.term.in_([selected_term, selected_term_label]),
         SubjectResult.subject.in_(['maths', 'reading', 'spag']),
-        SubjectResult.paper_1_score.isnot(None), SubjectResult.paper_2_score.isnot(None),
         SubjectResult.combined_percent.isnot(None), SubjectResult.band_label.isnot(None),
     ).all():
-        completed[result.pupil_id].add(result.subject)
+        from app.services.assessments import paper_enabled
+        from app.services.assessment_reliability import setting_for_result
+        configured = setting_for_result(result)
+        if all(getattr(result, f'paper_{paper}_score') is not None for paper in (1, 2) if paper_enabled(configured, paper)):
+            completed[result.pupil_id].add(result.subject)
     missing_ids = {pid for pid in active_ids if completed[pid] != {'maths', 'reading', 'spag'}}
     issues.append({'issue': f'Missing scores for {selected_term_label} {academic_year}', 'count': len(missing_ids), 'action_link': url_for('admin.classes', academic_year=academic_year)})
 

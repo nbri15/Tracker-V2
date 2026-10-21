@@ -83,6 +83,8 @@ def setup():
         try:
             expected = float(request.form.get('below_are_threshold_percent', ''))
             proposed = validate_setting_payload({
+                'paper_1_enabled': request.form.get('paper_1_enabled', 'yes') == 'yes',
+                'paper_2_enabled': request.form.get('paper_2_enabled', 'yes') == 'yes',
                 'paper_1_name': request.form.get('paper_1_name', '').strip(),
                 'paper_1_max': int(request.form.get('paper_1_max', '')),
                 'paper_2_name': request.form.get('paper_2_name', '').strip(),
@@ -235,9 +237,12 @@ def subject_template(subject):
     _, pupils = class_pupils(payload)
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(['pupil_id', 'pupil', 'class_name', 'academic_year', 'paper_1_score', 'paper_2_score'])
+    from app.services.assessments import paper_enabled
+    setting = get_subject_setting(school_class.year_group, subject, request.args.get('term', 'autumn'), year, school_id=require_school())
+    score_columns = [f'paper_{paper}_score' for paper in (1, 2) if paper_enabled(setting, paper)]
+    writer.writerow(['pupil_id', 'pupil', 'class_name', 'academic_year', *score_columns])
     for pupil in pupils:
-        writer.writerow([pupil.id, pupil.full_name, school_class.name, year, '', ''])
+        writer.writerow([pupil.id, pupil.full_name, school_class.name, year, *([''] * len(score_columns))])
     return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename={subject}-scores.csv'})
 
 
@@ -246,7 +251,7 @@ def subject_template(subject):
 @teacher_required
 def calculate_cells(subject):
     from app.services.assessment_reliability import setting_for_result, cohort_year_group
-    from app.services.assessment_imports import parse_score
+    from app.services.assessment_imports import parse_score, parse_paper_scores
     from app.services.assessments import compute_subject_result_values, resolve_subject_band_label
     school_class = get_primary_class_for_user(current_user)
     if not school_class or subject not in CORE_SUBJECTS:
@@ -269,7 +274,7 @@ def calculate_cells(subject):
         existing = SubjectResult.query.filter_by(pupil_id=pupil_id, academic_year=year, subject=subject, term=term).first()
         row_setting = setting_for_result(existing, setting) if existing else setting
         try:
-            first, second = parse_score(row.get('paper_1_score'), row_setting.paper_1_name), parse_score(row.get('paper_2_score'), row_setting.paper_2_name)
+            first, second = parse_paper_scores(row, row_setting)
             computed = compute_subject_result_values(row_setting, first, second)
             test_year = int(row.get('assessment_year_group', school_class.year_group))
             if test_year not in range(7):

@@ -410,7 +410,11 @@ def _update_pupil_fields(pupil: Pupil, row: dict, school_class: SchoolClass) -> 
 
 
 def _is_subject_result_incomplete(result: SubjectResult) -> bool:
-    return any(value is None for value in (result.paper_1_score, result.paper_2_score, result.combined_score, result.combined_percent, result.band_label))
+    from .assessment_reliability import setting_for_result
+    from .assessments import paper_enabled
+    setting = setting_for_result(result)
+    required = [getattr(result, f'paper_{paper}_score') for paper in (1, 2) if paper_enabled(setting, paper)]
+    return any(value is None for value in [*required, result.combined_score, result.combined_percent, result.band_label])
 
 
 def _can_write_subject_result(existing: SubjectResult | None) -> tuple[bool, str | None]:

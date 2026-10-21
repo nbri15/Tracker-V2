@@ -925,21 +925,25 @@ def render_subject_page(subject_key: str):
             lock_school(school_class.school_id)
             if request.form.get('baseline') != school_fingerprint(school_class.school_id):
                 raise AssessmentValidationError('School data changed while this page was open. Refresh before saving; your submitted scores have been kept below.')
-            submitted_ids = {int(key.rsplit('_', 1)[-1]) for key in request.form if key.startswith('paper_1_score_') and key.rsplit('_', 1)[-1].isdigit()}
+            submitted_ids = {int(key.rsplit('_', 1)[-1]) for key in request.form if key.startswith(('paper_1_score_', 'paper_2_score_')) and key.rsplit('_', 1)[-1].isdigit()}
             if not submitted_ids.issubset(set(pupil_ids)):
                 raise AssessmentValidationError('A submitted pupil is outside this class and academic year.')
             saved = created = 0
             for pupil in context['pupils']:
                 first_key, second_key = f'paper_1_score_{pupil.id}', f'paper_2_score_{pupil.id}'
-                if first_key not in request.form or second_key not in request.form:
+                from app.services.assessments import paper_enabled
+                result = existing.get(pupil.id)
+                row_setting = setting_for_result(result, setting) if result else setting
+                if any(paper_enabled(row_setting, paper) and key not in request.form for paper, key in ((1, first_key), (2, second_key))):
                     continue
-                raw_first, raw_second = request.form[first_key], request.form[second_key]
+                raw_first, raw_second = request.form.get(first_key, ''), request.form.get(second_key, '')
                 notes = request.form.get(f'notes_{pupil.id}', '').strip()
                 posted[pupil.id] = {'paper_1_score': raw_first, 'paper_2_score': raw_second, 'notes': notes, 'assessment_year_group': request.form.get(f'assessment_year_group_{pupil.id}', str(group))}
                 try:
                     result = existing.get(pupil.id)
                     row_setting = setting_for_result(result, setting) if result else setting
-                    first, second = parse_score(raw_first, row_setting.paper_1_name), parse_score(raw_second, row_setting.paper_2_name)
+                    from app.services.assessment_imports import parse_paper_scores
+                    first, second = parse_paper_scores({'paper_1_score':raw_first, 'paper_2_score':raw_second}, row_setting)
                     test_group = int(request.form.get(f'assessment_year_group_{pupil.id}', str(group)))
                     if test_group not in range(7):
                         raise AssessmentValidationError('Test level must be between Reception and Year 6.')
@@ -986,6 +990,8 @@ def render_subject_page(subject_key: str):
     for row in rows:
         result = existing.get(row['pupil'].id)
         row_setting = setting_for_result(result, setting) if result else setting
+        from app.services.assessments import paper_enabled
+        row['paper_1_enabled'], row['paper_2_enabled'] = paper_enabled(row_setting, 1), paper_enabled(row_setting, 2)
         row['paper_1_max'], row['paper_2_max'] = row_setting.paper_1_max, row_setting.paper_2_max
         row['configuration_note'] = f'AT {row_setting.below_are_threshold_percent}% / GDS {row_setting.exceeding_threshold_percent}%; combined maximum {row_setting.combined_max}' if result and result.configuration_snapshot else 'Legacy configuration was not recorded; saved outcome preserved. An explicit edit/recalculation will record the configuration.'
         row['cohort_year_group'] = cohort_year_group(row['pupil'], academic_year)

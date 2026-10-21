@@ -405,6 +405,11 @@ def get_setting_defaults(subject: str) -> dict:
     return defaults
 
 
+def paper_enabled(setting, paper: int) -> bool:
+    """Old settings/snapshots always included both papers."""
+    return getattr(setting, f'paper_{paper}_enabled', True) is not False
+
+
 def validate_setting_payload(data: dict) -> dict:
     cleaned = data.copy()
     cleaned['paper_1_name'] = cleaned['paper_1_name'].strip() or 'Paper 1'
@@ -412,14 +417,21 @@ def validate_setting_payload(data: dict) -> dict:
 
     if any(len(cleaned[key]) > 100 for key in ('paper_1_name', 'paper_2_name')):
         raise AssessmentValidationError('Paper names must be no more than 100 characters.')
-    calculated_combined = cleaned['paper_1_max'] + cleaned['paper_2_max']
+    for paper in (1, 2):
+        key = f'paper_{paper}_enabled'
+        cleaned.setdefault(key, True)
+        if not isinstance(cleaned[key], bool):
+            raise AssessmentValidationError('Choose whether each paper is used.')
+    if not any(cleaned[f'paper_{paper}_enabled'] for paper in (1, 2)):
+        raise AssessmentValidationError('Keep at least one paper switched on.')
+    calculated_combined = sum(cleaned[f'paper_{paper}_max'] for paper in (1, 2) if cleaned[f'paper_{paper}_enabled'])
     combined_max = cleaned.get('combined_max')
     cleaned['combined_max'] = combined_max or calculated_combined
 
     if any(not isinstance(cleaned[key], int) or cleaned[key] <= 0 for key in ('paper_1_max', 'paper_2_max', 'combined_max')):
         raise AssessmentValidationError('Maximum marks for both papers must be positive whole numbers.')
     if cleaned['combined_max'] != calculated_combined:
-        raise AssessmentValidationError('Combined maximum must equal the two paper maxima added together.')
+        raise AssessmentValidationError('Combined maximum must equal the maxima of the papers switched on.')
 
     below = float(cleaned['below_are_threshold_percent'])
     exceeding = float(cleaned['exceeding_threshold_percent'])
@@ -456,7 +468,7 @@ def get_subject_setting(year_group: int, subject: str, term: str, academic_year:
             return configured
     # Null-school templates are deliberately not shared with authenticated schools.
     legacy = AssessmentSetting.query.filter_by(school_id=school_id, year_group=year_group, subject=subject, term=term).first()
-    return legacy or SimpleNamespace(id=None, school_id=school_id, academic_year=academic_year, year_group=year_group, subject=subject, term=term, **get_setting_defaults(subject))
+    return legacy or SimpleNamespace(paper_1_enabled=True, paper_2_enabled=True, id=None, school_id=school_id, academic_year=academic_year, year_group=year_group, subject=subject, term=term, **get_setting_defaults(subject))
 
 
 def update_assessment_setting(setting: AssessmentSetting, payload: dict) -> AssessmentSetting:
@@ -475,11 +487,13 @@ def compute_subject_result_values(
 ) -> dict:
     if not setting.combined_max or setting.combined_max <= 0 or setting.paper_1_max is None or setting.paper_2_max is None:
         raise AssessmentValidationError('Maximum marks are missing or invalid. Ask an admin to check Assessment Setup.')
-    for label, score, max_score in (
-        (setting.paper_1_name, paper_1_score, setting.paper_1_max),
-        (setting.paper_2_name, paper_2_score, setting.paper_2_max),
+    if not any(paper_enabled(setting, paper) for paper in (1, 2)):
+        raise AssessmentValidationError('Keep at least one paper switched on.')
+    for paper, label, score, max_score in (
+        (1, setting.paper_1_name, paper_1_score, setting.paper_1_max),
+        (2, setting.paper_2_name, paper_2_score, setting.paper_2_max),
     ):
-        if score is None or not validate_scores:
+        if not paper_enabled(setting, paper) or score is None or not validate_scores:
             continue
         if not isinstance(score, (int, float)) or not math.isfinite(score) or int(score) != score:
             raise AssessmentValidationError(f'{label} score must be a whole number.')
@@ -488,7 +502,8 @@ def compute_subject_result_values(
         if score > max_score:
             raise AssessmentValidationError(f'{label} score cannot exceed {max_score}.')
 
-    combined_score = SubjectResult.calculate_combined_score(paper_1_score, paper_2_score)
+    required_scores = [score for paper, score in ((1, paper_1_score), (2, paper_2_score)) if paper_enabled(setting, paper)]
+    combined_score = None if any(score is None for score in required_scores) else sum(required_scores)
     combined_percent = SubjectResult.calculate_percent(combined_score, setting.combined_max)
     band_label = SubjectResult.calculate_band_label(combined_percent, setting.below_are_threshold_percent, setting.exceeding_threshold_percent)
     return {
