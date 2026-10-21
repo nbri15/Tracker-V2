@@ -71,30 +71,7 @@
   <button type="submit" class="btn btn-outline-success btn-sm">Sync totals to results table</button>
 </form>
 
-<div class="card shadow-sm mb-4">
-  <div class="card-body py-3">
-    <form method="post" class="row g-2 align-items-end">
-      <input type="hidden" name="action" value="add_question">
-      <input type="hidden" name="year" value="{{ selected_year.id }}">
-      <input type="hidden" name="active_paper" value="{{ active_paper }}">
-      <div class="col-md-4 col-xl-3">
-        <label class="form-label">Add question</label>
-        <input type="text" name="new_question_label" class="form-control" placeholder="e.g. 3a">
-      </div>
-      <div class="col-md-2 col-xl-2">
-        <label class="form-label">Max score</label>
-        <input type="number" name="new_question_max" min="0" class="form-control" value="1">
-      </div>
-      <div class="col-md-4 col-xl-4">
-        <label class="form-label">Topic (optional)</label>
-        <input type="text" name="new_question_type" class="form-control" placeholder="e.g. Fractions">
-      </div>
-      <div class="col-md-2 col-xl-3">
-        <button type="submit" class="btn btn-outline-primary w-100">Add question to current paper</button>
-      </div>
-    </form>
-  </div>
-</div>
+<p class="text-muted">Question definitions are managed by your school administrator. Enter pupil marks below.</p>
 
 <form method="post" class="js-gap-form">
   <input type="hidden" name="action" value="save_gap">
@@ -120,7 +97,7 @@
                     <th class="gap-question-col">
                       <input type="hidden" name="question_id[]" value="{{ question.id }}">
                       <input type="hidden" name="question_paper[]" value="{{ paper.key }}">
-                      <input type="text" class="form-control form-control-sm" name="question_label[]" value="{{ question.question_label }}" placeholder="1">
+                      <input type="text" class="form-control form-control-sm" name="question_label[]" readonly value="{{ question.question_label }}" placeholder="1">
                     </th>
                   {% endfor %}
                   <th class="gap-total-col">Paper total</th>
@@ -129,7 +106,7 @@
                 <tr>
                   <th class="sticky-col small text-muted">Max</th>
                   {% for question in paper.questions %}
-                    <th><input type="number" min="0" class="form-control form-control-sm js-gap-max" name="question_max[]" value="{{ question.max_score }}"></th>
+                    <th><input type="number" min="0" class="form-control form-control-sm js-gap-max" name="question_max[]" readonly value="{{ question.max_score }}"></th>
                   {% endfor %}
                   <th class="small text-muted js-gap-paper-max">{{ paper.max_total }}</th>
                   <th class="small text-muted">{{ max_total }}</th>
@@ -137,7 +114,7 @@
                 <tr>
                   <th class="sticky-col small text-muted">Topic</th>
                   {% for question in paper.questions %}
-                    <th><input type="text" class="form-control form-control-sm" name="question_type[]" value="{{ question.question_type or '' }}" placeholder="Topic"></th>
+                    <th><input type="text" class="form-control form-control-sm" name="question_type[]" readonly value="{{ question.question_type or '' }}" placeholder="Topic"></th>
                   {% endfor %}
                   <th class="small text-muted">Scroll sideways if needed</th>
                   <th class="small text-muted">All papers combined</th>

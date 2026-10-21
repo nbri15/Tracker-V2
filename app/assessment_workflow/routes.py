@@ -280,3 +280,44 @@ def calculate_cells(subject):
         except (ValueError, AssessmentValidationError) as exc:
             output.append({'pupil_id': pupil_id, 'error': str(exc)})
     return {'rows': output}
+
+
+@assessment_bp.route('/admin/gap-templates', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def gap_templates():
+    """School administrators own shared definitions; teachers own pupil score entry."""
+    from app.models import GapTemplate
+    from app.services.gap import parse_question_columns
+    school_id = require_school()
+    selected_year = get_selected_academic_year(None, request.values.get('academic_year'))
+    subject = request.values.get('subject', 'maths')
+    term = request.values.get('term', 'autumn')
+    try:
+        group = int(request.values.get('year_group', '5'))
+        if group not in range(1, 7) or subject not in CORE_SUBJECTS or term not in dict(TERMS):
+            raise ValueError
+    except (ValueError, TypeError):
+        abort(400)
+    scope = dict(school_id=school_id, year_group=group, subject=subject, term=term, academic_year=selected_year.name)
+    template = GapTemplate.query.filter_by(**scope).first()
+    if request.method == 'POST':
+        try:
+            lock_school(school_id)
+            if template is None:
+                template = GapTemplate(**scope)
+                db.session.add(template)
+                db.session.flush()
+            parse_question_columns(request.form, template)
+            log_audit_event('gap_template_updated', 'gap_template', template.id, school_id=school_id,
+                            details=f'{subject} Year {group} {selected_year.name} {term}; existing pupil marks preserved')
+            db.session.commit()
+            flash('GAP template saved. Existing question IDs and pupil marks were preserved.', 'success')
+            return redirect(url_for('assessment_workflow.gap_templates', **scope))
+        except AssessmentValidationError as exc:
+            db.session.rollback()
+            flash(f'GAP template could not be saved: {exc}', 'danger')
+            template = GapTemplate.query.filter_by(**scope).first()
+    return render_template('gap_templates.html', template=template, group=group, subject=subject, term=term,
+                           academic_year=selected_year.name, subjects=CORE_SUBJECTS, terms=TERMS,
+                           years=AcademicYear.query.order_by(AcademicYear.name.desc()).all())

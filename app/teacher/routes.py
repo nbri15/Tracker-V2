@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from flask import current_app, flash, make_response, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
@@ -359,30 +359,7 @@ def gap_analysis(subject: str):
             if active_paper not in valid_paper_keys:
                 active_paper = paper_tabs[0]['key']
             if action == 'add_question':
-                label = request.form.get('new_question_label', '').strip()
-                max_raw = request.form.get('new_question_max', '').strip()
-                question_type = request.form.get('new_question_type', '').strip() or None
-                if not label:
-                    raise AssessmentValidationError('Enter a question label before adding a new question.')
-                try:
-                    max_score = int(max_raw or '0')
-                except ValueError as exc:
-                    raise AssessmentValidationError('New question max score must be a whole number.') from exc
-                if max_score < 0:
-                    raise AssessmentValidationError('New question max score cannot be negative.')
-                next_order = len(template.questions)
-                question = GapQuestion(
-                    template=template,
-                    paper_key=active_paper,
-                    question_label=label,
-                    question_type=question_type,
-                    max_score=max_score,
-                    display_order=next_order,
-                    school_id=school_class.school_id,
-                )
-                db.session.add(question)
-                db.session.commit()
-                flash(f'Added question {label} to {dict((item["key"], item["label"]) for item in paper_tabs)[active_paper]}.', 'success')
+                abort(403)
             elif action == 'sync_results':
                 questions = list(template.questions)
                 outcome = {'warnings': sync_gap_totals_to_subject_results(
@@ -396,8 +373,9 @@ def gap_analysis(subject: str):
                 for warning in outcome['warnings']:
                     flash(warning, 'warning')
             else:
-                template.paper_name = request.form.get('paper_name', '').strip() or None
-                questions = parse_question_columns(request.form, template)
+                from app.services.gap import validate_score_columns
+                questions = list(template.questions)
+                validate_score_columns(request.form, questions)
                 db.session.flush()
                 outcome = save_gap_scores(
                     pupils,

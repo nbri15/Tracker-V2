@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 import csv
 import io
 import time
@@ -1683,7 +1684,7 @@ def interventions():
     current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
     if _pdf_requested():
         headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score']
-        table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.focus_area or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—'] for idx, row in enumerate(rows, start=1)]
+        table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.reason or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—'] for idx, row in enumerate(rows, start=1)]
         filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status}
         return _render_table_pdf('Interventions' if not anon_mode else 'Interventions — anonymised', headers, table_rows, filters, anon_mode, 'interventions.pdf')
 
@@ -2740,19 +2741,18 @@ def data_quality():
     issues.append({'issue': 'Teachers with no class', 'count': teachers_no_class, 'action_link': url_for('admin.users')})
 
     active_pupil_count = pupil_query.count()
-    assessed_ids = {
-        pid
-        for (pid,) in school_scoped_query(
-            SubjectResult,
-            SubjectResult.query.with_entities(SubjectResult.pupil_id)
-            .filter(
-                SubjectResult.academic_year == academic_year,
-                SubjectResult.term.in_([selected_term, selected_term_label]),
-            )
-            .distinct(),
-        ).all()
-    }
-    issues.append({'issue': f'Missing scores for {selected_term_label} {academic_year}', 'count': max(active_pupil_count - len(assessed_ids), 0), 'action_link': url_for('admin.classes', academic_year=academic_year)})
+    active_ids = {pupil.id for pupil in pupil_query.all()}
+    completed = defaultdict(set)
+    for result in school_scoped_query(SubjectResult, SubjectResult.query).filter(
+        SubjectResult.academic_year == academic_year,
+        SubjectResult.term.in_([selected_term, selected_term_label]),
+        SubjectResult.subject.in_(['maths', 'reading', 'spag']),
+        SubjectResult.paper_1_score.isnot(None), SubjectResult.paper_2_score.isnot(None),
+        SubjectResult.combined_percent.isnot(None), SubjectResult.band_label.isnot(None),
+    ).all():
+        completed[result.pupil_id].add(result.subject)
+    missing_ids = {pid for pid in active_ids if completed[pid] != {'maths', 'reading', 'spag'}}
+    issues.append({'issue': f'Missing scores for {selected_term_label} {academic_year}', 'count': len(missing_ids), 'action_link': url_for('admin.classes', academic_year=academic_year)})
 
     thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
     recent_ids = {pid for (pid,) in school_scoped_query(SubjectResult, SubjectResult.query.with_entities(SubjectResult.pupil_id).filter(SubjectResult.updated_at >= thirty_days_ago).distinct()).all()}

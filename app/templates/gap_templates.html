@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}GAP Templates{% endblock %}
+{% set page_heading = 'GAP Templates' %}
+{% block content %}
+<p>Set the shared questions for your school's assessment. Teachers enter pupil marks separately. Questions with pupil marks cannot be removed or moved between papers.</p>
+<form method="get" class="d-flex flex-wrap gap-2 align-items-end mb-4">
+<input type="hidden" name="school_id" value="{{ selected_school_id }}">
+<div><label class="form-label">Academic year</label><select name="academic_year" class="form-select">{% for year in years %}<option {% if year.name == academic_year %}selected{% endif %}>{{ year.name }}</option>{% endfor %}</select></div>
+<div><label class="form-label">Year group</label><select name="year_group" class="form-select">{% for value in range(1,7) %}<option value="{{ value }}" {% if group == value %}selected{% endif %}>Year {{ value }}</option>{% endfor %}</select></div>
+<div><label class="form-label">Subject</label><select name="subject" class="form-select">{% for key in subjects %}<option value="{{ key }}" {% if subject == key %}selected{% endif %}>{{ format_subject_name(key) }}</option>{% endfor %}</select></div>
+<div><label class="form-label">Term</label><select name="term" class="form-select">{% for key,label in terms %}<option value="{{ key }}" {% if term == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<button class="btn btn-primary">Open template</button></form>
+<form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="school_id" value="{{ selected_school_id }}">
+<input type="hidden" name="academic_year" value="{{ academic_year }}"><input type="hidden" name="year_group" value="{{ group }}"><input type="hidden" name="subject" value="{{ subject }}"><input type="hidden" name="term" value="{{ term }}">
+<div class="table-responsive"><table class="table"><thead><tr><th>Paper</th><th>Question</th><th>Topic</th><th>Maximum</th></tr></thead><tbody id="gap-definition-rows">
+{% for question in (template.questions if template else []) %}
+<tr><td><input type="hidden" name="question_id[]" value="{{ question.id }}"><select name="question_paper[]" class="form-select"><option value="paper_1" {% if question.paper_key == 'paper_1' %}selected{% endif %}>Paper 1</option><option value="paper_2" {% if question.paper_key == 'paper_2' %}selected{% endif %}>Paper 2</option></select></td><td><input name="question_label[]" value="{{ question.question_label }}" maxlength="20" class="form-control" required></td><td><input name="question_type[]" value="{{ question.question_type or '' }}" maxlength="120" class="form-control"></td><td><input name="question_max[]" value="{{ question.max_score }}" type="number" min="0" class="form-control" required></td></tr>
+{% endfor %}
+</tbody></table></div>
+<button type="button" class="btn btn-outline-primary" id="add-gap-definition">Add question</button>
+<button class="btn btn-success">Save template</button>
+</form>
+<template id="gap-new-definition"><tr><td><input type="hidden" name="question_id[]" value=""><select name="question_paper[]" class="form-select"><option value="paper_1">Paper 1</option><option value="paper_2">Paper 2</option></select></td><td><input name="question_label[]" maxlength="20" class="form-control" required></td><td><input name="question_type[]" maxlength="120" class="form-control"></td><td><input name="question_max[]" value="1" type="number" min="0" class="form-control" required></td></tr></template>
+<script>
+document.getElementById('add-gap-definition').addEventListener('click', function () {
+  document.getElementById('gap-definition-rows').appendChild(document.getElementById('gap-new-definition').content.cloneNode(true));
+});
+{% if not template or not template.questions %}document.getElementById('add-gap-definition').click();{% endif %}
+</script>
+{% endblock %}
