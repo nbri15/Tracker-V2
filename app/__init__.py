@@ -24,6 +24,9 @@ def create_app(config_name: str | None = None) -> Flask:
         selected_config = 'production'
     app.config.from_object(config_by_name.get(selected_config, config_by_name['default']))
 
+    if app.config.get('ENV') == 'production' and app.config.get('SECRET_KEY') in (None, '', 'dev-secret-key-change-me'):
+        raise RuntimeError('Set a private SECRET_KEY before starting Class Compass in production.')
+
     register_extensions(app)
     register_blueprints(app)
     register_request_guards(app)

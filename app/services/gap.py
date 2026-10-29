@@ -30,53 +30,79 @@ def get_or_create_gap_template(year_group: int, subject: str, term: str, academi
 
 
 def parse_question_columns(form, template: GapTemplate) -> list[GapQuestion]:
-    questions: list[GapQuestion] = []
-    question_ids = form.getlist('question_id[]')
-    paper_keys = form.getlist('question_paper[]')
+    """Edit definitions in place; never discard marks while changing a template."""
+    from flask import abort
+    from flask_login import current_user
+    if not current_user.is_authenticated or not current_user.can_manage_school:
+        abort(403)
+    if template.school_id != current_school_id():
+        abort(403)
+    original = list(template.questions)
+    by_id = {question.id: question for question in original}
+    ids = form.getlist('question_id[]')
+    papers = form.getlist('question_paper[]')
     labels = form.getlist('question_label[]')
-    types = form.getlist('question_type[]')
-    max_scores = form.getlist('question_max[]')
-
-    for index, label in enumerate(labels):
-        question_id = (question_ids[index] if index < len(question_ids) else '').strip()
-        paper_key = (paper_keys[index] if index < len(paper_keys) else 'paper_1').strip() or 'paper_1'
-        label = label.strip()
-        question_type = (types[index] if index < len(types) else '').strip() or None
-        max_raw = (max_scores[index] if index < len(max_scores) else '').strip()
-        if not label and not max_raw and not question_type:
+    topics = form.getlist('question_type[]')
+    maxima = form.getlist('question_max[]')
+    if not (len(ids) == len(papers) == len(labels) == len(topics) == len(maxima)):
+        raise AssessmentValidationError('Incomplete question columns; reload the template and try again.')
+    proposed = []
+    retained = set()
+    for raw_id, paper, label, topic, raw_max in zip(ids, papers, labels, topics, maxima):
+        label, topic, raw_max = label.strip(), topic.strip(), raw_max.strip()
+        if not raw_id.strip() and not label and not raw_max and not topic:
             continue
-        if not label:
-            raise AssessmentValidationError('Every GAP question column needs a label.')
         try:
-            max_score = int(max_raw or '0')
-        except ValueError as exc:
-            raise AssessmentValidationError(f'Question {label}: max score must be a whole number.') from exc
-        if max_score < 0:
-            raise AssessmentValidationError(f'Question {label}: max score cannot be negative.')
-        question = GapQuestion.query.get(int(question_id)) if question_id else GapQuestion(template_id=template.id)
-        if question.template_id and question.template_id != template.id:
-            raise AssessmentValidationError('The question is not part of this assessment template.')
-        if paper_key not in {'paper_1', 'paper_2'}:
-            raise AssessmentValidationError('Choose a valid paper for this question.')
+            question_id = int(raw_id) if raw_id.strip() else None
+            maximum = int(raw_max)
+        except (ValueError, TypeError) as exc:
+            raise AssessmentValidationError('Question IDs and maximum marks must be whole numbers.') from exc
+        if not label or len(label) > 20 or len(topic) > 120 or maximum < 0 or paper not in {'paper_1', 'paper_2'}:
+            raise AssessmentValidationError('Enter a question label (up to 20 characters), valid paper, topic (up to 120 characters) and non-negative maximum.')
+        question = by_id.get(question_id) if question_id is not None else None
+        if question_id is not None:
+            if question is None or question_id in retained:
+                raise AssessmentValidationError('Unknown or repeated question ID; reload this template.')
+            retained.add(question_id)
+            if question.scores and paper != question.paper_key:
+                raise AssessmentValidationError(f'Question {question.question_label} has pupil marks and cannot be moved to another paper.')
+            if any(score.score is not None and score.score > maximum for score in question.scores):
+                raise AssessmentValidationError(f'Question {question.question_label}: maximum cannot be below an existing pupil mark.')
+        proposed.append((question, paper, label, topic, maximum))
+    if not proposed:
+        raise AssessmentValidationError('Add at least one GAP question column before saving.')
+    removed = [question for question in original if question.id not in retained]
+    if any(question.scores for question in removed):
+        raise AssessmentValidationError('Questions with pupil marks cannot be removed. Keep their IDs and existing marks.')
+    questions = []
+    for order, (question, paper, label, topic, maximum) in enumerate(proposed):
+        question = question or GapQuestion(template=template)
         question.school_id = template.school_id
-        question.paper_key = paper_key
-        question.question_label = label
-        question.question_type = question_type
-        question.max_score = max_score
-        question.display_order = len(questions)
-        question.template = template
+        question.paper_key, question.question_label = paper, label
+        question.question_type, question.max_score = topic or None, maximum
+        question.display_order = order
         db.session.add(question)
         questions.append(question)
-
-    if not questions:
-        raise AssessmentValidationError('Add at least one GAP question column before saving.')
-
-    existing_ids = {question.id for question in questions if question.id}
-    for old_question in list(template.questions):
-        if old_question.id not in existing_ids:
-            db.session.delete(old_question)
+    for question in removed:
+        db.session.delete(question)
     db.session.flush()
     return questions
+
+
+def validate_score_columns(form, questions):
+    """Reject stale/forged columns without permitting score entry to edit definitions."""
+    if 'question_id[]' not in form:
+        return
+    expected = {str(question.id): question for question in questions}
+    ids = form.getlist('question_id[]')
+    if len(ids) != len(expected) or set(ids) != set(expected):
+        raise AssessmentValidationError('The GAP template changed; reload before saving scores.')
+    fields = {'question_label[]': 'question_label', 'question_paper[]': 'paper_key',
+              'question_type[]': 'question_type', 'question_max[]': 'max_score'}
+    for field, attribute in fields.items():
+        values = form.getlist(field)
+        if len(values) != len(ids) or any(value != str(getattr(expected[key], attribute) or (0 if attribute == 'max_score' else '')) for key, value in zip(ids, values)):
+            raise AssessmentValidationError('Only administrators can change GAP question definitions. Reload before saving scores.')
 
 
 def save_gap_scores(pupils, questions: list[GapQuestion], form, *, school_id: int | None = None, assessment_year_group: int | None = None) -> dict:
@@ -92,6 +118,8 @@ def save_gap_scores(pupils, questions: list[GapQuestion], form, *, school_id: in
         has_any_value = False
         for question in questions:
             field_name = f'score_{pupil.id}_{question.id}'
+            if field_name not in form:
+                continue  # An omitted cell is not an instruction to erase a saved mark.
             raw_value = form.get(field_name, '').strip()
             existing = score_lookup.get((pupil.id, question.id))
             if raw_value == '':
@@ -120,6 +148,8 @@ def save_gap_scores(pupils, questions: list[GapQuestion], form, *, school_id: in
         pupil_totals[pupil.id] = total if has_any_value else None
         pupil_paper_totals[pupil.id] = {paper_key: paper_totals[paper_key] for paper_key in paper_has_any}
 
+    db.session.flush()
+    pupil_totals, pupil_paper_totals = build_gap_totals_from_saved_scores(pupils, questions)
     warnings.extend(sync_gap_totals_to_subject_results(pupils, questions, pupil_totals, pupil_paper_totals, school_id=school_id, assessment_year_group=assessment_year_group))
     return {'warnings': warnings, 'pupil_totals': pupil_totals, 'pupil_paper_totals': pupil_paper_totals}
 
@@ -184,7 +214,11 @@ def sync_gap_totals_to_subject_results(
     total_scores_synced = 0
     for pupil in pupils:
         per_paper = dict(pupil_paper_totals.get(pupil.id, {}))
+        from .assessments import paper_enabled
         for paper in list(per_paper):
+            if not paper_enabled(setting, int(paper[-1])):
+                per_paper.pop(paper)
+                continue
             paper_questions = [question for question in questions if (question.paper_key or 'paper_1') == paper]
             if any(saved_scores.get((pupil.id, question.id)) is None for question in paper_questions):
                 per_paper.pop(paper)

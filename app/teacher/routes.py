@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from flask import current_app, flash, make_response, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
@@ -359,30 +359,7 @@ def gap_analysis(subject: str):
             if active_paper not in valid_paper_keys:
                 active_paper = paper_tabs[0]['key']
             if action == 'add_question':
-                label = request.form.get('new_question_label', '').strip()
-                max_raw = request.form.get('new_question_max', '').strip()
-                question_type = request.form.get('new_question_type', '').strip() or None
-                if not label:
-                    raise AssessmentValidationError('Enter a question label before adding a new question.')
-                try:
-                    max_score = int(max_raw or '0')
-                except ValueError as exc:
-                    raise AssessmentValidationError('New question max score must be a whole number.') from exc
-                if max_score < 0:
-                    raise AssessmentValidationError('New question max score cannot be negative.')
-                next_order = len(template.questions)
-                question = GapQuestion(
-                    template=template,
-                    paper_key=active_paper,
-                    question_label=label,
-                    question_type=question_type,
-                    max_score=max_score,
-                    display_order=next_order,
-                    school_id=school_class.school_id,
-                )
-                db.session.add(question)
-                db.session.commit()
-                flash(f'Added question {label} to {dict((item["key"], item["label"]) for item in paper_tabs)[active_paper]}.', 'success')
+                abort(403)
             elif action == 'sync_results':
                 questions = list(template.questions)
                 outcome = {'warnings': sync_gap_totals_to_subject_results(
@@ -396,8 +373,9 @@ def gap_analysis(subject: str):
                 for warning in outcome['warnings']:
                     flash(warning, 'warning')
             else:
-                template.paper_name = request.form.get('paper_name', '').strip() or None
-                questions = parse_question_columns(request.form, template)
+                from app.services.gap import validate_score_columns
+                questions = list(template.questions)
+                validate_score_columns(request.form, questions)
                 db.session.flush()
                 outcome = save_gap_scores(
                     pupils,
@@ -947,21 +925,25 @@ def render_subject_page(subject_key: str):
             lock_school(school_class.school_id)
             if request.form.get('baseline') != school_fingerprint(school_class.school_id):
                 raise AssessmentValidationError('School data changed while this page was open. Refresh before saving; your submitted scores have been kept below.')
-            submitted_ids = {int(key.rsplit('_', 1)[-1]) for key in request.form if key.startswith('paper_1_score_') and key.rsplit('_', 1)[-1].isdigit()}
+            submitted_ids = {int(key.rsplit('_', 1)[-1]) for key in request.form if key.startswith(('paper_1_score_', 'paper_2_score_')) and key.rsplit('_', 1)[-1].isdigit()}
             if not submitted_ids.issubset(set(pupil_ids)):
                 raise AssessmentValidationError('A submitted pupil is outside this class and academic year.')
             saved = created = 0
             for pupil in context['pupils']:
                 first_key, second_key = f'paper_1_score_{pupil.id}', f'paper_2_score_{pupil.id}'
-                if first_key not in request.form or second_key not in request.form:
+                from app.services.assessments import paper_enabled
+                result = existing.get(pupil.id)
+                row_setting = setting_for_result(result, setting) if result else setting
+                if any(paper_enabled(row_setting, paper) and key not in request.form for paper, key in ((1, first_key), (2, second_key))):
                     continue
-                raw_first, raw_second = request.form[first_key], request.form[second_key]
+                raw_first, raw_second = request.form.get(first_key, ''), request.form.get(second_key, '')
                 notes = request.form.get(f'notes_{pupil.id}', '').strip()
                 posted[pupil.id] = {'paper_1_score': raw_first, 'paper_2_score': raw_second, 'notes': notes, 'assessment_year_group': request.form.get(f'assessment_year_group_{pupil.id}', str(group))}
                 try:
                     result = existing.get(pupil.id)
                     row_setting = setting_for_result(result, setting) if result else setting
-                    first, second = parse_score(raw_first, row_setting.paper_1_name), parse_score(raw_second, row_setting.paper_2_name)
+                    from app.services.assessment_imports import parse_paper_scores
+                    first, second = parse_paper_scores({'paper_1_score':raw_first, 'paper_2_score':raw_second}, row_setting)
                     test_group = int(request.form.get(f'assessment_year_group_{pupil.id}', str(group)))
                     if test_group not in range(7):
                         raise AssessmentValidationError('Test level must be between Reception and Year 6.')
@@ -1008,6 +990,8 @@ def render_subject_page(subject_key: str):
     for row in rows:
         result = existing.get(row['pupil'].id)
         row_setting = setting_for_result(result, setting) if result else setting
+        from app.services.assessments import paper_enabled
+        row['paper_1_enabled'], row['paper_2_enabled'] = paper_enabled(row_setting, 1), paper_enabled(row_setting, 2)
         row['paper_1_max'], row['paper_2_max'] = row_setting.paper_1_max, row_setting.paper_2_max
         row['configuration_note'] = f'AT {row_setting.below_are_threshold_percent}% / GDS {row_setting.exceeding_threshold_percent}%; combined maximum {row_setting.combined_max}' if result and result.configuration_snapshot else 'Legacy configuration was not recorded; saved outcome preserved. An explicit edit/recalculation will record the configuration.'
         row['cohort_year_group'] = cohort_year_group(row['pupil'], academic_year)

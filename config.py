@@ -54,6 +54,8 @@ class Config:
     # Default hardening is safe for both environments; Production overrides as needed.
     SESSION_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    REMEMBER_COOKIE_SAMESITE = 'Lax'
     DEMO_MODE = _env_flag('DEMO_MODE', default=False)
     FUNDAMENTALS_TOKEN_MAX_AGE = int(os.environ.get('FUNDAMENTALS_TOKEN_MAX_AGE', '86400'))
 

@@ -15,13 +15,46 @@
 <div class="card shadow-sm mb-4"><div class="card-header bg-white"><strong>{{ format_subject_name(subject) }} · Year {{ group }} · {{ academic_year }} · {{ get_term_label(term) }}</strong></div><div class="card-body">
 <form method="post" class="row g-4" id="assessment-setup">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="school_id" value="{{ selected_school_id }}"><input type="hidden" name="year" value="{{ selected_year.id }}"><input type="hidden" name="year_group" value="{{ group }}"><input type="hidden" name="subject" value="{{ subject }}"><input type="hidden" name="term" value="{{ term }}">
-{% for paper in [1,2] %}<div class="col-md-6"><label class="form-label">Paper {{ paper }} name</label><input class="form-control mb-2" name="paper_{{ paper }}_name" value="{{ setting['paper_' ~ paper ~ '_name'] }}" maxlength="100" required><label class="form-label">Maximum marks</label><input class="form-control" type="number" name="paper_{{ paper }}_max" value="{{ setting['paper_' ~ paper ~ '_max'] }}" min="1" step="1" required></div>{% endfor %}
-<div class="col-12 p-3 bg-light rounded">Combined maximum: <strong id="combined-maximum">{{ setting.combined_max }}</strong>. Calculated from both papers.</div>
+{% for paper in [1,2] %}
+<div class="col-md-6" data-paper="{{ paper }}">
+<div class="d-flex justify-content-between align-items-center mb-2"><strong class="paper-heading">Paper {{ paper }}</strong><button type="button" class="btn btn-sm btn-outline-secondary" data-paper-toggle="{{ paper }}">Switch off</button></div>
+<input type="hidden" name="paper_{{ paper }}_enabled" value="{{ 'yes' if setting['paper_' ~ paper ~ '_enabled'] else 'no' }}">
+<label class="form-label">Paper name</label><input class="form-control mb-2" name="paper_{{ paper }}_name" value="{{ setting['paper_' ~ paper ~ '_name'] }}" maxlength="100" required>
+<label class="form-label">Maximum marks</label><input class="form-control" type="number" name="paper_{{ paper }}_max" value="{{ setting['paper_' ~ paper ~ '_max'] }}" min="1" step="1" required>
+</div>{% endfor %}
+<div class="col-12 p-3 bg-light rounded">Assessment maximum: <strong id="combined-maximum">{{ setting.combined_max }}</strong>. Only papers switched on count towards the result. Existing marks for switched-off papers stay stored.</div>
+<p class="text-danger d-none" id="paper-selection-error">Keep at least one paper switched on.</p>
 <div class="col-md-6"><label class="form-label">Expected Standard (AT / On Track) %</label><input class="form-control" type="number" name="below_are_threshold_percent" value="{{ setting.below_are_threshold_percent }}" min="0" max="100" step="0.1" required><p class="small mt-2">Current boundary: <strong>{{ at_boundary }} / {{ setting.combined_max }}</strong>. Below this boundary is Working Towards.</p></div>
 <div class="col-md-6"><label class="form-label">Greater Depth (GDS / Exceeding) %</label><input class="form-control" type="number" name="exceeding_threshold_percent" value="{{ setting.exceeding_threshold_percent }}" min="0" max="100" step="0.1" required><p class="small mt-2">Current boundary: <strong>{{ gds_boundary }} / {{ setting.combined_max }}</strong>. This boundary and above is Exceeding.</p></div>
 <p class="small text-muted mb-0">Percentage bands use the displayed one-decimal percentage. A below-year-group paper still gives Working Towards. Year 6 SATs scaled scores use the separate SATs tracker. Existing legacy outcomes stay as saved until you explicitly apply a recalculation here.</p>
 <div class="col-12"><button class="btn btn-primary">Preview impact</button></div>
 </form></div></div>
 <div class="card shadow-sm"><div class="card-header bg-white"><strong>Assessment history</strong></div><div class="card-body">{% for event in history %}<p class="small"><strong>{{ event.created_at.strftime('%d %b %Y %H:%M') }} UTC · {{ event.user.username if event.user else 'User' }}</strong> — {{ event.action.replace('assessment_', '').replace('_', ' ').capitalize() }}<br><span class="text-muted">{{ event.details }}</span></p>{% else %}<p class="text-muted mb-0">Confirmed assessment changes will appear here.</p>{% endfor %}</div></div>
-<script>document.getElementById('assessment-setup').addEventListener('input', function(){ const first=Number(this.paper_1_max.value), second=Number(this.paper_2_max.value); document.getElementById('combined-maximum').textContent=first+second; });</script>
+<script>
+(() => {
+  const form = document.getElementById('assessment-setup');
+  const update = () => {
+    let maximum = 0, count = 0;
+    [1, 2].forEach(paper => {
+      const enabled = form.elements[`paper_${paper}_enabled`].value === 'yes';
+      const panel = form.querySelector(`[data-paper="${paper}"]`);
+      panel.querySelector('.paper-heading').classList.toggle('text-decoration-line-through', !enabled);
+      panel.querySelector('.paper-heading').classList.toggle('text-muted', !enabled);
+      const button = panel.querySelector('[data-paper-toggle]');
+      button.textContent = enabled ? '✕ Switch off' : '✓ Use this paper';
+      button.setAttribute('aria-pressed', String(enabled));
+      panel.querySelectorAll('input:not([type="hidden"])').forEach(input => { input.readOnly = !enabled; });
+      if (enabled) { count++; maximum += Number(form.elements[`paper_${paper}_max`].value); }
+    });
+    document.getElementById('combined-maximum').textContent = maximum;
+    document.getElementById('paper-selection-error').classList.toggle('d-none', count > 0);
+    form.querySelector('button:not([type="button"])').disabled = count === 0;
+  };
+  form.querySelectorAll('[data-paper-toggle]').forEach(button => button.addEventListener('click', () => {
+    const input = form.elements[`paper_${button.dataset.paperToggle}_enabled`];
+    input.value = input.value === 'yes' ? 'no' : 'yes'; update();
+  }));
+  form.addEventListener('input', update); update();
+})();
+</script>
 {% endblock %}

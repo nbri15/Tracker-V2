@@ -15,6 +15,7 @@
     feedback.textContent = message;
   };
   const validate = input => {
+    if (input.disabled) { showError(input, ''); return true; }
     const raw = input.value.trim(), max = Number(input.dataset.max);
     let error = '';
     if (raw && !/^\d+$/.test(raw)) error = 'Enter a whole number, zero, or leave blank.';
@@ -74,7 +75,7 @@
       return;
     }
     matrix.forEach((line, rowOffset) => line.forEach((value, columnOffset) => {
-      const input = inputs(rows[startRow + rowOffset])[startColumn + columnOffset]; input.value = value.trim(); validate(input);
+      const input = inputs(rows[startRow + rowOffset])[startColumn + columnOffset]; if (input.disabled) return; input.value = value.trim(); validate(input);
     }));
     markDirty(); clearTimeout(timer); timer = setTimeout(refreshOutcomes, 200);
   });
