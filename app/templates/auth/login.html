@@ -17,7 +17,8 @@
           {{ form.hidden_tag() }}
           <div class="mb-3">
             {{ form.school_code.label(class='form-label') }}
-            {{ form.school_code(class='form-control form-control-lg', placeholder='Enter school code (optional for email login)', autocomplete='organization') }}
+            {{ form.school_code(class='form-control form-control-lg', placeholder='Enter your school code', autocomplete='organization', aria_describedby='school-code-help') }}
+            <div id="school-code-help" class="form-text">{{ form.school_code.description }}</div>
           </div>
           <div class="mb-3">
             {{ form.username.label(class='form-label') }}

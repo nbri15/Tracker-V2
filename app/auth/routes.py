@@ -49,7 +49,12 @@ def login():
                     User.username.ilike(identifier),
                 ).first()
         else:
-            user = User.query.filter(User.username.ilike(identifier)).first()
+            # School accounts must always be resolved inside the supplied school.
+            # Only platform-level executives have a code-free login path.
+            user = User.query.filter(
+                User.role == 'executive_admin',
+                User.username.ilike(identifier),
+            ).first()
         credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
         school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
         if credentials_valid and school_active_or_exec:
@@ -76,7 +81,7 @@ def login():
         if credentials_valid and not school_active_or_exec:
             flash('Your school is inactive. Contact an executive administrator.', 'danger')
         else:
-            flash('Invalid school code/username/password.', 'danger')
+            flash('Invalid school code/username/password. School accounts must include their school code.', 'danger')
 
     return render_template('auth/login.html', form=form)
 
