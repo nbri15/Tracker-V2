@@ -23,7 +23,7 @@ from .fundamentals import (
     FundamentalStrand,
 )
 from .history import AcademicYear, PupilClassHistory
-from .intervention import Intervention
+from .intervention import Intervention, InterventionProgramme, InterventionProgrammeAssignment
 from .pupil import Pupil
 from .reception import ReceptionTrackerEntry
 from .sats import SimpleSatsExamTab, SimpleSatsSetting, SatsColumnResult, SatsColumnSetting, SatsExamSetting, SatsExamTab, SatsResult, SatsWritingResult, TrackerModeSetting
@@ -46,6 +46,8 @@ __all__ = [
     'GapScore',
     'GapTemplate',
     'Intervention',
+    'InterventionProgramme',
+    'InterventionProgrammeAssignment',
     'PhonicsScore',
     'PhonicsTestColumn',
     'Pupil',

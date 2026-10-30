@@ -913,16 +913,16 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
     return output.getvalue()
 
 
-def export_interventions_csv(academic_year: str, class_id: int | None = None, anonymised: bool = False, current_scores: dict[int, str] | None = None) -> str:
+def export_interventions_csv(academic_year: str, class_id: int | None = None, anonymised: bool = False, current_scores: dict[int, str] | None = None, *, records=None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note'])
+    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note', 'programmes'])
     query = school_scoped_query(Intervention.query.join(Intervention.pupil).join(Pupil.school_class), Pupil).filter(Intervention.academic_year == academic_year)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
-    for idx, row in enumerate(query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
+    for idx, row in enumerate(records if records is not None else query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
         name = f'Pupil {idx}' if anonymised else row.pupil.full_name
-        writer.writerow([name, row.pupil.school_class.name, row.subject, row.term, (current_scores or {}).get(row.id, '—'), row.is_active, row.auto_flagged, row.reason, row.note])
+        writer.writerow([name, row.pupil.school_class.name, row.subject, row.term, (current_scores or {}).get(row.id, '—'), row.is_active, row.auto_flagged, row.reason, row.note, ', '.join(p.name for p in row.programmes)])
     return output.getvalue()
 
 
