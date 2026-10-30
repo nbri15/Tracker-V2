@@ -1,0 +1,10 @@
+.intervention-table { min-width: 800px; }
+.intervention-table td { vertical-align: top; padding: 1rem; }
+.intervention-table td:first-child { width: 23%; }
+.intervention-table td:last-child { min-width: 230px; width: 28%; }
+.intervention-table td:nth-child(4) { min-width: 190px; }
+.programme-description { white-space: pre-wrap; }
+.programme-dropzone { border: 2px solid var(--bs-border-color); transition: border-color .15s, background-color .15s; }
+.programme-dropzone.drop-ready { border-color: var(--bs-primary); background: var(--bs-primary-bg-subtle); }
+tr[data-pupil-drag] { cursor: grab; }
+tr[data-pupil-drag]:active { cursor: grabbing; }

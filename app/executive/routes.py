@@ -26,6 +26,8 @@ from app.models import (
     GapTemplate,
     GapScore,
     Intervention,
+    InterventionProgramme,
+    InterventionProgrammeAssignment,
     PhonicsScore,
     Pupil,
     PupilClassHistory,
@@ -61,6 +63,8 @@ EXPORT_TABLES = [
     'subject_results',
     'writing_results',
     'interventions',
+    'intervention_programmes',
+    'intervention_programme_assignments',
     'foundation_results',
     'phonics_scores',
     'times_table_scores',
@@ -152,6 +156,8 @@ def _school_data_counts(school_id: int) -> dict[str, int]:
         'users': User.query.filter_by(school_id=school_id).count(),
         'pupils': Pupil.query.filter_by(school_id=school_id).count(),
         'classes': SchoolClass.query.filter_by(school_id=school_id).count(),
+        'intervention_programmes': InterventionProgramme.query.filter_by(school_id=school_id).count(),
+        'programme_assignments': InterventionProgrammeAssignment.query.filter_by(school_id=school_id).count(),
         'subject_results': SubjectResult.query.filter_by(school_id=school_id).count(),
         'writing_results': WritingResult.query.filter_by(school_id=school_id).count(),
         'foundation_results': FoundationResult.query.filter_by(school_id=school_id).count(),
@@ -186,6 +192,8 @@ def _permanently_delete_school_data(school: School) -> None:
     FundamentalPupilAttempt.query.filter(FundamentalPupilAttempt.session_id.in_(session_ids)).delete(synchronize_session=False)
     FundamentalSession.query.filter(FundamentalSession.class_id.in_(class_ids)).delete(synchronize_session=False)
 
+    InterventionProgrammeAssignment.query.filter_by(school_id=school_id).delete(synchronize_session=False)
+    InterventionProgramme.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     SubjectResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     WritingResult.query.filter_by(school_id=school_id).delete(synchronize_session=False)
     Intervention.query.filter_by(school_id=school_id).delete(synchronize_session=False)

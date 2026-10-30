@@ -10,12 +10,12 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Response, current_app, flash, jsonify, make_response, redirect, render_template, request, send_file, session, url_for
+from flask import abort, Response, current_app, flash, jsonify, make_response, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user, login_required
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import joinedload
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from weasyprint import HTML
 
 from app.extensions import db
@@ -627,6 +627,9 @@ def _linked_pupil_record_counts(pupil_id: int) -> dict[str, int]:
 
 
 def _delete_pupil_linked_data(pupil: Pupil) -> None:
+    from app.models import InterventionProgrammeAssignment
+    intervention_ids = Intervention.query.with_entities(Intervention.id).filter_by(pupil_id=pupil.id, school_id=pupil.school_id)
+    InterventionProgrammeAssignment.query.filter(InterventionProgrammeAssignment.intervention_id.in_(intervention_ids)).delete(synchronize_session=False)
     attempt_ids = FundamentalPupilAttempt.query.with_entities(FundamentalPupilAttempt.id).filter_by(pupil_id=pupil.id)
     FundamentalResponse.query.filter(FundamentalResponse.attempt_id.in_(attempt_ids)).delete(synchronize_session=False)
     FundamentalPupilAttempt.query.filter_by(pupil_id=pupil.id).delete(synchronize_session=False)
@@ -1659,17 +1662,65 @@ def settings_quick_save():
     return {'ok': False, 'error': 'Assessment settings require an impact preview. Open Admin → Assessment Setup.'}, 409
 
 
+@admin_bp.route('/intervention-programmes', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def intervention_programmes():
+    from app.models import InterventionProgramme
+    from app.services.interventions import school_programmes
+    school_id = _selected_school_id_for_admin_actions()
+    if school_id is None:
+        flash('Select a school before managing programmes.', 'warning')
+        return redirect(url_for('admin.interventions'))
+    if request.method == 'POST':
+        try:
+            raw_id = request.form.get('programme_id', '').strip()
+            programme = school_programmes(school_id).filter_by(id=int(raw_id)).first_or_404() if raw_id else None
+            action = request.form.get('action', 'save')
+            if action == 'toggle' and programme:
+                programme.is_active = not programme.is_active
+            elif action == 'save':
+                name = request.form.get('name', '').strip()
+                subject = request.form.get('subject', '').strip().lower()
+                description = request.form.get('description', '').strip()
+                if not name or len(name) > 120 or subject not in {'maths', 'reading', 'spag'} or len(description) > 2000:
+                    raise ValueError('Enter a programme name (up to 120 characters), a core subject and a description up to 2,000 characters.')
+                if programme and programme.subject != subject:
+                    raise ValueError('Keep the subject of an existing programme. Archive it and create a new programme for another subject.')
+                duplicate = school_programmes(school_id, subject).filter_by(name_key=name.casefold()).first()
+                if duplicate and (not programme or duplicate.id != programme.id):
+                    raise ValueError('A programme with this name already exists for that subject, including archived programmes.')
+                if not programme:
+                    programme = InterventionProgramme(school_id=school_id, subject=subject)
+                programme.name, programme.name_key, programme.description = name, name.casefold(), description or None
+                db.session.add(programme)
+            else:
+                abort(400)
+            db.session.commit()
+            flash('Programme saved. Existing pupil assignments are preserved.', 'success')
+        except (ValueError, IntegrityError):
+            db.session.rollback()
+            flash('Programme could not be saved. Check its name, subject and description; names must be unique within each subject.', 'danger')
+        return redirect(url_for('admin.intervention_programmes'))
+    return render_template('admin/intervention_programmes.html', programmes=school_programmes(school_id).all(), subjects=CORE_SUBJECTS)
+
+
 @admin_bp.route('/interventions')
 @login_required
 @admin_required
 def interventions():
     from app.models import Intervention
+    from app.services.interventions import school_programmes
 
     academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     year_group = request.args.get('year_group', '').strip()
     class_id = request.args.get('class_id', '').strip()
     subject = request.args.get('subject', '').strip()
     status = request.args.get('status', 'active').strip() or 'active'
+    term = request.args.get('term', '').strip()
+    programme_id = request.args.get('programme_id', '').strip()
+    if status not in {'active', 'inactive', 'all'} or (term and term not in dict(TERMS)):
+        abort(400)
     print_mode = request.args.get('print', '0') == '1'
     anon_mode = request.args.get('anon', '0') == '1'
 
@@ -1679,23 +1730,30 @@ def interventions():
         return redirect(url_for('admin.classes'))
     query = Intervention.query.join(Intervention.pupil).filter(Pupil.school_id == school_id, Pupil.is_demo.is_(is_demo_user()), Intervention.is_demo.is_(is_demo_user()))
     query = query.filter(Intervention.academic_year == academic_year)
-    query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status)
+    try:
+        query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status, term=term, programme_id=programme_id)
+    except ValueError:
+        abort(400)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
     current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
     if _pdf_requested():
-        headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score']
-        table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.reason or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—'] for idx, row in enumerate(rows, start=1)]
-        filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status}
+        headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score', 'Programmes']
+        table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.reason or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—', ', '.join(p.name for p in row.programmes)] for idx, row in enumerate(rows, start=1)]
+        filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status, 'term': term, 'programme_id': programme_id}
         return _render_table_pdf('Interventions' if not anon_mode else 'Interventions — anonymised', headers, table_rows, filters, anon_mode, 'interventions.pdf')
 
     return render_template(
         'admin/interventions.html',
         interventions=rows,
         academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year),
         year_group=year_group,
         class_id=class_id,
         subject=subject,
         status=status,
+        term=term, programme_id=programme_id, terms=TERMS,
+        programmes=school_programmes(school_id).all(),
+        active_count=sum(row.is_active for row in rows),
         print_mode=print_mode,
         anon_mode=anon_mode,
         current_scores=current_scores,
@@ -2681,17 +2739,19 @@ def export_interventions():
     if school_id is None:
         flash('Select a school before exporting interventions.', 'warning')
         return redirect(url_for('admin.interventions', academic_year=academic_year))
-    query = Intervention.query.join(Intervention.pupil).filter(Intervention.academic_year == academic_year, Pupil.school_id == school_id)
-    if request.args.get('class_id'):
-        query = query.filter(Pupil.class_id == int(request.args['class_id']))
-    rows = query.order_by(Pupil.last_name, Pupil.first_name).all()
+    query = Intervention.query.join(Intervention.pupil).filter(
+        Intervention.academic_year == academic_year, Pupil.school_id == school_id,
+        Pupil.is_demo.is_(is_demo_user()), Intervention.is_demo.is_(is_demo_user()))
+    try:
+        query = build_intervention_filters(query, year_group=request.args.get('year_group', ''),
+            class_id=request.args.get('class_id', ''), subject=request.args.get('subject', ''),
+            status=request.args.get('status', 'active'), term=request.args.get('term', ''),
+            programme_id=request.args.get('programme_id', ''))
+    except ValueError:
+        abort(400)
+    rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
     current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
-    csv_text = export_interventions_csv(
-        academic_year,
-        class_id=int(request.args['class_id']) if request.args.get('class_id') else None,
-        anonymised=anon_mode,
-        current_scores=current_scores,
-    )
+    csv_text = export_interventions_csv(academic_year, anonymised=anon_mode, current_scores=current_scores, records=rows)
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=interventions_export.csv'})
 
 

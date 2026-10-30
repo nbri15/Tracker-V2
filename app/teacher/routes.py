@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import re
 
 from flask import abort, current_app, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from app.extensions import db
-from app.models import GapQuestion, Intervention, Pupil, SubjectResult, WritingResult
+from app.models import GapQuestion, Intervention, InterventionProgrammeAssignment, Pupil, SubjectResult, WritingResult
+from app.services.interventions import assign_programme, school_programmes, intervention_assessment
 from app.services import (
     AUTO_REASON,
     SATS_ASSESSMENT_POINTS,
@@ -413,80 +415,97 @@ def gap_analysis(subject: str):
 def interventions():
     school_class = get_primary_class_for_user(current_user)
     academic_year = request.values.get('academic_year', get_selected_current_academic_year())
-    term = request.values.get('term', get_current_term())
-    subject = request.values.get('subject', 'maths')
-
+    term = request.values.get('term', get_current_term()).strip().lower()
+    subject = request.values.get('subject', 'maths').strip().lower()
+    status = request.values.get('status', 'active')
+    if subject not in {'maths', 'reading', 'spag'} or term not in dict(TERMS) or status not in {'active', 'closed', 'all'}:
+        abort(400)
+    if not re.fullmatch(r'\d{4}/\d{2}', academic_year):
+        abort(400)
+    def redirect_back():
+        return redirect(url_for('teacher.interventions', academic_year=academic_year, term=term, subject=subject, status=status))
     if not school_class:
         flash('No active class is assigned to your account yet.', 'warning')
-        return render_template('teacher/interventions.html', interventions=[], school_class=None, subjects=['maths', 'reading', 'spag'], academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year), term=term, terms=TERMS, subject=subject, pupils=[], auto_reason=AUTO_REASON)
-
-    # Automatic suggestions are refreshed by explicit result/configuration saves.
-    # Merely viewing interventions must not alter historical records.
-
+        return render_template('teacher/interventions.html', interventions=[], all_records=[], programmes=[], active_programmes=[], school_class=None, subjects=['maths', 'reading', 'spag'], academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year), term=term, terms=TERMS, subject=subject, pupils=[], status=status, metrics={}, groups={}, active_count=0, closed_count=0)
+    query = Intervention.query.join(Intervention.pupil).filter(
+        Intervention.subject == subject, Intervention.term == term,
+        Intervention.academic_year == academic_year,
+        Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id,
+        Pupil.is_active.is_(True), Pupil.is_demo == school_class.is_demo)
+    pupils_query = get_class_pupil_query(school_class, academic_year).filter(
+        Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id,
+        Pupil.is_active.is_(True), Pupil.is_demo == school_class.is_demo)
+    # Reading the page is deliberately read-only, including historical years.
     if request.method == 'POST':
-        action = request.form.get('action', 'update')
+        action = request.form.get('action', '')
         try:
-            if action == 'add_manual':
-                pupil_id = int(request.form.get('pupil_id', '0'))
-                pupil = get_class_pupil_query(school_class, academic_year).filter(Pupil.id == pupil_id, Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).first()
+            if action in {'assign_programme', 'add_manual'}:
+                pupil = pupils_query.filter(Pupil.id == int(request.form.get('pupil_id', '0'))).first()
                 if not pupil:
                     raise ValueError('Choose a pupil from your assigned class.')
-                note = request.form.get('note', '').strip() or None
-                reason = request.form.get('reason', '').strip() or 'Teacher added manually'
-                record = Intervention.query.join(Intervention.pupil).filter(Intervention.pupil_id == pupil_id, Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Intervention.is_active.is_(True), Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id).first()
-                if not record:
-                    record = Intervention(
-                        pupil_id=pupil_id,
-                        school_id=school_class.school_id,
-                        subject=subject,
-                        term=term,
-                        academic_year=academic_year,
-                        reason=reason,
-                        note=note,
-                        auto_flagged=False,
-                        is_active=True,
-                        is_demo=school_class.is_demo,
-                    )
+                programme_id = request.form.get('programme_id', '').strip()
+                if action == 'assign_programme' or programme_id:
+                    assign_programme(school_class, pupil, int(programme_id), subject, term, academic_year)
+                    flash('Pupil assigned to programme.', 'success')
                 else:
-                    record.reason = reason
-                    record.note = note
-                    record.is_active = True
-                db.session.add(record)
-                flash('Manual intervention added.', 'success')
-            else:
-                for record in Intervention.query.join(Intervention.pupil).filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id, Pupil.is_active.is_(True)).all():
-                    record.note = request.form.get(f'note_{record.id}', '').strip() or None
+                    reason = request.form.get('reason', '').strip() or 'Teacher added manually'
+                    if len(reason) > 255:
+                        raise ValueError('Reason must be 255 characters or fewer.')
+                    record = query.filter(Intervention.pupil_id == pupil.id, Intervention.is_active.is_(True)).first()
+                    if not record:
+                        record = Intervention(pupil_id=pupil.id, school_id=school_class.school_id, subject=subject,
+                            term=term, academic_year=academic_year, reason=reason,
+                            note=request.form.get('note', '').strip() or None, auto_flagged=False,
+                            is_active=True, is_demo=school_class.is_demo)
+                        db.session.add(record)
+                    else:
+                        # Adding support must not erase a previously recorded plan.
+                        record.reason = reason
+                        if request.form.get('note', '').strip():
+                            record.note = request.form['note'].strip()
+                    flash('Intervention added.', 'success')
+            elif action in {'close', 'reopen', 'save_record', 'remove_programme'}:
+                record = query.filter(Intervention.id == int(request.form.get('record_id', '0'))).first_or_404()
+                if action in {'close', 'reopen'}:
+                    record.is_active = action == 'reopen'
+                    record.closed_by_teacher = action == 'close'
+                elif action == 'save_record':
+                    record.note = request.form.get('note', '').strip() or None
+                else:
+                    assignment = next((item for item in record.programme_assignments if item.programme_id == int(request.form.get('programme_id', '0'))), None)
+                    if not assignment:
+                        abort(404)
+                    record.programme_assignments.remove(assignment)
+                flash('Intervention updated.', 'success')
+            elif action == 'update':
+                # Compatibility with existing full-page forms: absent fields are untouched.
+                for record in query.all():
+                    if f'note_{record.id}' not in request.form:
+                        continue
+                    record.note = request.form[f'note_{record.id}'].strip() or None
                     record.is_active = request.form.get(f'active_{record.id}') == 'on'
-                    db.session.add(record)
+                    record.closed_by_teacher = not record.is_active
                 flash('Interventions updated.', 'success')
+            else:
+                abort(400)
             db.session.commit()
-            return redirect(url_for('teacher.interventions', academic_year=academic_year, term=term, subject=subject))
-        except ValueError as exc:
+            return redirect_back()
+        except (ValueError, TypeError) as exc:
             db.session.rollback()
-            flash(f'Intervention changes could not be saved: {exc}', 'danger')
-
-    interventions = (
-        Intervention.query.join(Intervention.pupil)
-        .filter(Intervention.subject == subject, Intervention.term == term, Intervention.academic_year == academic_year, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id, Pupil.is_active.is_(True))
-        .order_by(Intervention.is_active.desc(), Intervention.auto_flagged.desc(), Pupil.last_name, Pupil.first_name)
-        .all()
-    )
-    pupils = get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True), Pupil.school_id == school_class.school_id).order_by(Pupil.last_name, Pupil.first_name).all()
-    return render_template(
-        'teacher/interventions.html',
-        school_class=school_class,
-        interventions=interventions,
-        pupils=pupils,
-        subjects=['maths', 'reading', 'spag'],
-        academic_year=academic_year,
-        academic_year_options=build_academic_year_options(academic_year),
-        term=term,
-        terms=TERMS,
-        subject=subject,
-        auto_reason=AUTO_REASON,
-    )
-
-
+            flash('Choose a valid pupil and programme.' if not isinstance(exc, ValueError) else str(exc), 'danger')
+            return redirect_back()
+    all_records = query.order_by(Pupil.last_name, Pupil.first_name, Intervention.id).all()
+    records = [row for row in all_records if status == 'all' or row.is_active == (status == 'active')]
+    programmes = school_programmes(school_class.school_id, subject).all()
+    groups = {programme.id: [row for row in all_records if row.is_active and programme in row.programmes] for programme in programmes}
+    return render_template('teacher/interventions.html', school_class=school_class,
+        interventions=records, all_records=all_records, pupils=pupils_query.order_by(Pupil.last_name, Pupil.first_name).all(),
+        subjects=['maths', 'reading', 'spag'], academic_year=academic_year,
+        academic_year_options=build_academic_year_options(academic_year), term=term, terms=TERMS,
+        subject=subject, status=status, programmes=programmes,
+        active_programmes=[p for p in programmes if p.is_active], groups=groups,
+        metrics={row.id: intervention_assessment(row) for row in records},
+        active_count=sum(row.is_active for row in all_records), closed_count=sum(not row.is_active for row in all_records))
 
 
 @teacher_bp.route('/api/interventions/quick-save', methods=['POST'])
@@ -494,6 +513,8 @@ def interventions():
 @teacher_required
 def interventions_quick_save():
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return {'ok': False}, 400
     school_class = get_primary_class_for_user(current_user)
     if not school_class:
         return {'ok': False}, 400
@@ -501,18 +522,20 @@ def interventions_quick_save():
         record_id = int(data.get('record_id') or 0)
     except (TypeError, ValueError):
         return {'ok': False}, 400
-    record = Intervention.query.join(Intervention.pupil).filter(Intervention.id == record_id, Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id).first()
+    record = Intervention.query.join(Intervention.pupil).filter(Intervention.id == record_id,
+        Pupil.class_id == school_class.id, Pupil.school_id == school_class.school_id,
+        Pupil.is_active.is_(True), Pupil.is_demo == school_class.is_demo).first()
     if not record:
         return {'ok': False}, 404
-    field = (data.get('field') or '').strip()
-    if field not in {'note', 'is_active'}:
-        return {'ok': False}, 400
-    value = data.get('value')
-    if field == 'note':
+    field, value = data.get('field'), data.get('value')
+    if field == 'note' and (value is None or isinstance(value, str)):
         record.note = (value or '').strip() or None
+    elif field == 'is_active' and isinstance(value, bool):
+        record.is_active = value
+        record.closed_by_teacher = not value
     else:
-        record.is_active = bool(value)
-    db.session.add(record); db.session.commit()
+        return {'ok': False}, 400
+    db.session.commit()
     return {'ok': True}
 
 @teacher_bp.route('/sats', methods=['GET', 'POST'])
