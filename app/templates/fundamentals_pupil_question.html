@@ -19,6 +19,7 @@
         </div>
         {% include 'fundamentals_question_visual.html' %}
         <div class="fundamentals-question-text mb-4" style="white-space:pre-line">{{ presentation.text }}</div>
+        {% if presentation.stem_reasoning_prompt %}<div class="fundamentals-stem-prompt mb-4">{{ presentation.stem_reasoning_prompt }}</div>{% endif %}
         <form method="post" onsubmit="this.querySelector('button[type=submit]').disabled=true;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="question_token" value="{{ question_token }}">
@@ -36,7 +37,9 @@
             </fieldset>
           {% else %}
             <label class="visually-hidden" for="answer">Your answer</label>
-            <input id="answer" class="form-control form-control-lg text-center mb-4 fundamentals-answer-input" name="answer" autocomplete="off" {% if presentation.answer_kind == 'numeric' %}inputmode="decimal"{% endif %} autofocus required>
+            {% if presentation.answer_kind == 'money' %}<div class="fundamentals-money-input"><span aria-hidden="true">£</span>{% endif %}
+            <input id="answer" class="form-control form-control-lg text-center mb-4 fundamentals-answer-input" name="answer" autocomplete="off" {% if presentation.answer_kind in ['numeric', 'money'] %}inputmode="decimal"{% endif %} autofocus required>
+            {% if presentation.answer_kind == 'money' %}</div>{% endif %}
             {% if presentation.answer_kind == 'sequence' %}<p class="text-muted">Enter the answers in order, separated by commas.</p>{% endif %}
           {% endif %}
           <button type="submit" class="btn btn-success btn-lg px-5">Submit</button>
