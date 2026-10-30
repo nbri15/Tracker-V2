@@ -24,3 +24,6 @@ tr[data-pupil-drag]:active { cursor: grabbing; }
   .intervention-table td:first-child::before { display: none; }
   .intervention-table textarea, .intervention-table select { width: 100%; max-width: 100%; }
 }
+
+.programme-library-form .form-control,
+.programme-library-form .form-select { max-width: 100%; }

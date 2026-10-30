@@ -56,7 +56,7 @@ def test_admin_create_edit_and_case_insensitive_duplicate(library):
     with app.app_context(): assert db.session.get(InterventionProgramme,pid).name == 'Comprehension support'
 
 
-@pytest.mark.parametrize('changes', [{'subject':'science'}, {'name':''}, {'name':'x'*121}, {'description':'x'*2001}])
+@pytest.mark.parametrize('changes', [{'subject':'science'}, {'name':''}, {'name':'x'*121}, {'name':'ß'*120}, {'description':'x'*2001}])
 def test_admin_invalid_programmes_do_not_create_rows(library, changes):
     app,ids=library;client=app.test_client();login(client,ids['admin'])
     client.post('/admin/intervention-programmes',data={'name':'New group','subject':'maths',**changes})

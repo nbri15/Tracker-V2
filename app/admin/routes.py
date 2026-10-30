@@ -1683,7 +1683,7 @@ def intervention_programmes():
                 name = request.form.get('name', '').strip()
                 subject = request.form.get('subject', '').strip().lower()
                 description = request.form.get('description', '').strip()
-                if not name or len(name) > 120 or subject not in {'maths', 'reading', 'spag'} or len(description) > 2000:
+                if not name or len(name) > 120 or len(name.casefold()) > 120 or subject not in {'maths', 'reading', 'spag'} or len(description) > 2000:
                     raise ValueError('Enter a programme name (up to 120 characters), a core subject and a description up to 2,000 characters.')
                 if programme and programme.subject != subject:
                     raise ValueError('Keep the subject of an existing programme. Archive it and create a new programme for another subject.')
