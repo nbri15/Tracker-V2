@@ -38,7 +38,7 @@ def test_programme_menu_drag_drop_and_note_save(library,tmp_path):
             page.screenshot(path=str(screenshot_dir/'interventions-desktop.png'),full_page=True)
             page.set_viewport_size({'width':390,'height':844})
             page.screenshot(path=str(screenshot_dir/'interventions-mobile.png'),full_page=True)
-            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), page.evaluate("[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1 && getComputedStyle(e).visibility!=='hidden' && !e.closest('.table-responsive')).map(e=>({tag:e.tagName,cls:e.className,right:e.getBoundingClientRect().right})).slice(0,15)")
             page.get_by_role('button',name='Add pupil / programme').click()
             page.locator('#add-pupil').select_option(str(ids['pupils'][1]))
             page.locator('#add-programme').select_option(str(ids['programme']))
