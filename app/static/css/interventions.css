@@ -27,3 +27,11 @@ tr[data-pupil-drag]:active { cursor: grabbing; }
 
 .programme-library-form .form-control,
 .programme-library-form .form-select { max-width: 100%; }
+
+.intervention-table td[data-label="Pupil"] { position: relative; padding-right: 3.25rem; }
+.suggestion-dismiss { position: absolute; top: .5rem; right: .5rem; }
+.suggestion-dismiss button { width: 2rem; height: 2rem; min-width: 2rem; max-width: none; padding: 0; font-size: 1.3rem; line-height: 1; }
+@media (max-width: 767px) {
+  .suggestion-dismiss { top: 0; right: 0; }
+  .suggestion-dismiss button { width: 2.75rem; height: 2.75rem; }
+}

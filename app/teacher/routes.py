@@ -464,9 +464,14 @@ def interventions():
                         if request.form.get('note', '').strip():
                             record.note = request.form['note'].strip()
                     flash('Intervention added.', 'success')
-            elif action in {'close', 'reopen', 'save_record', 'remove_programme'}:
+            elif action in {'close', 'reopen', 'save_record', 'remove_programme', 'dismiss_suggestion'}:
                 record = query.filter(Intervention.id == int(request.form.get('record_id', '0'))).first_or_404()
-                if action in {'close', 'reopen'}:
+                if action == 'dismiss_suggestion':
+                    if not record.auto_flagged or record.programme_assignments:
+                        raise ValueError('Only automatic suggestions without an assigned programme can be dismissed. Use Close intervention to finish planned support.')
+                    record.is_active = False
+                    record.closed_by_teacher = True
+                elif action in {'close', 'reopen'}:
                     record.is_active = action == 'reopen'
                     record.closed_by_teacher = action == 'close'
                 elif action == 'save_record':
@@ -476,7 +481,7 @@ def interventions():
                     if not assignment:
                         abort(404)
                     record.programme_assignments.remove(assignment)
-                flash('Intervention updated.', 'success')
+                flash('Suggestion dismissed. It remains available in Closed.' if action == 'dismiss_suggestion' else 'Intervention updated.', 'success')
             elif action == 'update':
                 # Compatibility with existing full-page forms: absent fields are untouched.
                 for record in query.all():

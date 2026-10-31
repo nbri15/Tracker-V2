@@ -256,3 +256,59 @@ def test_legacy_update_does_not_clear_missing_fields(library):
     app,ids=library;client=app.test_client();login(client,ids['teacher'])
     client.post('/teacher/interventions',data={**SCOPE,'action':'update'})
     with app.app_context(): assert db.session.get(Intervention,ids['record']).note=='Keep existing plan'
+
+
+def test_dismiss_auto_suggestion_preserves_results_notes_and_stays_dismissed(library):
+    from app.services.assessments import get_subject_setting
+    from app.services.assessment_reliability import apply_result
+    app,ids=library;client=app.test_client();login(client,ids['teacher'])
+    with app.app_context(),app.test_request_context('/'):
+        login_user(db.session.get(User,ids['teacher']))
+        result=SubjectResult(pupil=db.session.get(Pupil,ids['pupils'][0]),school_id=ids['a'],**SCOPE)
+        db.session.add(result);apply_result(result,get_subject_setting(5,'maths','autumn','2026/27'),10,10);db.session.commit()
+    page=client.get('/teacher/interventions',query_string=SCOPE)
+    assert b'aria-label="Dismiss automatic suggestion for Alice Test"' in page.data
+    for _ in range(2):
+        response=client.post('/teacher/interventions',data={**SCOPE,'action':'dismiss_suggestion','record_id':ids['record']})
+        assert response.status_code==302
+    with app.app_context(),app.test_request_context('/'):
+        login_user(db.session.get(User,ids['teacher']))
+        sync_auto_interventions(db.session.get(SchoolClass,ids['ca']),'maths','autumn','2026/27',55);db.session.commit()
+        record=db.session.get(Intervention,ids['record'])
+        assert not record.is_active and record.closed_by_teacher
+        assert record.note=='Keep existing plan' and Intervention.query.count()==1
+        assert (SubjectResult.query.one().paper_1_score,SubjectResult.query.one().paper_2_score)==(10,10)
+    assert b'Keep existing plan' not in client.get('/teacher/interventions',query_string=SCOPE).data
+    assert b'Keep existing plan' in client.get('/teacher/interventions',query_string={**SCOPE,'status':'closed'}).data
+    client.post('/teacher/interventions',data={**SCOPE,'action':'reopen','record_id':ids['record']})
+    with app.app_context(): assert db.session.get(Intervention,ids['record']).is_active
+
+
+@pytest.mark.parametrize('kind',['manual','assigned','archived_programme'])
+def test_dismiss_cross_is_hidden_and_rejected_for_planned_or_manual_support(library,kind):
+    app,ids=library;client=app.test_client();login(client,ids['teacher'])
+    if kind=='manual':
+        with app.app_context():
+            record=db.session.get(Intervention,ids['record']);record.auto_flagged=False;db.session.commit()
+    else:
+        assign(client,ids)
+        if kind=='archived_programme':
+            with app.app_context():
+                programme=db.session.get(InterventionProgramme,ids['programme']);programme.is_active=False;db.session.commit()
+    page=client.get('/teacher/interventions',query_string=SCOPE)
+    assert b'aria-label="Dismiss automatic suggestion for Alice Test"' not in page.data
+    response=client.post('/teacher/interventions',data={**SCOPE,'action':'dismiss_suggestion','record_id':ids['record']},follow_redirects=True)
+    assert b'Only automatic suggestions without an assigned programme' in response.data
+    with app.app_context():
+        record=db.session.get(Intervention,ids['record'])
+        assert record.is_active and record.note=='Keep existing plan'
+        assert len(record.programmes)==(0 if kind=='manual' else 1)
+
+
+def test_dismiss_suggestion_rejects_other_school_and_requires_csrf(library):
+    app,ids=library;client=app.test_client();login(client,ids['other'])
+    payload={**SCOPE,'action':'dismiss_suggestion','record_id':ids['record']}
+    assert client.post('/teacher/interventions',data=payload).status_code==404
+    login(client,ids['teacher']);app.config['WTF_CSRF_ENABLED']=True
+    assert client.post('/teacher/interventions',data=payload).status_code==400
+    with app.app_context(): assert db.session.get(Intervention,ids['record']).is_active
