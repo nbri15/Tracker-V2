@@ -15,6 +15,11 @@ Teachers choose the academic year, term and subject on **Interventions**. They c
 - Expand **View / edit plan** to edit notes. A separate saved/error message is
   shown for each plan; Save plan remains available. Pending saves finish before
   programme assignment, filtering or navigation.
+- Dismiss an active automatic suggestion with the × in its top-right corner,
+  provided no programme is assigned. It moves to Closed, preserves marks and
+  notes, and will not automatically reappear on assessment updates. Reopen it
+  from Closed if needed. Assigned programmes and manual support keep their
+  explicit Close intervention action.
 - Close and reopen support explicitly. Closed notes and programme assignments
   remain available in the Closed tab for the selected academic year and term.
 
