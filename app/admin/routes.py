@@ -1705,6 +1705,20 @@ def intervention_programmes():
     return render_template('admin/intervention_programmes.html', programmes=school_programmes(school_id).all(), subjects=CORE_SUBJECTS)
 
 
+@admin_bp.route('/results-diagnostic')
+@login_required
+@admin_required
+def results_diagnostic():
+    """Read-only: how many saved results exist per year, term and subject, and whether pupils are in a class that year."""
+    from app.models import SubjectResult
+    school_id = current_school_id()
+    rows = (db.session.query(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject, func.count(SubjectResult.id))
+            .filter(SubjectResult.school_id == school_id)
+            .group_by(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject)
+            .order_by(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject).all())
+    return render_template('admin/results_diagnostic.html', rows=rows)
+
+
 @admin_bp.route('/interventions')
 @login_required
 @admin_required

@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Saved results check{% endblock %}
+{% set page_heading = 'Saved results check' %}
+{% block content %}
+<p class="text-muted">Read-only. Shows how many saved results exist for each academic year, term and subject. Values are shown exactly as stored, in quotes, so stray capitals or spaces are visible.</p>
+<table class="table table-sm"><thead><tr><th>Academic year</th><th>Term</th><th>Subject</th><th>Results</th></tr></thead><tbody>
+{% for year, term, subject, count in rows %}<tr><td>"{{ year }}"</td><td>"{{ term }}"</td><td>"{{ subject }}"</td><td>{{ count }}</td></tr>
+{% else %}<tr><td colspan="4">No saved results.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}
