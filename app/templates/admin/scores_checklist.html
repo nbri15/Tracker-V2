@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Scores checklist{% endblock %}
+{% set page_heading = 'Scores checklist' %}
+{% block content %}
+<form method="get" class="card card-body shadow-sm mb-3"><div class="row g-2 align-items-end">
+  <div class="col-sm-4"><label class="form-label" for="chk-year">Academic year</label><select id="chk-year" name="academic_year" class="form-select">{% for option in academic_year_options %}<option value="{{ option.name }}" {% if option.name == academic_year %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select></div>
+  <div class="col-sm-4"><label class="form-label" for="chk-term">Term</label><select id="chk-term" name="term" class="form-select">{% for value, label in terms %}<option value="{{ value }}" {% if term == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-sm-4"><button class="btn btn-outline-primary">Show</button></div>
+</div></form>
+<div class="alert alert-{{ 'success' if summary.total and summary.complete == summary.total else 'info' }}" id="checklist-summary"><strong>{{ summary.complete }} of {{ summary.total }}</strong> class and subject checks are complete for {{ term|title }} {{ academic_year }}.</div>
+<div class="card shadow-sm"><div class="table-responsive"><table class="table align-middle mb-0">
+  <thead><tr><th>Class</th><th>Subject</th><th>Scores in</th><th>Status</th><th>Missing pupils</th></tr></thead>
+  <tbody>
+  {% for entry in entries %}{% for s in entry.subjects %}
+    <tr>
+      {% if loop.first %}<td rowspan="{{ entry.subjects|length }}"><a href="{{ url_for('admin.class_detail', class_id=entry.class.id) }}"><strong>{{ entry.class.name }}</strong></a><div class="small text-muted">Year {{ entry.class.year_group }}</div></td>{% endif %}
+      <td>{{ s.label }}</td>
+      <td>{{ s.scored }} / {{ s.total }}</td>
+      <td>{% if s.status == 'complete' %}<span class="badge text-bg-success">Complete</span>{% elif s.status == 'partial' %}<span class="badge text-bg-warning">{{ s.missing|length }} missing</span>{% elif s.status == 'not_started' %}<span class="badge text-bg-secondary">Not started</span>{% else %}<span class="badge text-bg-light border">No pupils</span>{% endif %}</td>
+      <td class="small">{% if s.missing and s.status == 'partial' %}{{ s.missing|map(attribute='full_name')|join(', ') }}{% elif s.status == 'not_started' %}All pupils{% else %}—{% endif %}</td>
+    </tr>
+  {% endfor %}{% else %}
+    <tr><td colspan="5" class="text-center text-muted py-4">No classes to show.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+<p class="small text-muted mt-2">Counts pupils with a saved percentage for that subject and term. Reception classes are not included because they use the EYFS tracker.</p>
+{% endblock %}
