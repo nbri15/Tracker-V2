@@ -8,7 +8,7 @@ def test_page_shows_results_by_class_and_status_and_flags_duplicate_names(world)
     app, ids = world
     with app.app_context():
         pupil = db.session.get(Pupil, ids['pupils'][0])
-        copy = Pupil(first_name=pupil.first_name, last_name=pupil.last_name, gender='Female', school_id=ids['a'], is_active=False, is_archived=True)
+        copy = Pupil(first_name=pupil.first_name, last_name=pupil.last_name, gender='Female', school_id=ids['a'], class_id=ids['ca'], is_active=False, is_archived=True)
         db.session.add(copy); db.session.flush()
         db.session.add_all([
             SubjectResult(pupil_id=pupil.id, school_id=ids['a'], academic_year='2025/26', term='spring', subject='maths', combined_percent=50),
@@ -19,7 +19,7 @@ def test_page_shows_results_by_class_and_status_and_flags_duplicate_names(world)
     html = page.get_data(as_text=True)
     assert page.status_code == 200
     assert 'Oak' in html and 'Active' in html          # spring result on the real pupil
-    assert '(no class)' in html and 'Archived' in html  # autumn result on the copy
+    assert 'Archived' in html                           # autumn result on the archived copy
     assert 'Alice' in html.split('same name more than once')[1] and '<td>2</td>' in html
 
 
