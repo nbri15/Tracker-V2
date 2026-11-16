@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Class Compass</title>
+<meta name="theme-color" content="#071f4f">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root { --navy:#071f4f; --blue:#1557d6; --gold:#f5ad22; --bg:#f6f8fb; --muted:#5f6f86; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif; color: var(--navy);
+    background: radial-gradient(1200px 600px at 50% -10%, #e6eefc 0%, var(--bg) 60%);
+    display: flex; align-items: center; justify-content: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  main { width: min(92vw, 460px); text-align: center; }
+  .card { background: #fff; border: 1px solid #dbe3ef; border-radius: 20px; padding: 34px 28px 28px; box-shadow: 0 18px 50px rgba(7,31,79,.10); }
+  .logo { width: 260px; max-width: 80%; height: auto; }
+  h1 { font-size: 1.35rem; margin: 22px 0 6px; }
+  p { margin: 0; color: var(--muted); line-height: 1.5; }
+  .bar { height: 8px; background: #e8eef6; border-radius: 99px; overflow: hidden; margin: 24px 0 14px; }
+  .bar span { display: block; height: 100%; width: 40%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--blue), var(--gold)); animation: slide 1.6s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(270%); } }
+  .status { min-height: 1.5em; font-size: .95rem; }
+  .btn { display: inline-block; margin-top: 18px; padding: 12px 22px; border-radius: 12px; background: var(--blue); color: #fff;
+    font-weight: 600; text-decoration: none; }
+  .btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .hide { display: none; }
+  .small { font-size: .8rem; margin-top: 18px; }
+  @media (prefers-reduced-motion: reduce) { .bar span { animation: none; width: 100%; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <img class="logo" src="class-compass-logo.png" alt="Class Compass">
+    <h1 id="title">Getting Class Compass ready</h1>
+    <p id="lead">The school server is waking up. This usually takes under a minute.</p>
+    <div class="bar" id="bar" role="progressbar" aria-label="Starting"><span></span></div>
+    <p class="status" id="status" role="status" aria-live="polite">Starting up…</p>
+    <a class="btn hide" id="open" href="#">Open Class Compass</a>
+    <p class="small">Nothing is lost while it starts. Your scores and notes are safe.</p>
+  </div>
+</main>
+<script>
+  // ONE setting: the address of your live site, with no trailing slash.
+  const APP_URL = 'https://REPLACE-WITH-YOUR-RENDER-ADDRESS.onrender.com';
+
+  const messages = ['Starting up…', 'Warming things up…', 'Nearly there…', 'Still starting, thanks for waiting…'];
+  const title = document.getElementById('title'), lead = document.getElementById('lead'), status = document.getElementById('status');
+  const bar = document.getElementById('bar'), open = document.getElementById('open');
+  const started = Date.now();
+  let ready = false;
+
+  open.href = APP_URL + '/dashboard';
+
+  function showReady() {
+    ready = true;
+    title.textContent = 'Ready';
+    lead.textContent = 'Opening Class Compass…';
+    status.textContent = '';
+    bar.classList.add('hide');
+    open.classList.remove('hide');
+    setTimeout(() => { window.location.replace(APP_URL + '/dashboard'); }, 600);
+  }
+
+  // An image from the site only loads once the real site is awake (the host's waiting page is not an image).
+  function probe() {
+    if (ready) return;
+    const img = new Image();
+    img.onload = showReady;
+    img.onerror = () => setTimeout(probe, 3000);
+    img.src = APP_URL + '/static/img/class-compass-logo.png?wake=' + Date.now();
+  }
+
+  setInterval(() => {
+    if (ready) return;
+    const seconds = Math.round((Date.now() - started) / 1000);
+    status.textContent = seconds > 150 ? 'This is taking longer than usual. Try the button below.' : messages[Math.min(Math.floor(seconds / 15), messages.length - 1)];
+    if (seconds > 150) open.classList.remove('hide');
+  }, 1000);
+
+  if (APP_URL.includes('REPLACE-WITH')) {
+    title.textContent = 'Almost set up';
+    lead.textContent = 'The site address has not been added to this page yet.';
+    status.textContent = '';
+    bar.classList.add('hide');
+  } else {
+    probe();
+  }
+</script>
+</body>
+</html>
