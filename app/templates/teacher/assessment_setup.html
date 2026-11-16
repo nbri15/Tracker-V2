@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Change maximum marks{% endblock %}
+{% set page_heading = 'Change maximum marks' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+  <div><h3 class="h5 mb-1">{{ school_class.name }}</h3><p class="text-muted mb-0">Set the maximum marks for a paper. You will see exactly what changes before anything is saved.</p></div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('teacher.' ~ subject, academic_year=academic_year, term=term) }}">Back to {{ format_subject_name(subject) }} scores</a>
+</div>
+<div class="card shadow-sm mb-3"><div class="card-body">
+<form method="get" class="row g-3 align-items-end">
+<input type="hidden" name="academic_year" value="{{ academic_year }}">
+<div class="col-md-4"><label class="form-label" for="setup-subject">Subject</label><select id="setup-subject" name="subject" class="form-select">{% for value in subjects %}<option value="{{ value }}" {% if subject == value %}selected{% endif %}>{{ format_subject_name(value) }}</option>{% endfor %}</select></div>
+<div class="col-md-4"><label class="form-label" for="setup-term">Term</label><select id="setup-term" name="term" class="form-select">{% for value,label in terms %}<option value="{{ value }}" {% if term == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="col-md-4"><button class="btn btn-outline-primary">Choose assessment</button></div>
+</form></div></div>
+<div class="card shadow-sm mb-3"><div class="card-header bg-white"><strong>{{ format_subject_name(subject) }} · Year {{ group }} · {{ academic_year }} · {{ get_term_label(term) }}</strong></div><div class="card-body">
+<div class="alert alert-warning">This applies to <strong>every Year {{ group }} pupil in your school</strong> for this subject and term in {{ academic_year }}, not only your class. Pass boundaries stay as the same percentages, so the pass mark in marks will move with the maximum. Scores already entered are recalculated, and you will see how many pupils change band before you confirm.</div>
+<form method="post" class="row g-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="academic_year" value="{{ academic_year }}"><input type="hidden" name="subject" value="{{ subject }}"><input type="hidden" name="term" value="{{ term }}">
+{% for paper in [1, 2] %}
+{% set enabled = setting['paper_' ~ paper ~ '_enabled'] is not sameas false %}
+<div class="col-md-6"><label class="form-label" for="paper-{{ paper }}-max">{{ setting['paper_' ~ paper ~ '_name'] }} · maximum marks{% if not enabled %} <span class="text-muted">(not used this term)</span>{% endif %}</label>
+<input id="paper-{{ paper }}-max" class="form-control" type="number" name="paper_{{ paper }}_max" value="{{ setting['paper_' ~ paper ~ '_max'] }}" min="1" step="1" required {% if not enabled %}readonly{% endif %}></div>
+{% endfor %}
+<div class="col-12 small text-muted">Currently: combined maximum <strong>{{ setting.combined_max }}</strong> · Expected Standard <strong>{{ setting.below_are_threshold_percent }}%</strong> · Greater Depth <strong>{{ setting.exceeding_threshold_percent }}%</strong>. Pass boundaries are set by your school admin in Assessment Setup.</div>
+<div class="col-12"><button class="btn btn-primary">Preview the change</button></div>
+</form></div></div>
+{% endblock %}

@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/interventions.css') }}">
 <div class="d-flex justify-content-between align-items-start gap-3 mb-3 flex-wrap">
   <div><h3 class="h5 mb-1">{{ school_class.name if school_class else 'No class assigned' }}</h3><p class="text-muted mb-0">Choose support programmes, organise pupils and keep their support plans together.</p></div>
-  {% if school_class %}<button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#add-intervention" aria-expanded="false" aria-controls="add-intervention">Add pupil / programme</button>{% endif %}
+  {% if school_class %}<div class="d-flex gap-2 flex-wrap"><a class="btn btn-outline-secondary" href="{{ url_for('teacher.intervention_programmes') }}">Manage programmes</a><button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#add-intervention" aria-expanded="false" aria-controls="add-intervention">Add pupil / programme</button></div>{% endif %}
 </div>
 <form method="get" class="card card-body shadow-sm mb-3"><div class="row g-2 align-items-end">
   <div class="col-sm-3"><label for="filter-year" class="form-label">Academic year</label><select id="filter-year" name="academic_year" class="form-select">{% for option in academic_year_options %}<option {% if option == academic_year %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
@@ -41,7 +41,7 @@
   <ul class="list-unstyled mb-0">{% for record in groups.get(programme.id, []) %}<li class="d-flex justify-content-between align-items-center gap-2 py-1"><span>{{ record.pupil.full_name }}</span><form method="post" class="intervention-mutation">{{ scope('remove_programme', record.id) }}<input type="hidden" name="programme_id" value="{{ programme.id }}"><button class="btn btn-sm btn-outline-secondary" aria-label="Remove {{ record.pupil.full_name }} from {{ programme.name }}">Remove</button></form></li>{% else %}<li class="text-muted small py-2">No pupils assigned yet.</li>{% endfor %}</ul>
   </div>
 </section></div>
-{% else %}<div class="col-12"><div class="alert alert-light border">No programmes are available for this subject. Your school admin can add programmes such as Maths booster. You can still record individual support below.</div></div>{% endfor %}
+{% else %}<div class="col-12"><div class="alert alert-light border">No programmes are available for this subject. <a href="{{ url_for('teacher.intervention_programmes') }}">Create a programme</a> such as Maths booster. You can still record individual support below.</div></div>{% endfor %}
 </div>
 <form method="post" id="programme-drop-form" class="intervention-mutation" hidden>{{ scope('assign_programme') }}<input type="hidden" name="pupil_id"><input type="hidden" name="programme_id"></form>
 {% endif %}

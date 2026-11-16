@@ -1680,20 +1680,8 @@ def intervention_programmes():
             if action == 'toggle' and programme:
                 programme.is_active = not programme.is_active
             elif action == 'save':
-                name = request.form.get('name', '').strip()
-                subject = request.form.get('subject', '').strip().lower()
-                description = request.form.get('description', '').strip()
-                if not name or len(name) > 120 or len(name.casefold()) > 120 or subject not in {'maths', 'reading', 'spag'} or len(description) > 2000:
-                    raise ValueError('Enter a programme name (up to 120 characters), a core subject and a description up to 2,000 characters.')
-                if programme and programme.subject != subject:
-                    raise ValueError('Keep the subject of an existing programme. Archive it and create a new programme for another subject.')
-                duplicate = school_programmes(school_id, subject).filter_by(name_key=name.casefold()).first()
-                if duplicate and (not programme or duplicate.id != programme.id):
-                    raise ValueError('A programme with this name already exists for that subject, including archived programmes.')
-                if not programme:
-                    programme = InterventionProgramme(school_id=school_id, subject=subject)
-                programme.name, programme.name_key, programme.description = name, name.casefold(), description or None
-                db.session.add(programme)
+                from app.services.interventions import save_programme
+                save_programme(school_id, programme, request.form.get('name', ''), request.form.get('subject', ''), request.form.get('description', ''))
             else:
                 abort(400)
             db.session.commit()
