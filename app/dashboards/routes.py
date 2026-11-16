@@ -55,6 +55,26 @@ def home():
 
 
 
+@dashboards_bp.route('/manifest.webmanifest')
+def web_manifest():
+    """Lets Safari/Chrome install the site as a home-screen app. Public: it holds no pupil or school data."""
+    from flask import jsonify
+    icon = lambda name, size, purpose='any': {'src': url_for('static', filename=f'icons/{name}'), 'sizes': f'{size}x{size}', 'type': 'image/png', 'purpose': purpose}
+    response = jsonify({
+        'name': 'Class Compass',
+        'short_name': 'Class Compass',
+        'description': 'Guiding pupil progress with clarity.',
+        'start_url': url_for('dashboards.index'),
+        'scope': '/',
+        'display': 'standalone',
+        'background_color': '#f6f8fb',
+        'theme_color': '#071f4f',
+        'icons': [icon('icon-192.png', 192), icon('icon-512.png', 512), icon('icon-maskable-512.png', 512, 'maskable')],
+    })
+    response.mimetype = 'application/manifest+json'
+    return response
+
+
 @dashboards_bp.route('/set-academic-year', methods=['POST'])
 @login_required
 def set_academic_year():
