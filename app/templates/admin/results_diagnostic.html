@@ -7,4 +7,13 @@
 {% for year, term, subject, count in rows %}<tr><td>"{{ year }}"</td><td>"{{ term }}"</td><td>"{{ subject }}"</td><td>{{ count }}</td></tr>
 {% else %}<tr><td colspan="4">No saved results.</td></tr>{% endfor %}
 </tbody></table>
+<h2 class="h5 mt-4">Where the results sit</h2>
+<p class="text-muted small">For each year and term: the pupil's class today, whether the pupil is still active or archived, how many different pupils have results, and how many results. If Autumn rows sit under a different class, archived pupils or "(no class)", compared with Spring, that explains why a teacher cannot see them.</p>
+<table class="table table-sm"><thead><tr><th>Academic year</th><th>Term</th><th>Pupil's class today</th><th>Pupil status</th><th>Pupils</th><th>Results</th></tr></thead><tbody>
+{% for year, term, class_name, is_active, is_archived, pupils, results in where %}<tr><td>"{{ year }}"</td><td>"{{ term }}"</td><td>{{ class_name or '(no class)' }}</td><td>{% if is_archived %}Archived{% elif is_active %}Active{% else %}Inactive{% endif %}</td><td>{{ pupils }}</td><td>{{ results }}</td></tr>
+{% else %}<tr><td colspan="6">No saved results.</td></tr>{% endfor %}
+</tbody></table>
+<h2 class="h5 mt-4">Pupils with the same name more than once</h2>
+<p class="text-muted small">Up to 50 names. An import can create a second copy of a pupil, and results saved against the copy would not show on the real pupil.</p>
+{% if duplicates %}<table class="table table-sm"><thead><tr><th>First name</th><th>Last name</th><th>Records</th></tr></thead><tbody>{% for first, last, count in duplicates %}<tr><td>{{ first }}</td><td>{{ last }}</td><td>{{ count }}</td></tr>{% endfor %}</tbody></table>{% else %}<p>None found.</p>{% endif %}
 {% endblock %}
