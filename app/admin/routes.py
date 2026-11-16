@@ -2607,16 +2607,36 @@ def report_governor_summary():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
+    from app.models import Intervention
+    from app.services.assessments import TERM_SEQUENCE, TERMS, format_subject_name
+    from app.services.governor_report import MIN_GROUP, attainment_rows, cohort_rows, support_rows
+    from app.services.intervention_impact import outcomes_for
     query, filters = _apply_common_report_filters(demo_filter_pupils(Pupil.query))
     pupils = query.all()
-    total = len(pupils) or 1
-    def pct(n): return f"{round((n/total)*100,1)}%"
-    rows = [
-        ['PP vs non-PP', sum(1 for p in pupils if p.pupil_premium), sum(1 for p in pupils if not p.pupil_premium), pct(sum(1 for p in pupils if p.pupil_premium))],
-        ['SEND vs non-SEND', sum(1 for p in pupils if p.send), sum(1 for p in pupils if not p.send), pct(sum(1 for p in pupils if p.send))],
-        ['Gender (Female vs Male)', sum(1 for p in pupils if normalize_gender(p.gender)=='Female'), sum(1 for p in pupils if normalize_gender(p.gender)=='Male'), pct(sum(1 for p in pupils if normalize_gender(p.gender)=='Female'))],
-    ]
-    headers=['Cohort summary','Group A','Group B','Group A %']
+    pupil_info = [{'id': p.id, 'pupil_premium': p.pupil_premium, 'send': p.send, 'gender': normalize_gender(p.gender)} for p in pupils]
+    pupil_ids = [p.id for p in pupils]
+    academic_year, chosen_term = filters['academic_year'], filters['term']
+    term_names = dict(TERMS)
+    rows = cohort_rows(pupil_info)
+    for subject in CORE_SUBJECTS:
+        results = school_scoped_query(SubjectResult, SubjectResult.query.filter(
+            SubjectResult.pupil_id.in_(pupil_ids or [0]), SubjectResult.subject == subject,
+            SubjectResult.academic_year == academic_year, SubjectResult.combined_percent.isnot(None))).order_by(SubjectResult.id).all()
+        if chosen_term in term_names:
+            results = [r for r in results if r.term == chosen_term]
+        if not results:
+            continue
+        term = max((r.term for r in results), key=lambda t: TERM_SEQUENCE.get(t, 0))
+        bands = {r.pupil_id: r.band_label for r in results if r.term == term and r.band_label}
+        rows += attainment_rows(format_subject_name(subject), term_names.get(term, term), pupil_info, bands)
+        records = Intervention.query.filter(Intervention.pupil_id.in_(pupil_ids or [0]), Intervention.subject == subject,
+                                            Intervention.academic_year == academic_year, Intervention.is_active.is_(True)).all()
+        counts = {}
+        for outcome in outcomes_for(records).values():
+            counts[outcome['status']] = counts.get(outcome['status'], 0) + 1
+        rows += support_rows(format_subject_name(subject), counts)
+    headers = ['Section', 'Measure', 'Group', 'Pupils', 'Working Towards %', 'On Track %', 'Greater Depth %', 'On Track or above %']
+    subtitle = f'No pupil names included. Groups with fewer than {MIN_GROUP} pupils are hidden (shown as "<5"), together with their partner group.'
     fmt=request.args.get('format','html')
     if fmt=='csv':
         out=io.StringIO();w=csv.writer(out);w.writerow(headers);w.writerows(rows)
@@ -2624,8 +2644,8 @@ def report_governor_summary():
     if fmt=='xlsx':
         return Response(_build_xlsx(headers,rows,'Governor summary'), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=governor_summary_report.xlsx'})
     if fmt == 'pdf':
-        return _render_table_pdf('Governor / SLT anonymised summary', headers, rows, filters, True, 'governor_summary_report.pdf', 'No pupil names included')
-    return render_template('admin/report_table.html', title='Governor / SLT anonymised summary', subtitle='No pupil names included', headers=headers, rows=rows, filters=filters, anonymised=True)
+        return _render_table_pdf('Governor / SLT anonymised summary', headers, rows, filters, True, 'governor_summary_report.pdf', subtitle)
+    return render_template('admin/report_table.html', title='Governor / SLT anonymised summary', subtitle=subtitle, headers=headers, rows=rows, filters=filters, anonymised=True)
 @admin_bp.route('/exports/subject-results')
 @login_required
 @admin_required
