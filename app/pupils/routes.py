@@ -243,6 +243,7 @@ def progress_report(pupil_id: int):
         year_group=pupil.school_class.year_group if pupil.school_class else None)
     pdf = HTML(string=html, base_url=request.url_root).write_pdf()
     log_audit_event('pupil_progress_report_downloaded', 'pupil', pupil.id, school_id=pupil.school_id, details=None)
+    db.session.commit()  # log_audit_event only queues the entry; without this it is lost
     response = make_response(pdf)
     response.headers['Content-Type'] = 'application/pdf'
     response.headers['Content-Disposition'] = f'attachment; filename={pupil.full_name.replace(" ", "_").lower()}-progress-report.pdf'
