@@ -74,6 +74,8 @@ def web_manifest():
         'icons': [icon('icon-192.png', 192), icon('icon-512.png', 512), icon('icon-maskable-512.png', 512, 'maskable')],
     })
     response.mimetype = 'application/manifest+json'
+    return response
+
 
 @dashboards_bp.route('/healthz')
 def healthz():
