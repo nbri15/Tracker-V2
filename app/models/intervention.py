@@ -26,9 +26,19 @@ class Intervention(db.Model):
     closed_by_teacher = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     is_demo = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    # Impact tracking. All optional so existing records are untouched.
+    started_on = db.Column(db.Date, nullable=True, default=lambda: datetime.now(timezone.utc).date())
+    ended_on = db.Column(db.Date, nullable=True)
+    baseline_percent = db.Column(db.Float, nullable=True)
+    baseline_band = db.Column(db.String(40), nullable=True)
 
     pupil = db.relationship('Pupil', back_populates='interventions')
     programme_assignments = db.relationship('InterventionProgrammeAssignment', back_populates='intervention', cascade='all, delete-orphan', lazy='selectin')
+
+    @property
+    def started_date(self):
+        """When support began; older records fall back to the day they were created."""
+        return self.started_on or (self.created_at.date() if self.created_at else None)
 
     @property
     def programmes(self):

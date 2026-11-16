@@ -913,16 +913,22 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
     return output.getvalue()
 
 
-def export_interventions_csv(academic_year: str, class_id: int | None = None, anonymised: bool = False, current_scores: dict[int, str] | None = None, *, records=None) -> str:
+def export_interventions_csv(academic_year: str, class_id: int | None = None, anonymised: bool = False, current_scores: dict[int, str] | None = None, *, records=None, outcomes: dict | None = None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note', 'programmes'])
+    writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note', 'programmes',
+                     'started_on', 'ended_on', 'baseline_percent', 'baseline_source', 'follow_up_percent', 'follow_up_term', 'change_points', 'met_pass_threshold', 'impact_status'])
     query = school_scoped_query(Intervention.query.join(Intervention.pupil).join(Pupil.school_class), Pupil).filter(Intervention.academic_year == academic_year)
     if class_id:
         query = query.filter(Pupil.class_id == class_id)
     for idx, row in enumerate(records if records is not None else query.order_by(SchoolClass.year_group, SchoolClass.name, Pupil.last_name, Pupil.first_name).all(), start=1):
         name = f'Pupil {idx}' if anonymised else row.pupil.full_name
-        writer.writerow([name, row.pupil.school_class.name, row.subject, row.term, (current_scores or {}).get(row.id, '—'), row.is_active, row.auto_flagged, row.reason, row.note, ', '.join(p.name for p in row.programmes)])
+        outcome = (outcomes or {}).get(row.id) or {}
+        follow_term = f"{outcome.get('follow_term') or ''} {outcome.get('follow_year') or ''}".strip()
+        writer.writerow([name, row.pupil.school_class.name, row.subject, row.term, (current_scores or {}).get(row.id, '—'), row.is_active, row.auto_flagged, row.reason, row.note, ', '.join(p.name for p in row.programmes),
+                         row.started_date or '', row.ended_on or '', outcome.get('baseline_percent', ''), outcome.get('baseline_source') or '',
+                         outcome.get('follow_percent', ''), follow_term, outcome.get('change', ''),
+                         '' if outcome.get('met_threshold') is None else ('yes' if outcome['met_threshold'] else 'no'), outcome.get('status_label', '')])
     return output.getvalue()
 
 

@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.extensions import db
 from app.models import FoundationResult, Intervention, InterventionProgramme, InterventionProgrammeAssignment, Pupil, SatsColumnResult, SubjectResult, WritingResult
 
 
+from .intervention_impact import capture_baseline
+
 AUTO_REASON = 'Closest pupils below pass threshold'
 CORE_SUBJECTS = {'maths', 'reading', 'spag'}
+
+
+def set_intervention_state(record: Intervention, active: bool, closed_by_teacher: bool | None = None) -> None:
+    """Open or close an intervention and keep its end date in step."""
+    record.is_active = active
+    if closed_by_teacher is not None:
+        record.closed_by_teacher = closed_by_teacher
+    if active:
+        record.ended_on = None
+    elif record.ended_on is None:
+        record.ended_on = datetime.now(timezone.utc).date()
 
 
 def _band_short_label(label: str | None) -> str | None:
@@ -150,15 +165,16 @@ def sync_auto_interventions(school_class, subject: str, term: str, academic_year
                 is_active=True,
                 is_demo=school_class.is_demo,
             )
+            capture_baseline(record)
         else:
             record.reason = suggestion['reason']
             if not record.closed_by_teacher:
-                record.is_active = True
+                set_intervention_state(record, True)
         db.session.add(record)
 
     for row in existing_auto:
         if row.pupil_id not in suggested_ids and not row.programme_assignments:
-            row.is_active = False
+            set_intervention_state(row, False)
             db.session.add(row)
 
     db.session.flush()
@@ -232,8 +248,8 @@ def assign_programme(school_class, pupil, programme_id, subject, term, academic_
             reason='Teacher assigned support programme', auto_flagged=False, is_demo=school_class.is_demo)
         db.session.add(record)
         db.session.flush()
-    record.is_active = True
-    record.closed_by_teacher = False
+    set_intervention_state(record, True, closed_by_teacher=False)
+    capture_baseline(record)
     if not any(item.programme_id == programme.id for item in record.programme_assignments):
         record.programme_assignments.append(InterventionProgrammeAssignment(programme=programme, school_id=school_class.school_id))
     return record
