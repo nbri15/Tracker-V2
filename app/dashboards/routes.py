@@ -43,6 +43,8 @@ from app.utils import (
     safe_redirect_target,
 )
 
+from app.services.teacher_dashboard import attention_by_subject, intervention_progress
+
 from . import dashboards_bp
 
 
@@ -72,6 +74,21 @@ def web_manifest():
         'icons': [icon('icon-192.png', 192), icon('icon-512.png', 512), icon('icon-maskable-512.png', 512, 'maskable')],
     })
     response.mimetype = 'application/manifest+json'
+
+@dashboards_bp.route('/healthz')
+def healthz():
+    """Tiny public check used to keep the site awake and to see if it is up. Reads no pupil or school data."""
+    from flask import Response
+    from sqlalchemy import text
+    from app.extensions import db
+    try:
+        db.session.execute(text('SELECT 1'))
+        body, status = 'ok', 200
+    except Exception:  # never reveal details to the outside world
+        db.session.rollback()
+        body, status = 'database unavailable', 503
+    response = Response(body, status=status, mimetype='text/plain')
+    response.headers['Cache-Control'] = 'no-store'
     return response
 
 
@@ -153,6 +170,8 @@ def teacher_dashboard():
         'tracker_mode_label': get_tracker_mode_label(school_class.year_group) if school_class else 'Usual tracker',
         'selected_term': term,
         'term_choices': ['Autumn', 'Spring', 'Summer', 'All'],
+        'attention': attention_by_subject(school_class, academic_year) if school_class and school_class.year_group != 0 else [],
+        'support_progress': intervention_progress(active_interventions),
     }
     return render_template('dashboards/teacher_dashboard.html', **context)
 

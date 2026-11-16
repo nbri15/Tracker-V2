@@ -106,7 +106,7 @@
 <h3 class="h5">Assessment configuration · {{ academic_year }}</h3>
 <p>{{ setting.paper_1_name }}: <strong>{{ setting.paper_1_max }}</strong> marks · {{ setting.paper_2_name }}: <strong>{{ setting.paper_2_max }}</strong> marks · Combined: <strong>{{ setting.combined_max }}</strong></p>
 <p>Expected Standard / On Track: <strong>{{ setting.below_are_threshold_percent }}%</strong> · Greater Depth / Exceeding: <strong>{{ setting.exceeding_threshold_percent }}%</strong></p>
-<p class="small text-muted">Your admin manages these settings in Assessment Setup. Saved results retain their recorded configuration until a reviewed recalculation. A lower-year paper gives Working Towards.</p>
+<p class="small"><a href="{{ url_for('assessment_workflow.teacher_setup', academic_year=academic_year, subject=subject_key, term=term) }}">Change maximum marks</a></p><p class="small text-muted">Your admin manages pass boundaries in Assessment Setup. Saved results retain their recorded configuration until a reviewed recalculation. A lower-year paper gives Working Towards.</p>
 <a class="btn btn-outline-primary btn-sm" href="{{ url_for('teacher.gap_analysis', subject=subject_key, academic_year=academic_year, term=term) }}">GAP Analysis</a>
 <hr><form method="post" enctype="multipart/form-data" action="{{ url_for('assessment_workflow.upload_subject', subject=subject_key) }}" class="row g-2">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="academic_year" value="{{ academic_year }}"><input type="hidden" name="term" value="{{ term }}">

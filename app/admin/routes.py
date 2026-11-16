@@ -1680,20 +1680,8 @@ def intervention_programmes():
             if action == 'toggle' and programme:
                 programme.is_active = not programme.is_active
             elif action == 'save':
-                name = request.form.get('name', '').strip()
-                subject = request.form.get('subject', '').strip().lower()
-                description = request.form.get('description', '').strip()
-                if not name or len(name) > 120 or len(name.casefold()) > 120 or subject not in {'maths', 'reading', 'spag'} or len(description) > 2000:
-                    raise ValueError('Enter a programme name (up to 120 characters), a core subject and a description up to 2,000 characters.')
-                if programme and programme.subject != subject:
-                    raise ValueError('Keep the subject of an existing programme. Archive it and create a new programme for another subject.')
-                duplicate = school_programmes(school_id, subject).filter_by(name_key=name.casefold()).first()
-                if duplicate and (not programme or duplicate.id != programme.id):
-                    raise ValueError('A programme with this name already exists for that subject, including archived programmes.')
-                if not programme:
-                    programme = InterventionProgramme(school_id=school_id, subject=subject)
-                programme.name, programme.name_key, programme.description = name, name.casefold(), description or None
-                db.session.add(programme)
+                from app.services.interventions import save_programme
+                save_programme(school_id, programme, request.form.get('name', ''), request.form.get('subject', ''), request.form.get('description', ''))
             else:
                 abort(400)
             db.session.commit()
@@ -1703,6 +1691,20 @@ def intervention_programmes():
             flash('Programme could not be saved. Check its name, subject and description; names must be unique within each subject.', 'danger')
         return redirect(url_for('admin.intervention_programmes'))
     return render_template('admin/intervention_programmes.html', programmes=school_programmes(school_id).all(), subjects=CORE_SUBJECTS)
+
+
+@admin_bp.route('/results-diagnostic')
+@login_required
+@admin_required
+def results_diagnostic():
+    """Read-only: how many saved results exist per year, term and subject, and whether pupils are in a class that year."""
+    from app.models import SubjectResult
+    school_id = current_school_id()
+    rows = (db.session.query(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject, func.count(SubjectResult.id))
+            .filter(SubjectResult.school_id == school_id)
+            .group_by(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject)
+            .order_by(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject).all())
+    return render_template('admin/results_diagnostic.html', rows=rows)
 
 
 @admin_bp.route('/interventions')
@@ -1719,6 +1721,8 @@ def interventions():
     status = request.args.get('status', 'active').strip() or 'active'
     term = request.args.get('term', '').strip()
     programme_id = request.args.get('programme_id', '').strip()
+    pupil_premium = request.args.get('pupil_premium') == '1'
+    send = request.args.get('send') == '1'
     if status not in {'active', 'inactive', 'all'} or (term and term not in dict(TERMS)):
         abort(400)
     print_mode = request.args.get('print', '0') == '1'
@@ -1731,7 +1735,7 @@ def interventions():
     query = Intervention.query.join(Intervention.pupil).filter(Pupil.school_id == school_id, Pupil.is_demo.is_(is_demo_user()), Intervention.is_demo.is_(is_demo_user()))
     query = query.filter(Intervention.academic_year == academic_year)
     try:
-        query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status, term=term, programme_id=programme_id)
+        query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status, term=term, programme_id=programme_id, pupil_premium=pupil_premium, send=send)
     except ValueError:
         abort(400)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
@@ -1746,7 +1750,7 @@ def interventions():
             return f"{format_percent(outcome['baseline_percent'])} to {format_percent(outcome['follow_percent'])} ({format_change(outcome['change'])})"
         headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score', 'Impact', 'Programmes']
         table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.reason or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—', impact_text(row), ', '.join(p.name for p in row.programmes)] for idx, row in enumerate(rows, start=1)]
-        filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status, 'term': term, 'programme_id': programme_id}
+        filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status, 'term': term, 'programme_id': programme_id, 'pupil_premium': 'Yes' if pupil_premium else '', 'send': 'Yes' if send else ''}
         return _render_table_pdf('Interventions' if not anon_mode else 'Interventions — anonymised', headers, table_rows, filters, anon_mode, 'interventions.pdf')
 
     return render_template(
@@ -1758,7 +1762,7 @@ def interventions():
         class_id=class_id,
         subject=subject,
         status=status,
-        term=term, programme_id=programme_id, terms=TERMS,
+        term=term, programme_id=programme_id, pupil_premium=pupil_premium, send=send, terms=TERMS,
         programmes=school_programmes(school_id).all(),
         active_count=sum(row.is_active for row in rows),
         print_mode=print_mode,
@@ -2600,6 +2604,28 @@ def report_class_overview():
     return render_template('admin/report_table.html', title='Class overview report', subtitle='Printable class summary', headers=headers, rows=rows, filters=filters, anonymised=False)
 
 
+@admin_bp.route('/reports/scores-checklist')
+@login_required
+@admin_required
+def scores_checklist():
+    """Which classes still have scores to enter this term? Read-only."""
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
+    from app.services.assessments import TERMS, get_current_term
+    from app.services.scores_checklist import build_checklist, headline
+    school_id = _selected_school_id_for_admin_actions()
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
+    term = request.args.get('term', get_current_term()).strip().lower()
+    if term not in dict(TERMS):
+        abort(400)
+    classes = (demo_filter_classes(SchoolClass.query).filter_by(school_id=school_id, is_active=True)
+               .order_by(SchoolClass.year_group, SchoolClass.name).all())
+    entries = build_checklist(school_id, academic_year, term, classes)
+    return render_template('admin/scores_checklist.html', entries=entries, summary=headline(entries), academic_year=academic_year,
+                           term=term, terms=TERMS, academic_year_options=build_academic_year_options(academic_year))
+
+
 @admin_bp.route('/reports/governor-summary')
 @login_required
 @admin_required
@@ -2607,16 +2633,36 @@ def report_governor_summary():
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
+    from app.models import Intervention
+    from app.services.assessments import TERM_SEQUENCE, TERMS, format_subject_name
+    from app.services.governor_report import MIN_GROUP, attainment_rows, cohort_rows, support_rows
+    from app.services.intervention_impact import outcomes_for
     query, filters = _apply_common_report_filters(demo_filter_pupils(Pupil.query))
     pupils = query.all()
-    total = len(pupils) or 1
-    def pct(n): return f"{round((n/total)*100,1)}%"
-    rows = [
-        ['PP vs non-PP', sum(1 for p in pupils if p.pupil_premium), sum(1 for p in pupils if not p.pupil_premium), pct(sum(1 for p in pupils if p.pupil_premium))],
-        ['SEND vs non-SEND', sum(1 for p in pupils if p.send), sum(1 for p in pupils if not p.send), pct(sum(1 for p in pupils if p.send))],
-        ['Gender (Female vs Male)', sum(1 for p in pupils if normalize_gender(p.gender)=='Female'), sum(1 for p in pupils if normalize_gender(p.gender)=='Male'), pct(sum(1 for p in pupils if normalize_gender(p.gender)=='Female'))],
-    ]
-    headers=['Cohort summary','Group A','Group B','Group A %']
+    pupil_info = [{'id': p.id, 'pupil_premium': p.pupil_premium, 'send': p.send, 'gender': normalize_gender(p.gender)} for p in pupils]
+    pupil_ids = [p.id for p in pupils]
+    academic_year, chosen_term = filters['academic_year'], filters['term']
+    term_names = dict(TERMS)
+    rows = cohort_rows(pupil_info)
+    for subject in CORE_SUBJECTS:
+        results = school_scoped_query(SubjectResult, SubjectResult.query.filter(
+            SubjectResult.pupil_id.in_(pupil_ids or [0]), SubjectResult.subject == subject,
+            SubjectResult.academic_year == academic_year, SubjectResult.combined_percent.isnot(None))).order_by(SubjectResult.id).all()
+        if chosen_term in term_names:
+            results = [r for r in results if r.term == chosen_term]
+        if not results:
+            continue
+        term = max((r.term for r in results), key=lambda t: TERM_SEQUENCE.get(t, 0))
+        bands = {r.pupil_id: r.band_label for r in results if r.term == term and r.band_label}
+        rows += attainment_rows(format_subject_name(subject), term_names.get(term, term), pupil_info, bands)
+        records = Intervention.query.filter(Intervention.pupil_id.in_(pupil_ids or [0]), Intervention.subject == subject,
+                                            Intervention.academic_year == academic_year, Intervention.is_active.is_(True)).all()
+        counts = {}
+        for outcome in outcomes_for(records).values():
+            counts[outcome['status']] = counts.get(outcome['status'], 0) + 1
+        rows += support_rows(format_subject_name(subject), counts)
+    headers = ['Section', 'Measure', 'Group', 'Pupils', 'Working Towards %', 'On Track %', 'Greater Depth %', 'On Track or above %']
+    subtitle = f'No pupil names included. Groups with fewer than {MIN_GROUP} pupils are hidden (shown as "<5"), together with their partner group.'
     fmt=request.args.get('format','html')
     if fmt=='csv':
         out=io.StringIO();w=csv.writer(out);w.writerow(headers);w.writerows(rows)
@@ -2624,8 +2670,8 @@ def report_governor_summary():
     if fmt=='xlsx':
         return Response(_build_xlsx(headers,rows,'Governor summary'), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=governor_summary_report.xlsx'})
     if fmt == 'pdf':
-        return _render_table_pdf('Governor / SLT anonymised summary', headers, rows, filters, True, 'governor_summary_report.pdf', 'No pupil names included')
-    return render_template('admin/report_table.html', title='Governor / SLT anonymised summary', subtitle='No pupil names included', headers=headers, rows=rows, filters=filters, anonymised=True)
+        return _render_table_pdf('Governor / SLT anonymised summary', headers, rows, filters, True, 'governor_summary_report.pdf', subtitle)
+    return render_template('admin/report_table.html', title='Governor / SLT anonymised summary', subtitle=subtitle, headers=headers, rows=rows, filters=filters, anonymised=True)
 @admin_bp.route('/exports/subject-results')
 @login_required
 @admin_required
@@ -2755,7 +2801,8 @@ def export_interventions():
         query = build_intervention_filters(query, year_group=request.args.get('year_group', ''),
             class_id=request.args.get('class_id', ''), subject=request.args.get('subject', ''),
             status=request.args.get('status', 'active'), term=request.args.get('term', ''),
-            programme_id=request.args.get('programme_id', ''))
+            programme_id=request.args.get('programme_id', ''),
+            pupil_premium=request.args.get('pupil_premium') == '1', send=request.args.get('send') == '1')
     except ValueError:
         abort(400)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()

@@ -12,8 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.extensions import db
 from app.models import AcademicYear, AssessmentReview, Pupil, SchoolClass, SubjectResult
 from app.utils import admin_required, current_school_id, get_primary_class_for_user, log_audit_event, teacher_required, teacher_or_admin_required
-from app.services.assessments import CORE_SUBJECTS, TERMS, AssessmentValidationError, CsvImportError, get_selected_academic_year, get_subject_setting, get_school_working_academic_year, validate_setting_payload
-from app.services.assessment_reliability import CONFIG_FIELDS, apply_setup, assessment_history, configuration_values, lock_school, raw_boundary, school_fingerprint, setup_impact
+from app.services.assessments import CORE_SUBJECTS, TERMS, AssessmentValidationError, CsvImportError, get_class_pupil_query, get_selected_academic_year, get_subject_setting, get_school_working_academic_year, validate_setting_payload
+from app.services.assessment_reliability import CONFIG_FIELDS, apply_setup, cohort_year_group, assessment_history, configuration_values, lock_school, raw_boundary, school_fingerprint, setup_impact
 from app.services.assessment_imports import class_pupils, parse_csv_bytes, process_import, read_upload, simulate_import
 from . import assessment_bp
 
@@ -33,6 +33,8 @@ def selected_upload_year():
 
 def back_url(review):
     payload = review.payload
+    if review.kind == 'setup' and payload.get('teacher_request'):
+        return url_for('assessment_workflow.teacher_setup', academic_year=payload['academic_year'], subject=payload['subject'], term=payload['term'])
     if review.kind == 'setup':
         return url_for('assessment_workflow.setup', academic_year=payload['academic_year'], year_group=payload['year_group'], subject=payload['subject'], term=payload['term'], school_id=review.school_id)
     if review.kind == 'subject':
@@ -59,6 +61,12 @@ def load_review(review_id, *, lock=False):
     if review.kind == 'subject':
         school_class = get_primary_class_for_user(current_user)
         if not current_user.is_teacher or not school_class or school_class.id != review.payload['class_id']:
+            abort(403)
+    elif review.kind == 'setup' and review.payload.get('teacher_request'):
+        # A teacher may only review a maximum-marks change they started for their own class's year group.
+        school_class = get_primary_class_for_user(current_user)
+        if (not current_user.is_teacher or not school_class or school_class.school_id != review.school_id
+                or school_class.id != review.payload.get('class_id')):
             abort(403)
     elif not current_user.can_manage_school and not current_user.is_executive_admin:
         abort(403)
@@ -102,6 +110,61 @@ def setup():
     return render_template('assessment_setup.html', setting=current, academic_year=academic_year, selected_year=selected_year, years=AcademicYear.query.order_by(AcademicYear.name.desc()).all(), group=group, subject=subject, term=term, subjects=CORE_SUBJECTS, terms=TERMS, at_boundary=raw_boundary(current, current.below_are_threshold_percent) if current.combined_max and current.combined_max > 0 else None, gds_boundary=raw_boundary(current, current.exceeding_threshold_percent) if current.combined_max and current.combined_max > 0 else None, history=assessment_history(school_id))
 
 
+TEACHER_EDITABLE_FIELDS = {'paper_1_max', 'paper_2_max', 'combined_max'}
+
+
+def teacher_scope():
+    """The one assessment a teacher may change: their own class's year group, chosen subject and term."""
+    school_class = get_primary_class_for_user(current_user)
+    if not school_class:
+        return None
+    selected_year = get_selected_academic_year(request.values.get('year'), request.values.get('academic_year'))
+    subject = request.values.get('subject', 'maths')
+    term = request.values.get('term', 'autumn')
+    if subject not in CORE_SUBJECTS or term not in dict(TERMS):
+        abort(400)
+    pupils = get_class_pupil_query(school_class, selected_year.name).filter(Pupil.is_active.is_(True)).all()
+    # Same rule the score-entry page uses, so the setting changed is the one that page shows.
+    group = cohort_year_group(pupils[0], selected_year.name) if pupils else school_class.year_group
+    return school_class, selected_year, subject, term, group
+
+
+@assessment_bp.route('/teacher/assessments/setup', methods=['GET', 'POST'])
+@login_required
+@teacher_required
+def teacher_setup():
+    """Teachers can change the maximum marks for their own year group, with the usual preview first."""
+    scope = teacher_scope()
+    if scope is None:
+        flash('No active class is assigned to your account yet.', 'warning')
+        return redirect(url_for('teacher.interventions'))
+    school_class, selected_year, subject, term, group = scope
+    school_id = school_class.school_id
+    academic_year = selected_year.name
+    try:
+        current = get_subject_setting(group, subject, term, academic_year, school_id=school_id)
+    except (ValueError, AssessmentValidationError):
+        abort(400)
+    if request.method == 'POST':
+        try:
+            proposed = validate_setting_payload({
+                **configuration_values(current),
+                'paper_1_max': int(request.form.get('paper_1_max', '')),
+                'paper_2_max': int(request.form.get('paper_2_max', '')),
+                'combined_max': None,
+            })
+            if all(proposed[key] == configuration_values(current)[key] for key in TEACHER_EDITABLE_FIELDS):
+                raise AssessmentValidationError('Those are already the maximum marks. Change a maximum to continue.')
+            report = setup_impact(school_id, academic_year, group, subject, term, proposed)
+            payload = {'school_id': school_id, 'academic_year': academic_year, 'year_group': group, 'subject': subject, 'term': term,
+                       'proposed': proposed, 'current': configuration_values(current), 'teacher_request': True, 'class_id': school_class.id}
+            return stage('setup', payload, report)
+        except (ValueError, AssessmentValidationError) as exc:
+            flash(f'Maximum marks could not be reviewed: {exc}', 'danger')
+    return render_template('teacher/assessment_setup.html', setting=current, school_class=school_class, academic_year=academic_year,
+                           group=group, subject=subject, term=term, subjects=sorted(CORE_SUBJECTS), terms=TERMS)
+
+
 @assessment_bp.route('/assessments/review/<review_id>', methods=['GET', 'POST'])
 @login_required
 @teacher_or_admin_required
@@ -126,6 +189,10 @@ def review(review_id):
                 raise CsvImportError('School data changed after this preview. Review again so you can see the latest impact.')
             if record.kind == 'setup':
                 payload = record.payload
+                if payload.get('teacher_request'):
+                    live = configuration_values(get_subject_setting(payload['year_group'], payload['subject'], payload['term'], payload['academic_year'], school_id=payload['school_id']))
+                    if any(payload['proposed'][key] != live[key] for key in CONFIG_FIELDS if key not in TEACHER_EDITABLE_FIELDS):
+                        raise CsvImportError('Another setting changed after this preview. Review again.')
                 report = setup_impact(payload['school_id'], payload['academic_year'], payload['year_group'], payload['subject'], payload['term'], payload['proposed'])
                 if report['errors']:
                     raise CsvImportError('The proposed setup is incompatible with saved scores. Review again.')

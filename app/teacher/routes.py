@@ -410,6 +410,44 @@ def gap_analysis(subject: str):
     return render_template('teacher/gap_analysis.html', setting=setting, **gap_context, **context)
 
 
+@teacher_bp.route('/intervention-programmes', methods=['GET', 'POST'])
+@login_required
+@teacher_required
+def intervention_programmes():
+    """Teachers can add to their school's programme library, the same list admins manage."""
+    from sqlalchemy.exc import IntegrityError
+    from app.services.interventions import PROGRAMME_SUBJECTS, save_programme
+    from app.utils import log_audit_event
+    school_class = get_primary_class_for_user(current_user)
+    if not school_class:
+        flash('No active class is assigned to your account yet.', 'warning')
+        return redirect(url_for('teacher.interventions'))
+    school_id = school_class.school_id
+    if request.method == 'POST':
+        try:
+            raw_id = request.form.get('programme_id', '').strip()
+            programme = school_programmes(school_id).filter_by(id=int(raw_id)).first_or_404() if raw_id else None
+            action = request.form.get('action', 'save')
+            if action == 'toggle' and programme:
+                programme.is_active = not programme.is_active
+                audit = 'intervention_programme_archived' if not programme.is_active else 'intervention_programme_restored'
+            elif action == 'save':
+                created = programme is None
+                programme = save_programme(school_id, programme, request.form.get('name', ''), request.form.get('subject', ''), request.form.get('description', ''))
+                audit = 'intervention_programme_created' if created else 'intervention_programme_edited'
+            else:
+                abort(400)
+            db.session.flush()
+            log_audit_event(audit, 'intervention_programme', programme.id, school_id=school_id, details=programme.name)
+            db.session.commit()
+            flash('Programme saved. Existing pupil assignments are preserved.', 'success')
+        except (ValueError, IntegrityError) as exc:
+            db.session.rollback()
+            flash(str(exc) if isinstance(exc, ValueError) else 'Programme could not be saved. Names must be unique within each subject.', 'danger')
+        return redirect(url_for('teacher.intervention_programmes'))
+    return render_template('teacher/intervention_programmes.html', programmes=school_programmes(school_id).all(), subjects=sorted(PROGRAMME_SUBJECTS))
+
+
 @teacher_bp.route('/interventions', methods=['GET', 'POST'])
 @login_required
 @teacher_required

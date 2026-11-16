@@ -193,7 +193,7 @@ def sync_auto_interventions(school_class, subject: str, term: str, academic_year
     )
 
 
-def build_intervention_filters(query, *, year_group: str = '', class_id: str = '', subject: str = '', status: str = 'active', term: str = '', programme_id: str = ''):
+def build_intervention_filters(query, *, year_group: str = '', class_id: str = '', subject: str = '', status: str = 'active', term: str = '', programme_id: str = '', pupil_premium: bool = False, send: bool = False):
     if status not in {'active', 'inactive', 'all'} or (term and term not in {'autumn', 'spring', 'summer'}):
         raise ValueError('Choose a valid status and term.')
     if year_group:
@@ -204,6 +204,10 @@ def build_intervention_filters(query, *, year_group: str = '', class_id: str = '
         query = query.filter(Intervention.subject == subject)
     if term:
         query = query.filter(Intervention.term == term)
+    if pupil_premium:
+        query = query.filter(Pupil.pupil_premium.is_(True))
+    if send:
+        query = query.filter(Pupil.send.is_(True))
     if programme_id:
         query = query.filter(Intervention.programme_assignments.any(InterventionProgrammeAssignment.programme_id == int(programme_id)))
     if status == 'active':
@@ -253,3 +257,29 @@ def assign_programme(school_class, pupil, programme_id, subject, term, academic_
     if not any(item.programme_id == programme.id for item in record.programme_assignments):
         record.programme_assignments.append(InterventionProgrammeAssignment(programme=programme, school_id=school_class.school_id))
     return record
+
+
+PROGRAMME_SUBJECTS = {'maths', 'reading', 'spag'}
+
+
+def save_programme(school_id, programme, name, subject, description):
+    """Create or edit a school programme. Shared by admins and teachers.
+
+    ``programme`` is the existing row to edit (already looked up within this school) or
+    None to create. Raises ValueError with a message the user can act on.
+    """
+    name = (name or '').strip()
+    subject = (subject or '').strip().lower()
+    description = (description or '').strip()
+    if not name or len(name) > 120 or len(name.casefold()) > 120 or subject not in PROGRAMME_SUBJECTS or len(description) > 2000:
+        raise ValueError('Enter a programme name (up to 120 characters), a core subject and a description up to 2,000 characters.')
+    if programme and programme.subject != subject:
+        raise ValueError('Keep the subject of an existing programme. Archive it and create a new programme for another subject.')
+    duplicate = school_programmes(school_id, subject).filter_by(name_key=name.casefold()).first()
+    if duplicate and (not programme or duplicate.id != programme.id):
+        raise ValueError('A programme with this name already exists for that subject, including archived programmes.')
+    if not programme:
+        programme = InterventionProgramme(school_id=school_id, subject=subject)
+    programme.name, programme.name_key, programme.description = name, name.casefold(), description or None
+    db.session.add(programme)
+    return programme
