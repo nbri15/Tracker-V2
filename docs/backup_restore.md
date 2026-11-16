@@ -1,36 +1,67 @@
 # Production database backup and restore
 
-Class Compass production data should be backed up before deployments that run migrations, academic-year promotion, bulk imports, or permanent deletion.
+## How backups work now
 
-## Create a backup
+Production data is backed up **automatically every day** by the separate private
+repository **`nbri15/class-compass-backups`** (GitHub Actions, "Daily encrypted
+database backup"). Backups are encrypted with GPG AES-256, kept as private
+artifacts for 30 days, and never stored in this repository. Because GitHub can
+delay scheduled runs, the backup usually completes between about 08:30 and 10:00 UTC.
 
-Use the PostgreSQL connection string supplied by the hosting provider. Keep it in an environment variable; do not paste credentials into scripts or commit them.
+That repository's `README.md` is the authoritative guide for how the backup works,
+the secrets it needs, and the **restore drill**. Do not rely on backups until a
+drill has passed (see `drill/DRILL_LOG.md` in that repository).
+
+## Before every deployment that includes a migration
+
+Render runs `flask db upgrade` on each deploy. Before merging a pull request that
+adds or changes a migration, academic-year promotion code, bulk deletion, or
+data-changing import:
+
+1. Open `class-compass-backups` → Actions → **Daily encrypted database backup** → Run workflow.
+2. Wait for a green tick. If it fails, do **not** deploy.
+3. Merge and deploy.
+
+## Manual backup (optional, ad hoc)
+
+`scripts/backup_postgres.sh` makes an **unencrypted** dump. Use it only for a
+short-lived local copy; delete it afterwards and never commit it. It does not
+replace the automatic encrypted backups.
 
 ```bash
-export DATABASE_URL='postgresql://...'
+export DATABASE_URL='postgresql://...'   # keep in the environment, never in files
 ./scripts/backup_postgres.sh ./backups
 ```
 
-The script creates a dated custom-format PostgreSQL dump and checks that the archive can be read. Store a copy outside the application host with restricted access.
+## Test a restore (isolated database only)
 
-## Test a restore
+Preferred: use the drill in the backup repository (`drill/restore_drill.sh`),
+which verifies the file, decrypts it and restores into a new local database.
 
-Restore into a separate empty PostgreSQL database first:
+`scripts/restore_postgres.sh` restores an unencrypted dump and **wipes its
+target**. It refuses to run unless all of these hold: the target is not the same
+database as `DATABASE_URL` or `SUPABASE_DB_URL`; the host is local (or
+`ALLOW_REMOTE_RESTORE=YES` for a dedicated test server); the database name does
+not contain `prod` or `live`; and you type the target database name yourself.
 
 ```bash
-export RESTORE_DATABASE_URL='postgresql://...test-database...'
-CONFIRM_RESTORE=YES ./scripts/restore_postgres.sh ./backups/class_compass_YYYYMMDD_HHMMSS.dump
+RESTORE_DATABASE_URL='postgresql://user:pass@localhost:5432/test_db' \
+CONFIRM_RESTORE=YES CONFIRM_DB_NAME=test_db \
+./scripts/restore_postgres.sh ./backups/class_compass_YYYYMMDD_HHMMSS.dump
 ```
 
-Log into the restored application and verify schools, users, classes, pupils, assessment results, interventions, SATs, and Maths Fundamentals before treating the backup as valid.
+After restoring, log in to a copy of the app and check schools, users, classes,
+pupils, assessment results, gap analysis, interventions, SATs and Maths Fundamentals.
 
 ## Production recovery
 
+Production recovery needs a reviewed plan and explicit approval; it is not automated.
+
 1. Put the application into maintenance mode or stop web workers.
-2. Take a final backup of the damaged database if it remains accessible.
-3. Create a new empty database rather than overwriting the existing database immediately.
-4. Restore the selected verified archive into the new database.
-5. point `DATABASE_URL` at the restored database and deploy the same application revision that created it.
+2. Take a final backup of the damaged database if it is still accessible.
+3. Create a new empty database rather than overwriting the existing one.
+4. Restore the selected, verified backup into the new database.
+5. Point `DATABASE_URL` at the restored database and deploy the same application revision that created it.
 6. Run migrations, perform the verification checks above, then reopen access.
 
 Never test a restore against the live database.
