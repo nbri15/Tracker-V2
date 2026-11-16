@@ -137,7 +137,7 @@ def register_request_guards(app: Flask) -> None:
     def force_password_change():
         if not current_user.is_authenticated or not getattr(current_user, 'require_password_change', False):
             return None
-        if request.endpoint in {'auth.change_password', 'auth.logout', 'static'}:
+        if request.endpoint in {'auth.change_password', 'auth.logout', 'static', 'dashboards.healthz'}:
             return None
         return redirect(url_for('auth.change_password'))
 

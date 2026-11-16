@@ -55,6 +55,23 @@ def home():
 
 
 
+@dashboards_bp.route('/healthz')
+def healthz():
+    """Tiny public check used to keep the site awake and to see if it is up. Reads no pupil or school data."""
+    from flask import Response
+    from sqlalchemy import text
+    from app.extensions import db
+    try:
+        db.session.execute(text('SELECT 1'))
+        body, status = 'ok', 200
+    except Exception:  # never reveal details to the outside world
+        db.session.rollback()
+        body, status = 'database unavailable', 503
+    response = Response(body, status=status, mimetype='text/plain')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @dashboards_bp.route('/set-academic-year', methods=['POST'])
 @login_required
 def set_academic_year():
