@@ -1,6 +1,5 @@
 """Authentication routes."""
 
-from urllib.parse import urlparse
 
 from flask import flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
@@ -12,7 +11,7 @@ from app.services import (
     get_school_working_academic_year,
     should_show_academic_year_reminder,
 )
-from app.utils import is_demo_mode_enabled
+from app.utils import is_demo_mode_enabled, safe_redirect_target
 
 from . import auth_bp
 from .forms import ChangePasswordForm, LoginForm
@@ -73,10 +72,7 @@ def login():
                 )
                 return redirect(url_for('admin.promotion', rollover_prompt='1'))
             flash('Welcome back.', 'success')
-            next_page = request.args.get('next')
-            if next_page and urlparse(next_page).netloc == '':
-                return redirect(next_page)
-            return redirect(url_for('dashboards.index'))
+            return redirect(safe_redirect_target(request.args.get('next'), url_for('dashboards.index')))
 
         if credentials_valid and not school_active_or_exec:
             flash('Your school is inactive. Contact an executive administrator.', 'danger')
