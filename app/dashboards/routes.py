@@ -43,6 +43,8 @@ from app.utils import (
     safe_redirect_target,
 )
 
+from app.services.teacher_dashboard import attention_by_subject, intervention_progress
+
 from . import dashboards_bp
 
 
@@ -133,6 +135,8 @@ def teacher_dashboard():
         'tracker_mode_label': get_tracker_mode_label(school_class.year_group) if school_class else 'Usual tracker',
         'selected_term': term,
         'term_choices': ['Autumn', 'Spring', 'Summer', 'All'],
+        'attention': attention_by_subject(school_class, academic_year) if school_class and school_class.year_group != 0 else [],
+        'support_progress': intervention_progress(active_interventions),
     }
     return render_template('dashboards/teacher_dashboard.html', **context)
 

@@ -49,6 +49,38 @@
   {% endif %}
 </div>
 {% if not is_reception %}
+  {% if attention %}
+  <div class="card shadow-sm mb-4" id="needs-attention">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <strong>Needs attention</strong>
+      <span class="small text-muted">Based on each subject's most recent term with scores</span>
+    </div>
+    <div class="card-body"><div class="row g-3">
+      {% for card in attention %}
+      <div class="col-lg-4"><div class="border rounded-3 p-3 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-2"><strong>{{ card.label }}</strong><span class="subject-result-pill {% if not card.term %}is-empty{% endif %}">{{ card.term_label or 'No scores yet' }}</span></div>
+        {% if not card.term %}
+          <p class="small text-muted mb-0">No scores entered yet. <a href="{{ url_for('teacher.' ~ card.subject, academic_year=academic_year) }}">Enter scores</a></p>
+        {% else %}
+          <p class="small mb-1"><strong>{{ card.needs_support|length }}</strong> below the pass mark with no support yet</p>
+          {% if card.needs_support %}<p class="small text-muted mb-2">{{ card.needs_support|map(attribute='full_name')|join(', ') }}</p>
+          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('teacher.interventions', academic_year=academic_year, subject=card.subject, term=card.term) }}">Plan support</a>{% endif %}
+          <p class="small mt-2 mb-0"><strong>{{ card.missing|length }}</strong> of {{ card.total }} pupils have no score this term{% if card.missing %} <a href="{{ url_for('teacher.' ~ card.subject, academic_year=academic_year, term=card.term) }}">Enter them</a>{% endif %}</p>
+        {% endif %}
+      </div></div>
+      {% endfor %}
+    </div></div>
+  </div>
+  {% endif %}
+  {% if support_progress.total %}
+  <div class="card shadow-sm mb-4" id="support-progress"><div class="card-body d-flex flex-wrap gap-4 align-items-center">
+    <div><div class="kpi-label">Pupils with active support</div><div class="h3 mb-0">{{ support_progress.total }}</div></div>
+    <div><div class="kpi-label">Improved since support began</div><div class="h3 mb-0">{{ support_progress.improved }}</div></div>
+    <div><div class="kpi-label">Little change</div><div class="h3 mb-0">{{ support_progress.little_change }}</div></div>
+    <div><div class="kpi-label">Declined</div><div class="h3 mb-0">{{ support_progress.declined }}</div></div>
+    <div><div class="kpi-label">Waiting for next assessment</div><div class="h3 mb-0">{{ support_progress.awaiting + support_progress.no_baseline }}</div></div>
+  </div></div>
+  {% endif %}
   <div class="row g-4 mb-4">
     {% for row in chart_cards %}
       <div class="col-md-6 col-xl-3">
