@@ -193,7 +193,7 @@ def sync_auto_interventions(school_class, subject: str, term: str, academic_year
     )
 
 
-def build_intervention_filters(query, *, year_group: str = '', class_id: str = '', subject: str = '', status: str = 'active', term: str = '', programme_id: str = ''):
+def build_intervention_filters(query, *, year_group: str = '', class_id: str = '', subject: str = '', status: str = 'active', term: str = '', programme_id: str = '', pupil_premium: bool = False, send: bool = False):
     if status not in {'active', 'inactive', 'all'} or (term and term not in {'autumn', 'spring', 'summer'}):
         raise ValueError('Choose a valid status and term.')
     if year_group:
@@ -204,6 +204,10 @@ def build_intervention_filters(query, *, year_group: str = '', class_id: str = '
         query = query.filter(Intervention.subject == subject)
     if term:
         query = query.filter(Intervention.term == term)
+    if pupil_premium:
+        query = query.filter(Pupil.pupil_premium.is_(True))
+    if send:
+        query = query.filter(Pupil.send.is_(True))
     if programme_id:
         query = query.filter(Intervention.programme_assignments.any(InterventionProgrammeAssignment.programme_id == int(programme_id)))
     if status == 'active':
