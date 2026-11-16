@@ -1719,6 +1719,8 @@ def interventions():
     status = request.args.get('status', 'active').strip() or 'active'
     term = request.args.get('term', '').strip()
     programme_id = request.args.get('programme_id', '').strip()
+    pupil_premium = request.args.get('pupil_premium') == '1'
+    send = request.args.get('send') == '1'
     if status not in {'active', 'inactive', 'all'} or (term and term not in dict(TERMS)):
         abort(400)
     print_mode = request.args.get('print', '0') == '1'
@@ -1731,7 +1733,7 @@ def interventions():
     query = Intervention.query.join(Intervention.pupil).filter(Pupil.school_id == school_id, Pupil.is_demo.is_(is_demo_user()), Intervention.is_demo.is_(is_demo_user()))
     query = query.filter(Intervention.academic_year == academic_year)
     try:
-        query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status, term=term, programme_id=programme_id)
+        query = build_intervention_filters(query, year_group=year_group, class_id=class_id, subject=subject, status=status, term=term, programme_id=programme_id, pupil_premium=pupil_premium, send=send)
     except ValueError:
         abort(400)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
@@ -1746,7 +1748,7 @@ def interventions():
             return f"{format_percent(outcome['baseline_percent'])} to {format_percent(outcome['follow_percent'])} ({format_change(outcome['change'])})"
         headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score', 'Impact', 'Programmes']
         table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.reason or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—', impact_text(row), ', '.join(p.name for p in row.programmes)] for idx, row in enumerate(rows, start=1)]
-        filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status, 'term': term, 'programme_id': programme_id}
+        filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status, 'term': term, 'programme_id': programme_id, 'pupil_premium': 'Yes' if pupil_premium else '', 'send': 'Yes' if send else ''}
         return _render_table_pdf('Interventions' if not anon_mode else 'Interventions — anonymised', headers, table_rows, filters, anon_mode, 'interventions.pdf')
 
     return render_template(
@@ -1758,7 +1760,7 @@ def interventions():
         class_id=class_id,
         subject=subject,
         status=status,
-        term=term, programme_id=programme_id, terms=TERMS,
+        term=term, programme_id=programme_id, pupil_premium=pupil_premium, send=send, terms=TERMS,
         programmes=school_programmes(school_id).all(),
         active_count=sum(row.is_active for row in rows),
         print_mode=print_mode,
@@ -2755,7 +2757,8 @@ def export_interventions():
         query = build_intervention_filters(query, year_group=request.args.get('year_group', ''),
             class_id=request.args.get('class_id', ''), subject=request.args.get('subject', ''),
             status=request.args.get('status', 'active'), term=request.args.get('term', ''),
-            programme_id=request.args.get('programme_id', ''))
+            programme_id=request.args.get('programme_id', ''),
+            pupil_premium=request.args.get('pupil_premium') == '1', send=request.args.get('send') == '1')
     except ValueError:
         abort(400)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
