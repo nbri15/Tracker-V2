@@ -57,6 +57,8 @@ class Config:
     SESSION_COOKIE_SAMESITE = 'Lax'
     REMEMBER_COOKIE_SAMESITE = 'Lax'
     DEMO_MODE = _env_flag('DEMO_MODE', default=False)
+    # Maths Fundamentals is switched off unless FUNDAMENTALS_ENABLED=1 is set. Nothing is deleted.
+    FUNDAMENTALS_ENABLED = _env_flag('FUNDAMENTALS_ENABLED', default=False)
     FUNDAMENTALS_TOKEN_MAX_AGE = int(os.environ.get('FUNDAMENTALS_TOKEN_MAX_AGE', '86400'))
 
 
