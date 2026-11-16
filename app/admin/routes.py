@@ -1716,7 +1716,20 @@ def results_diagnostic():
             .filter(SubjectResult.school_id == school_id)
             .group_by(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject)
             .order_by(SubjectResult.academic_year, SubjectResult.term, SubjectResult.subject).all())
-    return render_template('admin/results_diagnostic.html', rows=rows)
+    # Where do the results sit? Per year, term and class: how many pupils and results, and whether those pupils are current.
+    where = (db.session.query(SubjectResult.academic_year, SubjectResult.term, SchoolClass.name, Pupil.is_active, Pupil.is_archived,
+                               func.count(func.distinct(Pupil.id)), func.count(SubjectResult.id))
+             .join(Pupil, Pupil.id == SubjectResult.pupil_id)
+             .outerjoin(SchoolClass, SchoolClass.id == Pupil.class_id)
+             .filter(SubjectResult.school_id == school_id)
+             .group_by(SubjectResult.academic_year, SubjectResult.term, SchoolClass.name, Pupil.is_active, Pupil.is_archived)
+             .order_by(SubjectResult.academic_year, SubjectResult.term, SchoolClass.name).all())
+    # Pupils with the same name more than once (a sign that an import made duplicates).
+    duplicates = (db.session.query(Pupil.first_name, Pupil.last_name, func.count(Pupil.id))
+                  .filter(Pupil.school_id == school_id)
+                  .group_by(func.lower(Pupil.first_name), func.lower(Pupil.last_name), Pupil.first_name, Pupil.last_name)
+                  .having(func.count(Pupil.id) > 1).order_by(Pupil.last_name).limit(50).all())
+    return render_template('admin/results_diagnostic.html', rows=rows, where=where, duplicates=duplicates)
 
 
 @admin_bp.route('/interventions')
