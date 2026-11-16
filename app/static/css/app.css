@@ -1821,6 +1821,22 @@ label,
   .yearly-overview-table .sticky-pupil { min-width: 145px; }
 }
 
+/* ------------------------------------------------------------------
+   Installed on an iPad / phone (home-screen app)
+   ------------------------------------------------------------------ */
+.app-shell {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@media (pointer: coarse) {
+  /* Stops iOS zooming the page when a box is tapped, and removes the double-tap delay. */
+  input, select, textarea { font-size: 16px; }
+  a, button, .btn, input, select, textarea, label { touch-action: manipulation; }
+}
+@media all and (display-mode: standalone) {
+  body { overscroll-behavior-y: none; }
+}
 
 /* ------------------------------------------------------------------
    Polish layer (appended last on purpose so it refines the rules above)
