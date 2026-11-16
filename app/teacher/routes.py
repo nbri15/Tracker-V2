@@ -11,7 +11,8 @@ from sqlalchemy import func
 
 from app.extensions import db
 from app.models import GapQuestion, Intervention, InterventionProgrammeAssignment, Pupil, SubjectResult, WritingResult
-from app.services.interventions import assign_programme, school_programmes, intervention_assessment
+from app.services.interventions import assign_programme, school_programmes, intervention_assessment, set_intervention_state
+from app.services.intervention_impact import capture_baseline, outcomes_for
 from app.services import (
     AUTO_REASON,
     SATS_ASSESSMENT_POINTS,
@@ -426,7 +427,7 @@ def interventions():
         return redirect(url_for('teacher.interventions', academic_year=academic_year, term=term, subject=subject, status=status))
     if not school_class:
         flash('No active class is assigned to your account yet.', 'warning')
-        return render_template('teacher/interventions.html', interventions=[], all_records=[], programmes=[], active_programmes=[], school_class=None, subjects=['maths', 'reading', 'spag'], academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year), term=term, terms=TERMS, subject=subject, pupils=[], status=status, metrics={}, groups={}, active_count=0, closed_count=0)
+        return render_template('teacher/interventions.html', interventions=[], all_records=[], programmes=[], active_programmes=[], school_class=None, subjects=['maths', 'reading', 'spag'], academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year), term=term, terms=TERMS, subject=subject, pupils=[], status=status, metrics={}, outcomes={}, groups={}, active_count=0, closed_count=0)
     query = Intervention.query.join(Intervention.pupil).filter(
         Intervention.subject == subject, Intervention.term == term,
         Intervention.academic_year == academic_year,
@@ -457,6 +458,7 @@ def interventions():
                             term=term, academic_year=academic_year, reason=reason,
                             note=request.form.get('note', '').strip() or None, auto_flagged=False,
                             is_active=True, is_demo=school_class.is_demo)
+                        capture_baseline(record)
                         db.session.add(record)
                     else:
                         # Adding support must not erase a previously recorded plan.
@@ -467,8 +469,7 @@ def interventions():
             elif action in {'close', 'reopen', 'save_record', 'remove_programme'}:
                 record = query.filter(Intervention.id == int(request.form.get('record_id', '0'))).first_or_404()
                 if action in {'close', 'reopen'}:
-                    record.is_active = action == 'reopen'
-                    record.closed_by_teacher = action == 'close'
+                    set_intervention_state(record, action == 'reopen', closed_by_teacher=action == 'close')
                 elif action == 'save_record':
                     record.note = request.form.get('note', '').strip() or None
                 else:
@@ -483,8 +484,8 @@ def interventions():
                     if f'note_{record.id}' not in request.form:
                         continue
                     record.note = request.form[f'note_{record.id}'].strip() or None
-                    record.is_active = request.form.get(f'active_{record.id}') == 'on'
-                    record.closed_by_teacher = not record.is_active
+                    new_active = request.form.get(f'active_{record.id}') == 'on'
+                    set_intervention_state(record, new_active, closed_by_teacher=not new_active)
                 flash('Interventions updated.', 'success')
             else:
                 abort(400)
@@ -504,7 +505,7 @@ def interventions():
         academic_year_options=build_academic_year_options(academic_year), term=term, terms=TERMS,
         subject=subject, status=status, programmes=programmes,
         active_programmes=[p for p in programmes if p.is_active], groups=groups,
-        metrics={row.id: intervention_assessment(row) for row in records},
+        metrics={row.id: intervention_assessment(row) for row in records}, outcomes=outcomes_for(records),
         active_count=sum(row.is_active for row in all_records), closed_count=sum(not row.is_active for row in all_records))
 
 
@@ -531,8 +532,7 @@ def interventions_quick_save():
     if field == 'note' and (value is None or isinstance(value, str)):
         record.note = (value or '').strip() or None
     elif field == 'is_active' and isinstance(value, bool):
-        record.is_active = value
-        record.closed_by_teacher = not value
+        set_intervention_state(record, value, closed_by_teacher=not value)
     else:
         return {'ok': False}, 400
     db.session.commit()

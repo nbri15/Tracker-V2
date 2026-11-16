@@ -1736,9 +1736,16 @@ def interventions():
         abort(400)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
     current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
+    from app.services.intervention_impact import format_change, format_percent, outcomes_for, programme_summary
+    outcomes = outcomes_for(rows)
     if _pdf_requested():
-        headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score', 'Programmes']
-        table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.reason or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—', ', '.join(p.name for p in row.programmes)] for idx, row in enumerate(rows, start=1)]
+        def impact_text(row):
+            outcome = outcomes[row.id]
+            if outcome['change'] is None:
+                return outcome['status_label']
+            return f"{format_percent(outcome['baseline_percent'])} to {format_percent(outcome['follow_percent'])} ({format_change(outcome['change'])})"
+        headers = ['Pupil', 'Class', 'Subject', 'Focus', 'Status', 'Current score', 'Impact', 'Programmes']
+        table_rows = [[f'Pupil {idx}' if anon_mode else row.pupil.full_name, row.pupil.school_class.name if row.pupil.school_class else '', row.subject.title(), row.reason or '', 'Active' if row.is_active else 'Closed', current_scores.get(row.id) or '—', impact_text(row), ', '.join(p.name for p in row.programmes)] for idx, row in enumerate(rows, start=1)]
         filters = {'academic_year': academic_year, 'year_group': year_group, 'class_id': class_id, 'subject': subject, 'status': status, 'term': term, 'programme_id': programme_id}
         return _render_table_pdf('Interventions' if not anon_mode else 'Interventions — anonymised', headers, table_rows, filters, anon_mode, 'interventions.pdf')
 
@@ -1757,6 +1764,8 @@ def interventions():
         print_mode=print_mode,
         anon_mode=anon_mode,
         current_scores=current_scores,
+        outcomes=outcomes,
+        programme_impact=programme_summary(rows, outcomes),
         class_options=demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all(),
         subjects=CORE_SUBJECTS,
     )
@@ -2751,7 +2760,8 @@ def export_interventions():
         abort(400)
     rows = query.order_by(Intervention.is_active.desc(), Pupil.last_name, Pupil.first_name).all()
     current_scores = {row.id: get_current_score_for_intervention(row) for row in rows}
-    csv_text = export_interventions_csv(academic_year, anonymised=anon_mode, current_scores=current_scores, records=rows)
+    from app.services.intervention_impact import outcomes_for
+    csv_text = export_interventions_csv(academic_year, anonymised=anon_mode, current_scores=current_scores, records=rows, outcomes=outcomes_for(rows))
     return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=interventions_export.csv'})
 
 
