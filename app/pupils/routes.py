@@ -26,6 +26,7 @@ from app.models import (
     TimesTableScore,
     WritingResult,
 )
+from app.services.pupil_history import build_timeline, progress_table
 from app.services import build_academic_year_options, build_pupil_overview_data, format_progress_delta, get_selected_academic_year, progress_theme, summarize_gld_status
 from app.utils import demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, teacher_or_admin_required
 
@@ -192,8 +193,61 @@ def profile(pupil_id: int):
         selected_profile_year_group=selected_profile_year_group,
         selected_profile_class_name=selected_profile_class_name,
         gap_rows=gap_rows,
+        timeline=build_timeline(*_history_inputs(pupil, intervention_rows, history_rows), SUBJECT_LABELS),
     )
 
+
+
+SUBJECT_LABELS = {'maths': 'Maths', 'reading': 'Reading', 'spag': 'SPaG'}
+
+
+def _history_inputs(pupil, interventions=None, class_history=None):
+    """Plain dicts for the pupil history helpers (results, support, class moves)."""
+    from app.services.intervention_impact import outcomes_for
+    rows = (SubjectResult.query.filter(SubjectResult.pupil_id == pupil.id, SubjectResult.school_id == pupil.school_id,
+                                       SubjectResult.subject.in_(list(SUBJECT_LABELS)), SubjectResult.combined_percent.isnot(None))
+            .order_by(SubjectResult.updated_at, SubjectResult.id).all())
+    results = [{'subject': r.subject, 'academic_year': r.academic_year, 'term': r.term, 'percent': r.combined_percent, 'band': r.band_label} for r in rows]
+    if interventions is None:
+        interventions = Intervention.query.filter_by(pupil_id=pupil.id).order_by(Intervention.created_at.desc()).all()
+    outcomes = outcomes_for(interventions)
+    supports = []
+    for record in interventions:
+        outcome = outcomes.get(record.id) or {}
+        supports.append({'academic_year': record.academic_year, 'term': record.term, 'subject': record.subject,
+                         'programmes': [p.name for p in record.programmes], 'active': bool(record.is_active),
+                         'status_label': outcome.get('status_label'), 'change': outcome.get('change')})
+    if class_history is None:
+        class_history = PupilClassHistory.query.filter_by(pupil_id=pupil.id).all()
+    moves = [{'academic_year': h.academic_year, 'class_name': h.class_name, 'year_group': h.year_group} for h in class_history]
+    return results, supports, moves
+
+
+@pupils_bp.route('/<int:pupil_id>/progress-report.pdf')
+@login_required
+@teacher_or_admin_required
+def progress_report(pupil_id: int):
+    """One-page, parent-friendly progress report (PDF). Same access rules as the profile page."""
+    from weasyprint import HTML
+    from flask import make_response
+    pupil = demo_filter_pupils(Pupil.query.join(Pupil.school_class)).filter(Pupil.id == pupil_id).first_or_404()
+    require_same_school(pupil)
+    if not _can_view_pupil(pupil):
+        abort(403)
+    results, supports, _ = _history_inputs(pupil)
+    columns, rows = progress_table(results, list(SUBJECT_LABELS), last=6)
+    current_support = [s for s in supports if s['active']]
+    html = render_template(
+        'exports/pupil_progress_report.html', pupil=pupil, columns=columns, rows=rows, labels=SUBJECT_LABELS,
+        support=current_support, generated_at=datetime.now(timezone.utc),
+        year_group=pupil.school_class.year_group if pupil.school_class else None)
+    pdf = HTML(string=html, base_url=request.url_root).write_pdf()
+    log_audit_event('pupil_progress_report_downloaded', 'pupil', pupil.id, school_id=pupil.school_id, details=None)
+    db.session.commit()  # log_audit_event only queues the entry; without this it is lost
+    response = make_response(pdf)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename={pupil.full_name.replace(" ", "_").lower()}-progress-report.pdf'
+    return response
 
 
 def _latest_term_row(query, term_attr='term'):

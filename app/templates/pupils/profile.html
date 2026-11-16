@@ -17,6 +17,7 @@
       <button type="submit" class="btn btn-outline-success btn-sm">Restore pupil</button>
     </form>
   {% endif %}
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('pupils.progress_report', pupil_id=pupil.id) }}">Progress report (PDF)</a>
   <button class="btn btn-outline-primary btn-sm js-download-pdf" data-pdf-target="#pupil-profile-pdf" data-pdf-filename="{{ pupil.full_name|replace(' ', '_')|lower }}-summary.pdf">Download Pupil Summary PDF</button>
 </div>
 
@@ -92,6 +93,20 @@
       {% for warning in missing_data_warnings %}<div>• {{ warning }}</div>{% endfor %}
     </div>
   {% endif %}
+
+  <div class="card shadow-sm mb-4" id="pupil-timeline">
+    <div class="card-header bg-white"><strong>Timeline</strong> <span class="small text-muted">newest first: results, support and class moves</span></div>
+    <div class="list-group list-group-flush">
+      {% for event in timeline %}
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between gap-2"><strong>{{ event.title }}</strong><span class="small text-muted text-nowrap">{{ event.academic_year }}{% if event.term_label %} · {{ event.term_label }}{% endif %}</span></div>
+          {% for line in event.lines %}<div class="small text-muted">{{ line }}</div>{% endfor %}
+        </div>
+      {% else %}
+        <div class="list-group-item text-muted">Nothing recorded yet.</div>
+      {% endfor %}
+    </div>
+  </div>
 
   <div class="card shadow-sm mb-4">
     <div class="card-header bg-white"><strong>Interventions</strong></div>

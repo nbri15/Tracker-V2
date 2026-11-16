@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Progress report: {{ pupil.full_name }}</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1c2f4d; font-size: 11px; margin: 0; }
+  h1 { font-size: 20px; margin: 0 0 2mm; color: #071f4f; }
+  h2 { font-size: 13px; margin: 7mm 0 2mm; color: #071f4f; border-bottom: 2px solid #f5ad22; padding-bottom: 1mm; }
+  .meta { color: #5f6f86; margin-bottom: 4mm; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #dbe3ef; padding: 4px 5px; text-align: left; vertical-align: top; }
+  th { background: #f2f6fd; font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: #5f6f86; }
+  .band { font-size: 9px; color: #5f6f86; }
+  .up { color: #16744a; } .down { color: #c62832; }
+  .box { border: 1px solid #dbe3ef; border-radius: 3mm; padding: 3mm; min-height: 14mm; white-space: pre-wrap; }
+  .foot { margin-top: 8mm; color: #5f6f86; font-size: 9px; }
+</style></head><body>
+<h1>{{ pupil.full_name }}</h1>
+<div class="meta">{% if pupil.school_class %}{{ pupil.school_class.name }}{% if year_group is not none %} · {{ 'Reception' if year_group == 0 else 'Year ' ~ year_group }}{% endif %}{% endif %}</div>
+
+<h2>Assessment results</h2>
+{% if columns %}
+<table>
+  <thead><tr><th>Subject</th>{% for year, term in columns %}<th>{{ term|title }}<br>{{ year }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr><td><strong>{{ labels[row.subject] }}</strong></td>
+    {% for cell in row.cells %}
+      <td>{% if cell %}<strong>{{ '%g'|format(cell.percent) }}%</strong>{% if cell.change is not none and cell.change != 0 %} <span class="{{ 'up' if cell.change > 0 else 'down' }}">{{ '+' if cell.change > 0 else '' }}{{ '%g'|format(cell.change) }}</span>{% endif %}<div class="band">{{ cell.band or '' }}</div>{% else %}–{% endif %}</td>
+    {% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="band">Figures after each percentage show the change in percentage points since the previous assessment in that subject.</p>
+{% else %}<p>No assessment results have been recorded yet.</p>{% endif %}
+
+{% if support %}
+<h2>Support in place</h2>
+<ul>{% for item in support %}<li>{{ labels.get(item.subject, item.subject) }}: {{ item.programmes|join(', ') if item.programmes else 'individual support' }}</li>{% endfor %}</ul>
+{% endif %}
+
+<h2>Strengths</h2><div class="box">{{ pupil.strengths_notes or '' }}</div>
+<h2>Next steps</h2><div class="box">{{ pupil.next_steps_notes or '' }}</div>
+
+<div class="foot">Generated {{ generated_at.strftime('%d %b %Y') }}. Contains personal information about a pupil: share only with their parents or carers and school staff who need it.</div>
+</body></html>
