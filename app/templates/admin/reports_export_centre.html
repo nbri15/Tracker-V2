@@ -18,6 +18,7 @@
       <a class="btn btn-outline-secondary" href="{{ url_for('admin.report_class_overview', format='csv', **request.args) }}">CSV</a>
       <a class="btn btn-outline-secondary" href="{{ url_for('admin.report_class_overview', format='xlsx', **request.args) }}">XLSX</a>
       <a class="btn btn-outline-primary" href="{{ url_for('admin.report_governor_summary', **request.args) }}">Governor summary</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('admin.scores_checklist') }}">Scores checklist</a>
     </div>
   </form>
 </div></div>

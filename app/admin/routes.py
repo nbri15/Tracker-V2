@@ -2604,6 +2604,28 @@ def report_class_overview():
     return render_template('admin/report_table.html', title='Class overview report', subtitle='Printable class summary', headers=headers, rows=rows, filters=filters, anonymised=False)
 
 
+@admin_bp.route('/reports/scores-checklist')
+@login_required
+@admin_required
+def scores_checklist():
+    """Which classes still have scores to enter this term? Read-only."""
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
+    from app.services.assessments import TERMS, get_current_term
+    from app.services.scores_checklist import build_checklist, headline
+    school_id = _selected_school_id_for_admin_actions()
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
+    term = request.args.get('term', get_current_term()).strip().lower()
+    if term not in dict(TERMS):
+        abort(400)
+    classes = (demo_filter_classes(SchoolClass.query).filter_by(school_id=school_id, is_active=True)
+               .order_by(SchoolClass.year_group, SchoolClass.name).all())
+    entries = build_checklist(school_id, academic_year, term, classes)
+    return render_template('admin/scores_checklist.html', entries=entries, summary=headline(entries), academic_year=academic_year,
+                           term=term, terms=TERMS, academic_year_options=build_academic_year_options(academic_year))
+
+
 @admin_bp.route('/reports/governor-summary')
 @login_required
 @admin_required
