@@ -91,3 +91,35 @@ def test_every_table_is_either_scoped_or_deliberately_skipped(world):  # noqa: F
                 assert scoped_select(table, ids['a']) is None
             else:
                 assert scoped_select(table, ids['a']) is not None
+
+
+def test_id_columns_get_readable_names_next_to_them(world):  # noqa: F811
+    app, ids = world
+    archive = _zip(_download(app, ids))
+    pupils = _rows(archive, 'pupils')
+    assert {row['class_name'] for row in pupils} == {'Oak'}
+    assert [row['teacher_username'] for row in _rows(archive, 'school_classes')] == ['teacher-a']
+    # wherever a table has pupil_id, the pupil's name must be present beside it
+    with_ids = 0
+    for name in archive.namelist():
+        if not name.startswith('data/'):
+            continue
+        with archive.open(name) as handle:
+            reader = csv.DictReader(io.TextIOWrapper(handle, encoding='utf-8', newline=''))
+            headers = reader.fieldnames or []
+            if 'pupil_id' in headers:
+                with_ids += 1
+                assert headers[headers.index('pupil_id') + 1] == 'pupil_name', name
+    assert with_ids > 0
+
+
+def test_pupil_names_resolve_correctly(world):  # noqa: F811
+    app, ids = world
+    archive = _zip(_download(app, ids))
+    by_id = {row['id']: f"{row['first_name']} {row['last_name']}" for row in _rows(archive, 'pupils')}
+    for name in archive.namelist():
+        if not name.startswith('data/') or name == 'data/pupils.csv':
+            continue
+        for row in _rows(archive, name[len('data/'):-len('.csv')]):
+            if row.get('pupil_id'):
+                assert row['pupil_name'] == by_id[row['pupil_id']], name
