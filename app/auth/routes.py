@@ -1,8 +1,6 @@
 """Authentication routes."""
 
-from urllib.parse import urlparse
-
-from flask import flash, redirect, render_template, request, session, url_for
+from flask import current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from app.extensions import db
@@ -12,7 +10,8 @@ from app.services import (
     get_school_working_academic_year,
     should_show_academic_year_reminder,
 )
-from app.utils import is_demo_mode_enabled
+from app.security import password_problem
+from app.utils import is_demo_mode_enabled, safe_redirect_target
 
 from . import auth_bp
 from .forms import ChangePasswordForm, LoginForm
@@ -40,6 +39,14 @@ def login():
     if form.validate_on_submit():
         school_code = (form.school_code.data or '').strip().lower()
         identifier = form.username.data.strip()
+        throttle = current_app.extensions['login_throttle']
+        client_ip = request.remote_addr or 'unknown'
+        throttle_account = f'{school_code}|{identifier}'
+        wait_seconds = throttle.seconds_until_allowed(client_ip, throttle_account)
+        if wait_seconds:
+            minutes = max(1, (wait_seconds + 59) // 60)
+            flash(f'Too many failed sign-in attempts. Please wait about {minutes} minute(s) and try again.', 'danger')
+            return render_template('auth/login.html', form=form), 429
         user = None
         if school_code:
             school = School.query.filter(School.slug == school_code).first()
@@ -58,8 +65,10 @@ def login():
         credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
         school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
         if credentials_valid and school_active_or_exec:
+            throttle.record_success(client_ip, throttle_account)
             session.pop('selected_academic_year_id', None)
             login_user(user)
+            session.permanent = True  # applies the idle timeout (PERMANENT_SESSION_LIFETIME)
             if user.require_password_change:
                 flash('Please set a new password before continuing.', 'warning')
                 return redirect(url_for('auth.change_password'))
@@ -73,11 +82,10 @@ def login():
                 )
                 return redirect(url_for('admin.promotion', rollover_prompt='1'))
             flash('Welcome back.', 'success')
-            next_page = request.args.get('next')
-            if next_page and urlparse(next_page).netloc == '':
-                return redirect(next_page)
-            return redirect(url_for('dashboards.index'))
+            return redirect(safe_redirect_target(request.args.get('next'), url_for('dashboards.index')))
 
+        if not credentials_valid:
+            throttle.record_failure(client_ip, throttle_account)
         if credentials_valid and not school_active_or_exec:
             flash('Your school is inactive. Contact an executive administrator.', 'danger')
         else:
@@ -110,6 +118,7 @@ def demo_login():
         flash('Demo school is inactive.', 'danger')
         return redirect(url_for('auth.login'))
     login_user(user)
+    session.permanent = True
     session.pop('selected_academic_year_id', None)
     flash(f'Signed in as {username}.', 'success')
     return redirect(url_for('dashboards.index'))
@@ -133,6 +142,10 @@ def change_password():
 
     form = ChangePasswordForm()
     if form.validate_on_submit():
+        problem = password_problem(form.new_password.data, current_user.username)
+        if problem:
+            form.new_password.errors.append(problem)
+            return render_template('auth/change_password.html', form=form)
         current_user.set_password(form.new_password.data)
         current_user.require_password_change = False
         db.session.add(current_user)
