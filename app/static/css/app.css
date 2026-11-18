@@ -98,6 +98,16 @@ a:hover {
   background-color: rgba(255, 255, 255, 0.14);
 }
 
+.sidebar .sidebar-group-toggle {
+  width: 100%;
+  background: none;
+  border: 0;
+}
+
+.sidebar .sidebar-group-toggle:not(.collapsed) {
+  color: #fff !important;
+}
+
 .content-area {
   min-width: 0;
 }

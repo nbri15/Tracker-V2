@@ -45,23 +45,44 @@
       {% endif %}
 
       {% if current_user.can_manage_school %}
+        {% macro nav_group(group_id, label, endpoints) -%}
+          {% set is_open = request.endpoint in endpoints %}
+          <button class="nav-link text-white text-start d-flex justify-content-between align-items-center sidebar-group-toggle {% if not is_open %}collapsed{% endif %}"
+                  type="button" data-bs-toggle="collapse" data-bs-target="#{{ group_id }}"
+                  aria-expanded="{{ 'true' if is_open else 'false' }}" aria-controls="{{ group_id }}">
+            <span>{{ label }}</span><span class="small text-white-50">&#9662;</span>
+          </button>
+          <div class="collapse {% if is_open %}show{% endif %} ps-3 border-start border-secondary ms-2" id="{{ group_id }}">
+            <div class="nav flex-column gap-1">{{ caller() }}</div>
+          </div>
+        {%- endmacro %}
+
         <div class="text-uppercase small text-white-50 mt-3 mb-1">Admin area</div>
         <a class="nav-link text-white {% if request.endpoint in ['admin.classes', 'admin.class_detail', 'admin.class_sats', 'admin.class_phonics', 'admin.class_times_tables'] %}active{% endif %}" href="{{ url_for('admin.classes') }}">Classes</a>
         <a class="nav-link text-white {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Users</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>
-        <a class="nav-link text-white {% if request.endpoint in ['dashboards.class_year_overview', 'dashboards.admin_class_year_overview'] %}active{% endif %}" href="{{ url_for('dashboards.admin_class_year_overview') }}">Class yearly overview</a>
-        <a class="nav-link text-white {% if request.endpoint in ['admin.sats', 'admin.class_sats','dashboards.sats_simple'] %}active{% endif %}" href="{{ url_for('dashboards.sats_simple') }}">Year 6 SATs</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.reception_tracker' %}active{% endif %}" href="{{ url_for('admin.reception_tracker') }}">Reception tracker</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.foundation_tracker' %}active{% endif %}" href="{{ url_for('admin.foundation_tracker') }}">Foundation tracker</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.promotion' %}active{% endif %}" href="{{ url_for('admin.promotion') }}">Promotion & history</a>
-        <a class="nav-link text-white {% if request.endpoint == 'assessment_workflow.setup' %}active{% endif %}" href="{{ url_for('assessment_workflow.setup') }}">Assessment Setup</a>
-        <a class="nav-link text-white" href="{{ url_for('assessment_workflow.gap_templates', school_id=selected_school_id) }}">GAP Templates</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
-        <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.data_quality' %}active{% endif %}" href="{{ url_for('admin.data_quality') }}">Data Quality</a>
-        <a class="nav-link text-white {% if request.endpoint == 'admin.setup_checklist' %}active{% endif %}" href="{{ url_for('admin.setup_checklist') }}">Setup Checklist</a>
-        <a class="nav-link text-white {% if request.endpoint in ['admin.archived_pupils', 'admin.confirm_permanent_delete_pupil'] %}active{% endif %}" href="{{ url_for('admin.archived_pupils') }}">Archived pupils</a>
+
+        {% call nav_group('navTrackers', 'Trackers', ['admin.interventions', 'dashboards.class_year_overview', 'dashboards.admin_class_year_overview', 'admin.sats', 'admin.class_sats', 'dashboards.sats_simple', 'admin.reception_tracker', 'admin.foundation_tracker']) %}
+          <a class="nav-link text-white {% if request.endpoint in ['dashboards.class_year_overview', 'dashboards.admin_class_year_overview'] %}active{% endif %}" href="{{ url_for('dashboards.admin_class_year_overview') }}">Class yearly overview</a>
+          <a class="nav-link text-white {% if request.endpoint in ['admin.sats', 'admin.class_sats','dashboards.sats_simple'] %}active{% endif %}" href="{{ url_for('dashboards.sats_simple') }}">Year 6 SATs</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.interventions' %}active{% endif %}" href="{{ url_for('admin.interventions') }}">Interventions</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.reception_tracker' %}active{% endif %}" href="{{ url_for('admin.reception_tracker') }}">Reception tracker</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.foundation_tracker' %}active{% endif %}" href="{{ url_for('admin.foundation_tracker') }}">Foundation tracker</a>
+        {% endcall %}
+
+        {% call nav_group('navReports', 'Reports & data', ['admin.headline_report', 'admin.export_headline_report', 'admin.imports', 'admin.data_quality', 'admin.archived_pupils', 'admin.confirm_permanent_delete_pupil']) %}
+          <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports & backup</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.data_quality' %}active{% endif %}" href="{{ url_for('admin.data_quality') }}">Data quality</a>
+          <a class="nav-link text-white {% if request.endpoint in ['admin.archived_pupils', 'admin.confirm_permanent_delete_pupil'] %}active{% endif %}" href="{{ url_for('admin.archived_pupils') }}">Archived pupils</a>
+        {% endcall %}
+
+        {% call nav_group('navSetup', 'Set-up', ['assessment_workflow.setup', 'assessment_workflow.gap_templates', 'admin.promotion', 'admin.setup_checklist', 'admin.settings']) %}
+          <a class="nav-link text-white {% if request.endpoint == 'assessment_workflow.setup' %}active{% endif %}" href="{{ url_for('assessment_workflow.setup') }}">Assessment setup</a>
+          <a class="nav-link text-white {% if request.endpoint == 'assessment_workflow.gap_templates' %}active{% endif %}" href="{{ url_for('assessment_workflow.gap_templates', school_id=selected_school_id) }}">GAP templates</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.promotion' %}active{% endif %}" href="{{ url_for('admin.promotion') }}">Promotion & history</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.setup_checklist' %}active{% endif %}" href="{{ url_for('admin.setup_checklist') }}">Setup checklist</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Settings</a>
+        {% endcall %}
       {% endif %}
     {% endif %}
   </nav>

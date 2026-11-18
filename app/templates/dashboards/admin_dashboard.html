@@ -21,6 +21,7 @@
   </div>
 {%- endmacro %}
 {% block content %}
+{% set more_filters_active = (pupil_filters.gender != 'all' or pupil_filters.search or pupil_filters.pupil_premium != 'all' or pupil_filters.laps != 'all' or pupil_filters.service_child != 'all' or pupil_filters.send != 'all') %}
 {% if rollover_required %}
 <div class="alert alert-warning d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3" role="alert">
   <div>
@@ -93,6 +94,11 @@
           {% endfor %}
         </select>
       </div>
+      <div class="col-12">
+        <a class="small text-decoration-none" data-bs-toggle="collapse" href="#moreFilters" role="button" aria-expanded="{{ 'true' if more_filters_active else 'false' }}" aria-controls="moreFilters">More filters (gender, pupil groups, search)</a>
+      </div>
+      <div class="collapse {% if more_filters_active %}show{% endif %} col-12" id="moreFilters">
+        <div class="row g-3">
       <div class="col-md-2">
         <label class="form-label">Gender</label>
         <select name="gender" class="form-select">
@@ -138,6 +144,8 @@
           {% endfor %}
         </select>
       </div>
+        </div>
+      </div>
       <div class="col-md-2">
         <label class="form-label">Sort by</label>
         <select name="sort" class="form-select">
@@ -154,28 +162,17 @@
   </div>
 </div>
 
-<div class="alert alert-light border mb-4">Showing: <strong>{{ term_label }}</strong> term · <strong>{{ academic_year }}</strong></div>
-
 <div class="row g-3 mb-4">
-  <div class="col-sm-6 col-xl-3">
+  <div class="col-sm-4">
     <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
         <div class="kpi-label mb-1">Filtered pupils</div>
         <div class="kpi-value mb-1">{{ filtered_pupil_total }}</div>
-        <div class="kpi-note">{{ filtered_class_count }} classes shown</div>
+        <div class="kpi-note">of {{ total_pupils }} on roll · {{ filtered_class_count }} classes shown</div>
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-xl-3">
-    <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
-      <div class="card-body">
-        <div class="kpi-label mb-1">Total pupils on roll</div>
-        <div class="kpi-value mb-1">{{ total_pupils }}</div>
-        <div class="kpi-note">All active pupils</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-sm-6 col-xl-3">
+  <div class="col-sm-4">
     <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
         <div class="kpi-label mb-1">Teachers</div>
@@ -184,7 +181,7 @@
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-xl-3">
+  <div class="col-sm-4">
     <div class="card shadow-sm h-100 admin-mini-stat dashboard-kpi-card dashboard-kpi-card-accent">
       <div class="card-body">
         <div class="kpi-label mb-1">Year 6 tracker</div>
@@ -216,8 +213,8 @@
 
 <div class="card shadow-sm">
   <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
-    <strong>Class overview</strong>
-    <span class="small text-muted">Each subject uses the latest saved term available for the filtered pupils in that class.</span>
+    <strong>By class</strong>
+    <span class="small text-muted">Latest saved term for each subject.</span>
   </div>
   <div class="table-responsive">
     <table class="table table-sm align-middle mb-0 admin-overview-table">
