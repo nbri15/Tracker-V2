@@ -17,7 +17,7 @@ class LoginForm(FlaskForm):
 class ChangePasswordForm(FlaskForm):
     """Password update form used for forced password reset."""
 
-    new_password = PasswordField('New password', validators=[DataRequired(), Length(min=8, max=128)])
+    new_password = PasswordField('New password', validators=[DataRequired(), Length(min=12, max=128, message='Password must be at least 12 characters. Three or four unrelated words work well.')])
     confirm_password = PasswordField(
         'Confirm password',
         validators=[DataRequired(), EqualTo('new_password', message='Passwords must match.')],

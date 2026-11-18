@@ -50,7 +50,13 @@ class Config:
         'pool_timeout': 30,
         'max_overflow': 10,
     }
-    REMEMBER_COOKIE_DURATION = timedelta(days=7)
+    REMEMBER_COOKIE_DURATION = timedelta(days=1)
+    # Signed-in sessions expire after this much inactivity (the cookie is refreshed on each request).
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
+    # Failed sign-in limits (see app/security.py).
+    LOGIN_MAX_ATTEMPTS = int(os.environ.get('LOGIN_MAX_ATTEMPTS', '5'))
+    LOGIN_WINDOW_SECONDS = int(os.environ.get('LOGIN_WINDOW_SECONDS', '900'))
+    LOGIN_MAX_ATTEMPTS_PER_IP = int(os.environ.get('LOGIN_MAX_ATTEMPTS_PER_IP', '30'))
     # Default hardening is safe for both environments; Production overrides as needed.
     SESSION_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_HTTPONLY = True

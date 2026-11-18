@@ -199,6 +199,7 @@ from app.services import (
     ensure_times_tables_columns,
     FoundationValidationError,
 )
+from app.security import password_problem
 from app.utils import admin_required, current_school_id, demo_filter_classes, demo_filter_pupils, is_demo_user, log_audit_event, require_same_school, safe_redirect_target, school_scoped_query
 from app.services.pupil_quick_add import create_quick_add_pupil
 
@@ -1201,6 +1202,9 @@ def users():
                 class_id_raw = request.form.get('class_id', '').strip()
                 if not username or not password:
                     raise ValueError('Username and password are required.')
+                problem = password_problem(password, username)
+                if problem:
+                    raise ValueError(problem)
                 if User.query.filter(
                     User.school_id == effective_school_id,
                     User.username.ilike(username),
@@ -1303,8 +1307,8 @@ def reset_user_password(user_id: int):
         require_change = request.form.get('require_password_change') == 'on'
         if not password:
             flash('A new password is required.', 'danger')
-        elif len(password) < 8:
-            flash('New password must be at least 8 characters long.', 'danger')
+        elif password_problem(password, user.username):
+            flash(password_problem(password, user.username), 'danger')
         elif password != confirm_password:
             flash('Passwords did not match.', 'danger')
         else:

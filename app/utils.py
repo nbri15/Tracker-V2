@@ -12,7 +12,12 @@ from app.models import AuditLog, Pupil, SchoolClass
 def safe_redirect_target(target: str | None, fallback: str) -> str:
     """Return a local redirect target, rejecting external URLs."""
     candidate = (target or '').strip()
-    if candidate:
+    if (
+        candidate.startswith('/')
+        and not candidate.startswith('//')
+        and '\\' not in candidate
+        and not any(ord(char) < 32 for char in candidate)
+    ):
         parsed = urlparse(candidate)
         if not parsed.scheme and not parsed.netloc:
             return candidate

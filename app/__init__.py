@@ -7,9 +7,12 @@ from flask import Flask, redirect, render_template, request, url_for
 from flask_login import current_user
 from sqlalchemy import inspect, text
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 from config import config_by_name
 from .extensions import csrf, db, login_manager, migrate
 from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label, short_band_label
+from .security import LoginThrottle, password_problem
 from .services.gender import normalize_gender
 from .utils import current_school_id, is_demo_user
 
@@ -26,6 +29,19 @@ def create_app(config_name: str | None = None) -> Flask:
 
     if app.config.get('ENV') == 'production' and app.config.get('SECRET_KEY') in (None, '', 'dev-secret-key-change-me'):
         raise RuntimeError('Set a private SECRET_KEY before starting Class Compass in production.')
+
+    if app.config.get('ENV') == 'production':
+        # Render terminates HTTPS in front of the app; trust exactly one proxy hop so the
+        # real client address (used by the login limiter) and https scheme are correct.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+        if app.config.get('DEMO_MODE'):
+            app.logger.warning('DEMO_MODE is enabled in production: demo logins are shown on the sign-in page. Turn it off before real pupil data is used.')
+
+    app.extensions['login_throttle'] = LoginThrottle(
+        max_attempts=app.config.get('LOGIN_MAX_ATTEMPTS', 5),
+        window_seconds=app.config.get('LOGIN_WINDOW_SECONDS', 900),
+        max_ip_attempts=app.config.get('LOGIN_MAX_ATTEMPTS_PER_IP', 30),
+    )
 
     register_extensions(app)
     register_blueprints(app)
@@ -210,8 +226,9 @@ def register_cli_commands(app: Flask) -> None:
         if existing_admin:
             click.echo(f"Admin user already exists ({existing_admin.username}). No changes made.")
             return
-        if len(password) < 8:
-            raise click.ClickException('Admin password must be at least 8 characters long.')
+        problem = password_problem(password, username)
+        if problem:
+            raise click.ClickException(problem)
 
         user = User(username=username.strip(), role='executive_admin', legacy_is_admin=True, is_active=True, require_password_change=force_password_change)
         user.set_password(password)

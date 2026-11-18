@@ -400,3 +400,10 @@ A `render.yaml` blueprint is included to provision:
 
 - Local development: `APP_ENV=development`, SQLite fallback, optional `seed.py`.
 - Production: `APP_ENV=production`, Postgres via `DATABASE_URL`, secure cookies enabled, no development account bootstrap UI.
+
+## Sign-in security
+
+- Passwords set through the app (change password, admin reset, new teacher, `create-admin`) must be at least 12 characters, must not contain the username and must avoid common patterns. Three or four unrelated words work well. Existing passwords keep working until they are next changed.
+- After 5 failed sign-ins for one account from one address within 15 minutes, further attempts are refused (HTTP 429) for the rest of that window. One address making 30 failed attempts in 15 minutes is also blocked. Limits can be changed with `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS` and `LOGIN_MAX_ATTEMPTS_PER_IP`. The counters live in memory in one web process and reset on restart.
+- Signed-in sessions expire after 8 hours of inactivity.
+- `DEMO_MODE` shows demo logins on the sign-in page. Keep it off in production once real pupil data is in use; the app logs a warning if it is on.
