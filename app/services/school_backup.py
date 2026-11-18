@@ -29,6 +29,32 @@ NOT_SCHOOL_DATA = {'alembic_version', 'fundamental_strands', 'fundamental_levels
 
 _FORMULA_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
 
+# id column -> (readable column added right after it, which lookup supplies the text)
+NAME_COLUMNS = {
+    'pupil_id': ('pupil_name', 'pupils'),
+    'class_id': ('class_name', 'classes'),
+    'teacher_id': ('teacher_username', 'users'),
+    'user_id': ('username', 'users'),
+    'updated_by_user_id': ('updated_by_username', 'users'),
+    'archived_by_user_id': ('archived_by_username', 'users'),
+}
+
+
+def _name_lookups(school_id: int) -> dict[str, dict[int, str]]:
+    """Readable names for ids, limited to this school, so the files can be read without cross-referencing."""
+    tables = db.metadata.tables
+    pupils, classes, users = tables['pupils'], tables['school_classes'], tables['users']
+    pupil_rows = db.session.execute(
+        select(pupils.c.id, pupils.c.first_name, pupils.c.last_name).where(pupils.c.school_id == school_id)
+    )
+    class_rows = db.session.execute(select(classes.c.id, classes.c.name).where(classes.c.school_id == school_id))
+    user_rows = db.session.execute(select(users.c.id, users.c.username).where(users.c.school_id == school_id))
+    return {
+        'pupils': {row[0]: f'{row[1]} {row[2]}'.strip() for row in pupil_rows},
+        'classes': {row[0]: row[1] for row in class_rows},
+        'users': {row[0]: row[1] for row in user_rows},
+    }
+
 
 def _cell(value):
     if value is None:
@@ -93,6 +119,7 @@ def build_school_backup(school_id: int, school_name: str, extra_files: dict[str,
     counts: dict[str, int] = {}
     buffer = io.BytesIO()
     generated = datetime.now(timezone.utc)
+    lookups = _name_lookups(school_id)
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
         for table in db.metadata.sorted_tables:
             statement = scoped_select(table, school_id)
@@ -100,10 +127,18 @@ def build_school_backup(school_id: int, school_name: str, extra_files: dict[str,
                 continue
             out = io.StringIO(newline='')
             writer = csv.writer(out)
-            writer.writerow([column.name for column in statement.selected_columns])
+            headers = [column.name for column in statement.selected_columns]
+            extras = [(index, *NAME_COLUMNS[name]) for index, name in enumerate(headers) if name in NAME_COLUMNS]
+            out_headers = list(headers)
+            for index, new_name, _ in reversed(extras):
+                out_headers.insert(index + 1, new_name)
+            writer.writerow(out_headers)
             rows = 0
             for row in db.session.execute(statement):
-                writer.writerow([_cell(value) for value in row])
+                cells = [_cell(value) for value in row]
+                for index, _, lookup_name in reversed(extras):
+                    cells.insert(index + 1, _cell(lookups[lookup_name].get(row[index], '')))
+                writer.writerow(cells)
                 rows += 1
             counts[table.name] = rows
             archive.writestr(f'data/{table.name}.csv', out.getvalue())
@@ -124,7 +159,8 @@ def _readme(school_name: str, generated: datetime, counts: dict[str, int], extra
         'Delete old copies you no longer need.',
         '',
         'What is inside',
-        '- data/*.csv: one file per table, limited to this school.',
+        '- data/*.csv: one file per table, limited to this school. Columns ending in _id are database numbers;',
+        '  a readable column (pupil_name, class_name, username) is added next to them so you can see who is who.',
     ]
     if 'school_workbook.xlsx' in extra_names:
         lines.append('- school_workbook.xlsx: the school workbook in the same format used for imports.')
