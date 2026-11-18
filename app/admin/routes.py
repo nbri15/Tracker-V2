@@ -2412,6 +2412,35 @@ def export_full_workbook():
     return send_file(output, as_attachment=True, download_name='full_school_import_template.xlsx')
 
 
+@admin_bp.route('/backup/download', methods=['POST'])
+@login_required
+@admin_required
+def download_backup():
+    """One-click download of everything for the current school (CSV files plus the school workbook)."""
+    from app.services.school_backup import build_school_backup
+
+    effective_school_id = _workbook_effective_school_id()
+    school = db.session.get(School, effective_school_id) if effective_school_id else None
+    if school is None:
+        flash('Select a school before downloading a backup.', 'warning')
+        return redirect(url_for('admin.imports'))
+    extra_files = {}
+    try:
+        workbook = _build_full_template_workbook(effective_school_id)
+        workbook_bytes = io.BytesIO()
+        workbook.save(workbook_bytes)
+        extra_files['school_workbook.xlsx'] = workbook_bytes.getvalue()
+    except Exception:  # the CSV files are the backup; the workbook is a convenience copy
+        current_app.logger.warning('Backup workbook could not be built school_id=%s', effective_school_id, exc_info=True)
+    data, counts = build_school_backup(effective_school_id, school.name, extra_files=extra_files)
+    log_audit_event('school_backup_downloaded', 'school', school.id, school_id=school.id, details=f'tables={len(counts)} rows={sum(counts.values())}')
+    db.session.commit()
+    filename = f"class-compass-backup-{school.slug or school.id}-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.zip"
+    response = send_file(io.BytesIO(data), mimetype='application/zip', as_attachment=True, download_name=filename)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @admin_bp.route('/reports/headline')
 @login_required
 @admin_required
