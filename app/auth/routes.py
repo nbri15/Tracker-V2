@@ -10,7 +10,7 @@ from app.services import (
     get_school_working_academic_year,
     should_show_academic_year_reminder,
 )
-from app.security import password_problem
+from app.security import LoginThrottle, password_problem
 from app.utils import is_demo_mode_enabled, safe_redirect_target
 
 from . import auth_bp
@@ -28,6 +28,20 @@ def _login_rollover_years(user: User) -> tuple[str, str] | None:
     return working_year, calendar_year
 
 
+def _login_throttle() -> LoginThrottle:
+    """Return this app's login limiter, creating it on first use if the factory did not."""
+
+    throttle = current_app.extensions.get('login_throttle')
+    if throttle is None:
+        throttle = LoginThrottle(
+            max_attempts=current_app.config.get('LOGIN_MAX_ATTEMPTS', 5),
+            window_seconds=current_app.config.get('LOGIN_WINDOW_SECONDS', 900),
+            max_ip_attempts=current_app.config.get('LOGIN_MAX_ATTEMPTS_PER_IP', 30),
+        )
+        current_app.extensions['login_throttle'] = throttle
+    return throttle
+
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     """Log a user into the application."""
@@ -39,7 +53,7 @@ def login():
     if form.validate_on_submit():
         school_code = (form.school_code.data or '').strip().lower()
         identifier = form.username.data.strip()
-        throttle = current_app.extensions['login_throttle']
+        throttle = _login_throttle()
         client_ip = request.remote_addr or 'unknown'
         throttle_account = f'{school_code}|{identifier}'
         wait_seconds = throttle.seconds_until_allowed(client_ip, throttle_account)
