@@ -48,6 +48,12 @@
   </div>
 </div>
 
+{% if entry_progress and entry_progress.total %}
+<div class="alert alert-{{ 'success' if entry_progress.complete == entry_progress.total else 'info' }} d-flex flex-wrap justify-content-between align-items-center gap-2" id="entry-progress">
+  <div><strong>{{ entry_progress.complete }} of {{ entry_progress.total }}</strong> class subjects have every score in for {{ entry_progress.term|capitalize }} term.</div>
+  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.scores_checklist', academic_year=academic_year, term=entry_progress.term) }}">See what is missing</a>
+</div>
+{% endif %}
 <div class="card shadow-sm mb-4 filter-card">
   <div class="card-header bg-white">
     <strong>Filters</strong>

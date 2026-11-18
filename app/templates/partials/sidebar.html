@@ -69,8 +69,12 @@
           <a class="nav-link text-white {% if request.endpoint == 'admin.foundation_tracker' %}active{% endif %}" href="{{ url_for('admin.foundation_tracker') }}">Foundation tracker</a>
         {% endcall %}
 
-        {% call nav_group('navReports', 'Reports & data', ['admin.headline_report', 'admin.export_headline_report', 'admin.imports', 'admin.data_quality', 'admin.archived_pupils', 'admin.confirm_permanent_delete_pupil']) %}
+        {% call nav_group('navReports', 'Reports & data', ['admin.headline_report', 'admin.export_headline_report', 'admin.subject_leader_view', 'admin.scores_checklist', 'admin.report_governor_summary', 'admin.reports_export_centre', 'admin.report_class_overview', 'admin.imports', 'admin.data_quality', 'admin.archived_pupils', 'admin.confirm_permanent_delete_pupil']) %}
           <a class="nav-link text-white {% if request.endpoint in ['admin.headline_report', 'admin.export_headline_report'] %}active{% endif %}" href="{{ url_for('admin.headline_report') }}">Headline report</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.subject_leader_view' %}active{% endif %}" href="{{ url_for('admin.subject_leader_view') }}">Subject view</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.scores_checklist' %}active{% endif %}" href="{{ url_for('admin.scores_checklist') }}">Scores checklist</a>
+          <a class="nav-link text-white {% if request.endpoint == 'admin.report_governor_summary' %}active{% endif %}" href="{{ url_for('admin.report_governor_summary') }}">Governor summary</a>
+          <a class="nav-link text-white {% if request.endpoint in ['admin.reports_export_centre', 'admin.report_class_overview'] %}active{% endif %}" href="{{ url_for('admin.reports_export_centre') }}">More reports & exports</a>
           <a class="nav-link text-white {% if request.endpoint == 'admin.imports' %}active{% endif %}" href="{{ url_for('admin.imports') }}">Imports & backup</a>
           <a class="nav-link text-white {% if request.endpoint == 'admin.data_quality' %}active{% endif %}" href="{{ url_for('admin.data_quality') }}">Data quality</a>
           <a class="nav-link text-white {% if request.endpoint in ['admin.archived_pupils', 'admin.confirm_permanent_delete_pupil'] %}active{% endif %}" href="{{ url_for('admin.archived_pupils') }}">Archived pupils</a>

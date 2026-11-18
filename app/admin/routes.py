@@ -2672,6 +2672,30 @@ def scores_checklist():
                            term=term, terms=TERMS, academic_year_options=build_academic_year_options(academic_year))
 
 
+@admin_bp.route('/reports/subject')
+@login_required
+@admin_required
+def subject_leader_view():
+    """One subject across every class, with year-group totals. Read-only."""
+    context_redirect = _require_admin_school_context()
+    if context_redirect:
+        return context_redirect
+    from app.services.assessments import ALL_SUBJECTS, TERMS, build_class_overview_rows, format_subject_name
+    from app.services.subject_leader import build_subject_view
+    subject = request.args.get('subject', 'maths').strip().lower()
+    term = request.args.get('term', 'all').strip().lower()
+    if subject not in ALL_SUBJECTS or term not in {'all', *dict(TERMS)}:
+        abort(400)
+    academic_year = request.args.get('academic_year', get_selected_current_academic_year())
+    classes = (demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
+               .options(joinedload(SchoolClass.teacher)).order_by(SchoolClass.year_group, SchoolClass.name).all())
+    classes = [c for c in classes if c.year_group != 0]  # Reception uses the EYFS tracker, not termly results
+    view = build_subject_view(build_class_overview_rows(classes, academic_year, term=term), subject)
+    return render_template('admin/subject_leader.html', view=view, subject=subject, subject_label=format_subject_name(subject),
+                           subjects=[(key, format_subject_name(key)) for key in ALL_SUBJECTS], term=term, terms=TERMS,
+                           academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year))
+
+
 @admin_bp.route('/reports/governor-summary')
 @login_required
 @admin_required

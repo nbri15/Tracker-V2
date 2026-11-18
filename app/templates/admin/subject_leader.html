@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}{{ subject_label }} across the school{% endblock %}
+{% set page_heading = subject_label ~ ' across the school' %}
+{% macro bar(row) -%}
+  <div class="admin-summary-bar" aria-label="{{ subject_label }} results">
+    <span class="segment segment-wt" title="{{ row.working_towards }} working towards" style="width: {{ row.working_towards_percent }}%"></span>
+    <span class="segment segment-ot" title="{{ row.on_track }} on track" style="width: {{ row.on_track_percent }}%"></span>
+    <span class="segment segment-ex" title="{{ row.exceeding }} exceeding" style="width: {{ row.exceeding_percent }}%"></span>
+  </div>
+{%- endmacro %}
+{% block content %}
+<form method="get" class="card card-body shadow-sm mb-3"><div class="row g-2 align-items-end">
+  <div class="col-sm-3"><label class="form-label" for="sl-subject">Subject</label>
+    <select id="sl-subject" name="subject" class="form-select">{% for key, label in subjects %}<option value="{{ key }}" {% if key == subject %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-sm-3"><label class="form-label" for="sl-year">Academic year</label>
+    <select id="sl-year" name="academic_year" class="form-select">{% for option in academic_year_options %}<option value="{{ option.name }}" {% if option.name == academic_year %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select></div>
+  <div class="col-sm-3"><label class="form-label" for="sl-term">Term</label>
+    <select id="sl-term" name="term" class="form-select"><option value="all" {% if term == 'all' %}selected{% endif %}>Latest available</option>{% for value, label in terms %}<option value="{{ value }}" {% if term == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-sm-3"><button class="btn btn-primary">Show</button></div>
+</div></form>
+
+{% set ws = view.whole_school %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">On track or better</div><div class="kpi-value">{{ ws.on_track_plus_percent }}%</div><div class="kpi-note">{{ ws.on_track_plus }} of {{ ws.scored }} pupils with a result</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">Working towards</div><div class="kpi-value">{{ ws.working_towards_percent }}%</div><div class="kpi-note">{{ ws.working_towards }} pupils</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">Exceeding</div><div class="kpi-value">{{ ws.exceeding_percent }}%</div><div class="kpi-note">{{ ws.exceeding }} pupils</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">Pupils on roll (Years 1-6)</div><div class="kpi-value">{{ ws.pupil_count }}</div><div class="kpi-note">{{ ws.active_interventions }} active interventions</div></div></div></div>
+</div>
+{% if view.highest and view.lowest %}
+<p class="text-muted small">Highest on track or better: <strong>{{ view.highest }}</strong> &middot; lowest: <strong>{{ view.lowest }}</strong>. Class sizes and cohorts differ, so use this as a prompt for a conversation, not a league table.</p>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><strong>By year group</strong></div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead class="table-light"><tr><th>Year</th><th class="text-end">Classes</th><th class="text-end">Pupils</th><th class="text-end">With a result</th><th style="min-width:180px">Split</th><th class="text-end">On track or better</th></tr></thead>
+    <tbody>
+    {% for g in view.year_groups if g.year_group != 0 %}
+      <tr><td>Year {{ g.year_group }}</td><td class="text-end">{{ g.classes }}</td><td class="text-end">{{ g.pupil_count }}</td><td class="text-end">{{ g.scored }}</td><td>{{ bar(g) }}</td><td class="text-end fw-semibold">{{ g.on_track_plus_percent }}%</td></tr>
+    {% else %}
+      <tr><td colspan="6" class="text-center text-muted py-3">No classes to show.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white"><strong>By class</strong></div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead class="table-light"><tr><th>Class</th><th>Teacher</th><th>Term shown</th><th class="text-end">Results in</th><th style="min-width:180px">Split</th><th class="text-end">On track or better</th><th class="text-end">Average %</th><th class="text-end">Support</th></tr></thead>
+    <tbody>
+    {% for r in view.rows %}
+      <tr>
+        <td><a class="fw-semibold text-decoration-none" href="{{ url_for('admin.class_detail', class_id=r.class_id) }}">{{ r.class_name }}</a><div class="small text-muted">Year {{ r.year_group }}</div></td>
+        <td>{{ r.teacher_name }}</td>
+        <td>{{ r.term_label }}</td>
+        <td class="text-end">{{ r.scored }} / {{ r.pupil_count }}{% if r.missing %}<div class="small text-warning-emphasis">{{ r.missing }} missing</div>{% endif %}</td>
+        <td>{% if r.scored %}{{ bar(r) }}{% else %}<span class="text-muted small">No results yet</span>{% endif %}</td>
+        <td class="text-end fw-semibold">{% if r.scored %}{{ r.on_track_plus_percent }}%{% else %}&mdash;{% endif %}</td>
+        <td class="text-end">{% if r.average_percent is not none %}{{ r.average_percent }}{% else %}&mdash;{% endif %}</td>
+        <td class="text-end">{{ r.active_interventions }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="text-center text-muted py-4">No classes to show.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+<p class="small text-muted mt-2">Uses each class's saved results for the term you pick (or its latest term). Reception is not included because it uses the EYFS tracker. Bars run from working towards to on track to exceeding.</p>
+{% endblock %}
