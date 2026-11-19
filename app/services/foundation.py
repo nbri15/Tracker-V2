@@ -6,7 +6,7 @@ from collections import Counter
 
 from app.extensions import db
 from app.models import FoundationResult, Pupil
-from app.services.assessments import get_latest_previous_assessment
+from app.services.assessments import get_class_pupil_query, get_latest_previous_assessment
 
 FOUNDATION_SUBJECTS = (
     ('re', 'RE'),
@@ -31,6 +31,7 @@ FOUNDATION_JUDGEMENTS = (
     ('On Track', 'On Track'),
     ('Exceeding', 'Exceeding'),
 )
+JUDGED = ('Working Towards', 'On Track', 'Exceeding')
 FOUNDATION_JUDGEMENT_THEMES = {
     'Working Towards': 'band-wts',
     'On Track': 'band-ot',
@@ -142,3 +143,62 @@ def save_foundation_results(pupils: list[Pupil], academic_year: str, half_term: 
             record.note = note or None
             record.updated_by_user_id = user_id
             db.session.add(record)
+
+
+def _half_term_label(half_term: str) -> str:
+    return dict(FOUNDATION_HALF_TERMS).get(half_term, half_term)
+
+
+def build_foundation_subject_rows(classes, academic_year: str, subject: str, half_term: str = 'latest') -> dict:
+    """Class rows for one Foundation subject, in the same shape the Subject view already uses.
+
+    ``half_term='latest'`` picks the most recent half term that has any judgement saved for this
+    subject among these classes' pupils. Returns ``class_rows``, ``top_pupils`` (everyone judged
+    Exceeding, grouped by class) and the ``half_term`` actually used.
+    """
+    pupils_by_class = {}
+    for school_class in classes:
+        pupils_by_class[school_class.id] = (
+            get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True)).order_by(Pupil.last_name, Pupil.first_name).all()
+        )
+    all_ids = [pupil.id for pupils in pupils_by_class.values() for pupil in pupils]
+
+    if half_term == 'latest':
+        used = set()
+        if all_ids:
+            used = {
+                row[0] for row in db.session.query(FoundationResult.half_term).filter(
+                    FoundationResult.pupil_id.in_(all_ids), FoundationResult.academic_year == academic_year,
+                    FoundationResult.subject == subject, FoundationResult.judgement.in_(JUDGED),
+                ).distinct()
+            }
+        order = [key for key, _label in FOUNDATION_HALF_TERMS]
+        half_term = max(used, key=order.index) if used else order[0]
+
+    judgement_by_pupil = {}
+    if all_ids:
+        for record in FoundationResult.query.filter(
+            FoundationResult.pupil_id.in_(all_ids), FoundationResult.academic_year == academic_year,
+            FoundationResult.half_term == half_term, FoundationResult.subject == subject,
+        ).all():
+            judgement_by_pupil[record.pupil_id] = record.judgement
+
+    class_rows, top_pupils = [], []
+    for school_class in classes:
+        pupils = pupils_by_class[school_class.id]
+        counts = Counter(judgement_by_pupil.get(pupil.id) for pupil in pupils)
+        scored = counts['Working Towards'] + counts['On Track'] + counts['Exceeding']
+        class_rows.append({
+            'class_id': school_class.id, 'class_name': school_class.name, 'year_group': school_class.year_group,
+            'teacher_name': school_class.teacher.username if school_class.teacher else 'Unassigned',
+            'pupil_count': len(pupils), 'active_interventions': 0,
+            'subjects': {subject: {
+                'working_towards': counts['Working Towards'], 'on_track': counts['On Track'], 'exceeding': counts['Exceeding'],
+                'average_percent': None, 'term_label': _half_term_label(half_term) if scored else 'No data',
+            }},
+        })
+        for pupil in pupils:
+            if judgement_by_pupil.get(pupil.id) == 'Exceeding':
+                top_pupils.append({'pupil_id': pupil.id, 'name': pupil.full_name, 'class_name': school_class.name, 'year_group': school_class.year_group})
+    top_pupils.sort(key=lambda p: (p['year_group'], p['class_name'].lower(), p['name'].lower()))
+    return {'class_rows': class_rows, 'top_pupils': top_pupils, 'half_term': half_term, 'half_term_label': _half_term_label(half_term)}

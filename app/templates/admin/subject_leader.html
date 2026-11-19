@@ -11,20 +11,31 @@
 {% block content %}
 <form method="get" class="card card-body shadow-sm mb-3"><div class="row g-2 align-items-end">
   <div class="col-sm-3"><label class="form-label" for="sl-subject">Subject</label>
-    <select id="sl-subject" name="subject" class="form-select">{% for key, label in subjects %}<option value="{{ key }}" {% if key == subject %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <select id="sl-subject" name="subject" class="form-select">
+      <optgroup label="Core subjects">{% for key, label in core_subjects %}<option value="{{ key }}" {% if key == subject %}selected{% endif %}>{{ label }}</option>{% endfor %}</optgroup>
+      <optgroup label="Foundation subjects">{% for key, label in foundation_subjects %}<option value="{{ key }}" {% if key == subject %}selected{% endif %}>{{ label }}</option>{% endfor %}</optgroup>
+    </select></div>
   <div class="col-sm-3"><label class="form-label" for="sl-year">Academic year</label>
     <select id="sl-year" name="academic_year" class="form-select">{% for option in academic_year_options %}<option value="{{ option.name }}" {% if option.name == academic_year %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select></div>
+  {% if is_foundation %}
+  <div class="col-sm-3"><label class="form-label" for="sl-half">Half term</label>
+    <select id="sl-half" name="half_term" class="form-select"><option value="latest" {% if half_term == 'latest' %}selected{% endif %}>Latest with judgements</option>{% for value, label in half_terms %}<option value="{{ value }}" {% if half_term == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  {% else %}
   <div class="col-sm-3"><label class="form-label" for="sl-term">Term</label>
     <select id="sl-term" name="term" class="form-select"><option value="all" {% if term == 'all' %}selected{% endif %}>Latest available</option>{% for value, label in terms %}<option value="{{ value }}" {% if term == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  {% endif %}
   <div class="col-sm-3"><button class="btn btn-primary">Show</button></div>
 </div></form>
 
+{% if is_foundation %}
+<p class="text-muted small mb-2">{{ subject_label }} is judged each half term as Working Towards, On Track or Exceeding, with no marks, so percentages show how many pupils sit in each band{% if shown_half_term %} (showing <strong>{{ shown_half_term }}</strong>){% endif %}. After changing the subject, press Show to switch between the term and half-term pickers.</p>
+{% endif %}
 {% set ws = view.whole_school %}
 <div class="row g-3 mb-3">
   <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">On track or better</div><div class="kpi-value">{{ ws.on_track_plus_percent }}%</div><div class="kpi-note">{{ ws.on_track_plus }} of {{ ws.scored }} pupils with a result</div></div></div></div>
   <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">Working towards</div><div class="kpi-value">{{ ws.working_towards_percent }}%</div><div class="kpi-note">{{ ws.working_towards }} pupils</div></div></div></div>
   <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">Exceeding</div><div class="kpi-value">{{ ws.exceeding_percent }}%</div><div class="kpi-note">{{ ws.exceeding }} pupils</div></div></div></div>
-  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">Pupils on roll (Years 1-6)</div><div class="kpi-value">{{ ws.pupil_count }}</div><div class="kpi-note">{{ ws.active_interventions }} active interventions</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="kpi-label">Pupils on roll (Years 1-6)</div><div class="kpi-value">{{ ws.pupil_count }}</div>{% if not is_foundation %}<div class="kpi-note">{{ ws.active_interventions }} active interventions</div>{% endif %}</div></div></div>
 </div>
 {% if view.highest and view.lowest %}
 <p class="text-muted small">Highest on track or better: <strong>{{ view.highest }}</strong> &middot; lowest: <strong>{{ view.lowest }}</strong>. Class sizes and cohorts differ, so use this as a prompt for a conversation, not a league table.</p>
@@ -47,7 +58,7 @@
 <div class="card shadow-sm">
   <div class="card-header bg-white"><strong>By class</strong></div>
   <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-    <thead class="table-light"><tr><th>Class</th><th>Teacher</th><th>Term shown</th><th class="text-end">Results in</th><th style="min-width:180px">Split</th><th class="text-end">On track or better</th><th class="text-end">Average %</th><th class="text-end">Support</th></tr></thead>
+    <thead class="table-light"><tr><th>Class</th><th>Teacher</th><th>Term shown</th><th class="text-end">Results in</th><th style="min-width:180px">Split</th><th class="text-end">On track or better</th>{% if not is_foundation %}<th class="text-end">Average %</th><th class="text-end">Support</th>{% endif %}</tr></thead>
     <tbody>
     {% for r in view.rows %}
       <tr>
@@ -57,14 +68,29 @@
         <td class="text-end">{{ r.scored }} / {{ r.pupil_count }}{% if r.missing %}<div class="small text-warning-emphasis">{{ r.missing }} missing</div>{% endif %}</td>
         <td>{% if r.scored %}{{ bar(r) }}{% else %}<span class="text-muted small">No results yet</span>{% endif %}</td>
         <td class="text-end fw-semibold">{% if r.scored %}{{ r.on_track_plus_percent }}%{% else %}&mdash;{% endif %}</td>
-        <td class="text-end">{% if r.average_percent is not none %}{{ r.average_percent }}{% else %}&mdash;{% endif %}</td>
-        <td class="text-end">{{ r.active_interventions }}</td>
+        {% if not is_foundation %}<td class="text-end">{% if r.average_percent is not none %}{{ r.average_percent }}{% else %}&mdash;{% endif %}</td>
+        <td class="text-end">{{ r.active_interventions }}</td>{% endif %}
       </tr>
     {% else %}
-      <tr><td colspan="8" class="text-center text-muted py-4">No classes to show.</td></tr>
+      <tr><td colspan="{{ 6 if is_foundation else 8 }}" class="text-center text-muted py-4">No classes to show.</td></tr>
     {% endfor %}
     </tbody>
   </table></div>
 </div>
+{% if is_foundation %}
+<div class="card shadow-sm mt-4" id="top-children">
+  <div class="card-header bg-white"><strong>Top children in {{ subject_label }}</strong> <span class="text-muted small">&mdash; judged Exceeding ({{ top_pupils|length }})</span></div>
+  {% if top_pupils %}
+  <div class="card-body"><div class="row g-3">
+    {% for g in top_groups %}
+      <div class="col-sm-6 col-lg-4"><div class="fw-semibold">{{ g.class_name }} <span class="text-muted small">Year {{ g.year_group }} &middot; {{ g.names|length }}</span></div>
+        <ul class="mb-0 ps-3">{% for name in g.names %}<li>{{ name }}</li>{% endfor %}</ul></div>
+    {% endfor %}
+  </div></div>
+  {% else %}
+  <div class="card-body text-muted">No pupils are judged Exceeding yet for this subject and half term.</div>
+  {% endif %}
+</div>
+{% endif %}
 <p class="small text-muted mt-2">Uses each class's saved results for the term you pick (or its latest term). Reception is not included because it uses the EYFS tracker. Bars run from working towards to on track to exceeding.</p>
 {% endblock %}
