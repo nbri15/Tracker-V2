@@ -89,7 +89,7 @@ def test_subject_page_with_no_results_still_loads(world):  # noqa: F811
 def test_subject_page_is_admin_only_and_rejects_bad_input(world):  # noqa: F811
     app, ids = world
     assert _get(app, ids, '/admin/reports/subject', user='teacher').status_code == 403
-    assert _get(app, ids, '/admin/reports/subject', subject='art').status_code == 400
+    assert _get(app, ids, '/admin/reports/subject', subject='woodwork').status_code == 400
     assert _get(app, ids, '/admin/reports/subject', term='christmas').status_code == 400
 
 
