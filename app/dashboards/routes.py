@@ -221,8 +221,18 @@ def admin_dashboard():
     teacher_options = school_scoped_query(User, User.query.filter_by(role='teacher', is_active=True, is_demo=current_user.is_demo)).order_by(User.username).all()
     class_options = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
     year6_overview = {}
+    entry_progress = None
+    try:  # a helpful extra: never let it stop the dashboard loading
+        from app.services.assessments import get_current_term
+        from app.services.scores_checklist import build_checklist, headline
+        checklist_term = get_current_term()
+        checklist_classes = demo_filter_classes(SchoolClass.query.filter_by(is_active=True)).order_by(SchoolClass.year_group, SchoolClass.name).all()
+        entry_progress = dict(headline(build_checklist(school_id, academic_year, checklist_term, checklist_classes)), term=checklist_term)
+    except Exception:
+        current_app.logger.exception('Could not build the scores-entry summary for the admin dashboard')
 
     context = {
+        'entry_progress': entry_progress,
         'academic_year': academic_year,
         'working_academic_year': working_year.name,
         'calendar_academic_year': calendar_year,

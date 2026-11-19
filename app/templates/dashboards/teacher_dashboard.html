@@ -81,6 +81,8 @@
     <div><div class="kpi-label">Waiting for next assessment</div><div class="h3 mb-0">{{ support_progress.awaiting + support_progress.no_baseline }}</div></div>
   </div></div>
   {% endif %}
+  <p class="mb-3"><a class="small text-decoration-none" data-bs-toggle="collapse" href="#subjectCharts" role="button" aria-expanded="false" aria-controls="subjectCharts">Show subject charts</a></p>
+  <div class="collapse" id="subjectCharts">
   <div class="row g-4 mb-4">
     {% for row in chart_cards %}
       <div class="col-md-6 col-xl-3">
@@ -126,6 +128,7 @@
         </div>
       </div>
     {% endfor %}
+  </div>
   </div>
 
   <div class="row g-4">
