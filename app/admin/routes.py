@@ -2676,23 +2676,42 @@ def scores_checklist():
 @login_required
 @admin_required
 def subject_leader_view():
-    """One subject across every class, with year-group totals. Read-only."""
+    """One subject across every class, with year-group totals. Read-only. Core and Foundation subjects."""
     context_redirect = _require_admin_school_context()
     if context_redirect:
         return context_redirect
     from app.services.assessments import ALL_SUBJECTS, TERMS, build_class_overview_rows, format_subject_name
+    from app.services.foundation import FOUNDATION_HALF_TERMS, FOUNDATION_SUBJECTS, build_foundation_subject_rows
+    from itertools import groupby
     from app.services.subject_leader import build_subject_view
+    foundation_labels = dict(FOUNDATION_SUBJECTS)
     subject = request.args.get('subject', 'maths').strip().lower()
     term = request.args.get('term', 'all').strip().lower()
-    if subject not in ALL_SUBJECTS or term not in {'all', *dict(TERMS)}:
+    half_term = request.args.get('half_term', 'latest').strip().lower()
+    is_foundation = subject in foundation_labels
+    if (subject not in ALL_SUBJECTS and not is_foundation) or term not in {'all', *dict(TERMS)} \
+            or half_term not in {'latest', *dict(FOUNDATION_HALF_TERMS)}:
         abort(400)
     academic_year = request.args.get('academic_year', get_selected_current_academic_year())
     classes = (demo_filter_classes(SchoolClass.query.filter_by(is_active=True))
                .options(joinedload(SchoolClass.teacher)).order_by(SchoolClass.year_group, SchoolClass.name).all())
     classes = [c for c in classes if c.year_group != 0]  # Reception uses the EYFS tracker, not termly results
-    view = build_subject_view(build_class_overview_rows(classes, academic_year, term=term), subject)
-    return render_template('admin/subject_leader.html', view=view, subject=subject, subject_label=format_subject_name(subject),
-                           subjects=[(key, format_subject_name(key)) for key in ALL_SUBJECTS], term=term, terms=TERMS,
+    top_pupils, shown_half_term = [], None
+    if is_foundation:
+        built = build_foundation_subject_rows(classes, academic_year, subject, half_term)
+        class_rows, top_pupils, shown_half_term = built['class_rows'], built['top_pupils'], built['half_term_label']
+        subject_label = foundation_labels[subject]
+    else:
+        class_rows = build_class_overview_rows(classes, academic_year, term=term)
+        subject_label = format_subject_name(subject)
+    top_groups = [{'class_name': key[1], 'year_group': key[0], 'names': [m['name'] for m in members]}
+                  for key, members in ((k, list(g)) for k, g in groupby(top_pupils, key=lambda p: (p['year_group'], p['class_name'])))]
+    view = build_subject_view(class_rows, subject)
+    core_subjects = [(key, format_subject_name(key)) for key in ALL_SUBJECTS]
+    return render_template('admin/subject_leader.html', view=view, subject=subject, subject_label=subject_label,
+                           is_foundation=is_foundation, top_pupils=top_pupils, top_groups=top_groups, shown_half_term=shown_half_term,
+                           core_subjects=core_subjects, foundation_subjects=list(FOUNDATION_SUBJECTS),
+                           term=term, terms=TERMS, half_term=half_term, half_terms=FOUNDATION_HALF_TERMS,
                            academic_year=academic_year, academic_year_options=build_academic_year_options(academic_year))
 
 
