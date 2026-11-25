@@ -401,6 +401,15 @@ A `render.yaml` blueprint is included to provision:
 - Local development: `APP_ENV=development`, SQLite fallback, optional `seed.py`.
 - Production: `APP_ENV=production`, Postgres via `DATABASE_URL`, secure cookies enabled, no development account bootstrap UI.
 
+### Keeping the free hosting awake
+
+`.github/workflows/keep-awake.yml` calls `/healthz` every 10 minutes, 7am-5pm UK time, Monday to Friday, so
+Render's free web service does not sleep during the school day. It runs on weekdays in the holidays
+too, which also stops the free Supabase database pausing. Set a repository **variable** (not a secret) called `SITE_URL` to the site address, e.g.
+`https://your-app.onrender.com`. To test it, open the Actions tab, pick "Keep awake" and press
+"Run workflow". GitHub switches scheduled jobs off after 60 days with no repository activity, so
+re-enable it there if the site is ever left untouched for that long.
+
 ## Sign-in security
 
 - Passwords set through the app (change password, admin reset, new teacher, `create-admin`) must be at least 12 characters, must not contain the username and must avoid common patterns. Three or four unrelated words work well. Existing passwords keep working until they are next changed.
