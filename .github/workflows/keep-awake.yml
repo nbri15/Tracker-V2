@@ -1,0 +1,30 @@
+name: Keep awake
+
+# Pings the site's /healthz address so the free hosting does not go to sleep during the
+# school day, and so the free database does not pause over quiet spells (e.g. holidays).
+# Needs one repository variable: SITE_URL (Settings > Secrets and variables > Actions >
+# Variables), e.g. https://your-app.onrender.com - without it this job does nothing.
+
+on:
+  schedule:
+    - cron: '*/10 6-18 * * 1-5'   # every 10 minutes, Mon-Fri, 06:00-18:59 UTC
+    - cron: '17 3 * * *'          # once a day, every day, so the database never goes quiet for a week
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /healthz
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "$SITE_URL" ]; then
+            echo "SITE_URL is not set - nothing to ping."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 60 --retry 3 --retry-delay 20 --retry-all-errors "${SITE_URL%/}/healthz"
+          echo
