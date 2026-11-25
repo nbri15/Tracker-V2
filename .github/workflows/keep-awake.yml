@@ -1,14 +1,16 @@
 name: Keep awake
 
-# Pings the site's /healthz address so the free hosting does not go to sleep during the
-# school day, and so the free database does not pause over quiet spells (e.g. holidays).
+# Pings the site's /healthz address every 10 minutes, 7am-5pm UK time, Monday to Friday, so the
+# free hosting does not go to sleep during the school day. Because it also runs on weekdays in
+# school holidays, the free database never sits idle long enough to pause.
 # Needs one repository variable: SITE_URL (Settings > Secrets and variables > Actions >
 # Variables), e.g. https://your-app.onrender.com - without it this job does nothing.
 
 on:
   schedule:
-    - cron: '*/10 6-18 * * 1-5'   # every 10 minutes, Mon-Fri, 06:00-18:59 UTC
-    - cron: '17 3 * * *'          # once a day, every day, so the database never goes quiet for a week
+    # GitHub schedules use UTC. This covers 7am-5pm UK time in both winter (UTC) and summer (BST);
+    # the step below skips any run that falls outside 7am-5pm UK time.
+    - cron: '*/10 6-16 * * 1-5'
   workflow_dispatch:
 
 permissions: {}
@@ -21,7 +23,13 @@ jobs:
       - name: Ping /healthz
         env:
           SITE_URL: ${{ vars.SITE_URL }}
+          EVENT: ${{ github.event_name }}
         run: |
+          uk_hour=$(TZ=Europe/London date +%-H)
+          if [ "$EVENT" = "schedule" ] && { [ "$uk_hour" -lt 7 ] || [ "$uk_hour" -ge 17 ]; }; then
+            echo "It is ${uk_hour}:xx in the UK - outside 7am-5pm, skipping."
+            exit 0
+          fi
           if [ -z "$SITE_URL" ]; then
             echo "SITE_URL is not set - nothing to ping."
             exit 0
