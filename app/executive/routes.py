@@ -8,7 +8,7 @@ from datetime import datetime
 
 from flask import Response, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
@@ -236,7 +236,7 @@ def _validate_school_payload(name: str, slug: str, *, exclude_id: int | None = N
         raise ValueError('School code is required.')
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', slug):
         raise ValueError('School code may contain lowercase letters, numbers and single hyphens only.')
-    duplicate = School.query.filter(or_(School.name.ilike(name), School.slug == slug))
+    duplicate = School.query.filter(or_(func.lower(School.name) == name.lower(), School.slug == slug))
     if exclude_id is not None:
         duplicate = duplicate.filter(School.id != exclude_id)
     if duplicate.first():
@@ -605,7 +605,7 @@ def create_school_admin(school_id: int):
         return redirect(url_for('executive.school_detail', school_id=school.id))
     if User.query.filter(
         User.school_id == school.id,
-        User.username.ilike(username),
+        func.lower(User.username) == username.lower(),
     ).first():
         flash('Username already exists.', 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))

@@ -1207,7 +1207,7 @@ def users():
                     raise ValueError(problem)
                 if User.query.filter(
                     User.school_id == effective_school_id,
-                    User.username.ilike(username),
+                    func.lower(User.username) == username.lower(),
                 ).first():
                     raise ValueError('That username already exists.')
                 user = User(
@@ -1230,12 +1230,14 @@ def users():
             elif action == 'update':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
                 require_same_school(user)
+                if user.is_executive_admin:
+                    abort(403)
                 username = request.form.get(f'username_{user.id}', '').strip()
                 class_id_raw = request.form.get(f'class_id_{user.id}', '').strip()
                 if username and username != user.username:
                     if User.query.filter(
                         User.school_id == effective_school_id,
-                        User.username.ilike(username),
+                        func.lower(User.username) == username.lower(),
                         User.id != user.id,
                     ).first():
                         raise ValueError('That username is already in use.')
@@ -1255,6 +1257,8 @@ def users():
             elif action == 'delete':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
                 require_same_school(user)
+                if user.is_executive_admin:
+                    abort(403)
                 if user.id == current_user.id:
                     raise ValueError('You cannot delete your own account while logged in.')
                 if user.can_manage_school and school_scoped_query(User, User.query.filter(User.role.in_(['school_admin','admin']), User.is_active.is_(True))).count() <= 1:

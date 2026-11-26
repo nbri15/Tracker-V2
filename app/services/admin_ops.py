@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy import func
+
 from app.extensions import db
 from app.models import AcademicYear, AssessmentSetting, Pupil, PupilClassHistory, School, SchoolClass, TrackerModeSetting, User
 from .assessments import get_current_academic_year, get_setting_defaults
@@ -103,7 +105,7 @@ def ensure_default_logins_and_classes() -> dict:
         db.session.add(default_school)
     admin = User.query.filter(
         User.school_id == default_school.id,
-        User.username.ilike(DEFAULT_ADMIN.username),
+        func.lower(User.username) == DEFAULT_ADMIN.username.lower(),
     ).first() or User(username=DEFAULT_ADMIN.username)
     admin.role = DEFAULT_ADMIN.role
     admin.legacy_is_admin = True
@@ -116,7 +118,7 @@ def ensure_default_logins_and_classes() -> dict:
     for login in DEFAULT_TEACHERS:
         teacher = User.query.filter(
             User.school_id == default_school.id,
-            User.username.ilike(login.username),
+            func.lower(User.username) == login.username.lower(),
         ).first() or User(username=login.username)
         teacher.username = login.username
         teacher.role = login.role

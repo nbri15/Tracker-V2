@@ -41,7 +41,8 @@ from app.services import (
     set_tracker_mode,
 )
 
-app = create_app()
+# Created in main() only after the safety check, so importing this file never touches a database.
+app = None
 
 PUPIL_SPECS = {
     'Year 1': [('Ava', 'Brown', 'Female', False, False, False), ('Theo', 'Mills', 'Male', True, False, False), ('Elsie', 'Hall', 'Female', False, True, False), ('Adam', 'Young', 'Male', False, False, True)],
@@ -191,8 +192,40 @@ def print_seed_summary(reset_requested: bool) -> None:
         print('Reset mode deleted existing development data before recreating the defaults.')
 
 
+def refuse_unless_local_environment(environ=None) -> None:
+    """Check environment variables before the app (and its database connection) is created."""
+    import os
+    environ = os.environ if environ is None else environ
+    database_url = (environ.get('DATABASE_URL') or '').strip()
+    app_env = (environ.get('APP_ENV') or environ.get('FLASK_ENV') or '').strip().lower()
+    if (database_url and not database_url.startswith('sqlite')) or app_env == 'production':
+        raise SystemExit(
+            'seed.py only runs against a local SQLite development database. '
+            'Unset DATABASE_URL and set APP_ENV=development, then try again. Nothing was changed.'
+        )
+
+
+def refuse_unless_local_database(flask_app) -> None:
+    """Stop before touching anything unless this is a local development SQLite database.
+
+    seed.py creates well-known passwords and --reset deletes every school's data, so it
+    must never run against the live (Supabase) database by accident.
+    """
+    uri = str(flask_app.config.get('SQLALCHEMY_DATABASE_URI') or '')
+    is_production = flask_app.config.get('ENV') == 'production'
+    if is_production or not uri.startswith('sqlite'):
+        raise SystemExit(
+            'seed.py only runs against a local SQLite development database. '
+            'Unset DATABASE_URL and set APP_ENV=development, then try again. Nothing was changed.'
+        )
+
+
 def main() -> None:
+    global app
     args = parse_args()
+    refuse_unless_local_environment()
+    app = create_app()
+    refuse_unless_local_database(app)
     with app.app_context():
         db.create_all()
         if args.reset:

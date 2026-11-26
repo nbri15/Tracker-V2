@@ -3,6 +3,8 @@
 from flask import current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
+from sqlalchemy import func
+
 from app.extensions import db
 from app.models import School, User
 from app.services import (
@@ -67,14 +69,14 @@ def login():
             if school:
                 user = User.query.filter(
                     User.school_id == school.id,
-                    User.username.ilike(identifier),
+                    func.lower(User.username) == identifier.lower(),
                 ).first()
         else:
             # School accounts must always be resolved inside the supplied school.
             # Only platform-level executives have a code-free login path.
             user = User.query.filter(
                 User.role == 'executive_admin',
-                User.username.ilike(identifier),
+                func.lower(User.username) == identifier.lower(),
             ).first()
         credentials_valid = bool(user and user.is_active and user.check_password(form.password.data))
         school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
@@ -121,7 +123,7 @@ def demo_login():
     account = (request.args.get('account') or 'teacher').strip().lower()
     username = 'demo_admin' if account == 'admin' else 'demo_teacher'
     demo_school = School.query.filter_by(slug='demo-school').first()
-    user_query = User.query.filter(User.username.ilike(username), User.is_active.is_(True))
+    user_query = User.query.filter(func.lower(User.username) == username.lower(), User.is_active.is_(True))
     if demo_school:
         user_query = user_query.filter(User.school_id == demo_school.id)
     user = user_query.first()

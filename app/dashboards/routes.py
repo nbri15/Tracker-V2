@@ -271,6 +271,60 @@ from app.extensions import db
 SATS_SIMPLE_FIELDS = ['arithmetic_score', 'reasoning_1_score', 'reasoning_2_score', 'maths_scaled_score', 'reading_score', 'reading_scaled_score', 'spelling_score', 'grammar_score', 'spag_scaled_score', 'notes']
 
 
+SATS_RAW_SCORE_MAX_FIELDS = {
+    'arithmetic_score': 'arithmetic_max',
+    'reasoning_1_score': 'reasoning_1_max',
+    'reasoning_2_score': 'reasoning_2_max',
+    'reading_score': 'reading_max',
+    'spelling_score': 'spelling_max',
+    'grammar_score': 'grammar_max',
+}
+SATS_SCALED_FIELDS = {'maths_scaled_score', 'reading_scaled_score', 'spag_scaled_score'}
+SATS_SCALED_MIN, SATS_SCALED_MAX = 80, 120
+SATS_NOTES_MAX_LENGTH = 2000
+SATS_PAPER_MAX_LIMIT = 200
+
+
+def _can_edit_sats_settings() -> bool:
+    """Admins, or a teacher who has an active Year 6 class, may change SATs exams and maxima."""
+    if current_user.can_manage_school:
+        return True
+    return bool(current_user.is_teacher and get_year_group_class_for_user(current_user, 6))
+
+
+def _can_edit_sats_pupil(pupil) -> bool:
+    """Admins may edit any Year 6 pupil in their school; teachers only pupils in their own class."""
+    if current_user.can_manage_school:
+        return True
+    return bool(current_user.is_teacher and pupil.school_class and pupil.school_class.teacher_id == current_user.id)
+
+
+def _parse_sats_value(field: str, value_raw, settings) -> tuple[object, str | None]:
+    """Return (clean value, error message). Blank clears the cell."""
+    text = '' if value_raw is None else str(value_raw).strip()
+    if field == 'notes':
+        if len(text) > SATS_NOTES_MAX_LENGTH:
+            return None, f'Notes must be {SATS_NOTES_MAX_LENGTH} characters or fewer.'
+        return (text or None), None
+    if text == '':
+        return None, None
+    try:
+        number = int(text)
+    except ValueError:
+        return None, 'Enter a whole number.'
+    if field in SATS_SCALED_FIELDS:
+        if not SATS_SCALED_MIN <= number <= SATS_SCALED_MAX:
+            return None, f'Scaled scores must be between {SATS_SCALED_MIN} and {SATS_SCALED_MAX}.'
+        return number, None
+    max_field = SATS_RAW_SCORE_MAX_FIELDS.get(field)
+    maximum = getattr(settings, max_field, None) if (settings is not None and max_field) else None
+    if number < 0:
+        return None, 'Scores cannot be negative.'
+    if maximum is not None and number > maximum:
+        return None, f'This paper is out of {maximum}.'
+    return number, None
+
+
 def _scaled_band(score: int | None) -> str:
     if score is None:
         return ''
@@ -384,12 +438,18 @@ def sats_simple_quick_save():
     )
     if not pupil or pupil.school_id != school_id:
         return {'ok':False,'error':'Forbidden'},403
+    if not _can_edit_sats_pupil(pupil):
+        return {'ok': False, 'error': 'You can only edit SATs scores for your own class.'}, 403
     academic_year=str(data.get('academic_year') or get_selected_current_academic_year())
+    settings = SimpleSatsSetting.query.filter_by(school_id=school_id, academic_year=academic_year, exam_number=exam_number).first()
+    clean_value, error = _parse_sats_value(field, value_raw, settings)
+    if error:
+        return {'ok': False, 'error': error}, 400
     rec=SatsResult.query.filter_by(school_id=school_id,pupil_id=pupil_id,academic_year=academic_year,exam_number=exam_number).first()
     if not rec:
         rec=SatsResult(school_id=school_id,pupil_id=pupil_id,academic_year=academic_year,exam_number=exam_number,subject='maths',assessment_point=exam_number,is_most_recent=False)
         db.session.add(rec)
-    setattr(rec, field, value_raw.strip() if field == 'notes' and str(value_raw).strip() != '' else (int(value_raw) if str(value_raw).strip()!='' else None))
+    setattr(rec, field, clean_value)
     a,b,c=rec.arithmetic_score or 0, rec.reasoning_1_score or 0, rec.reasoning_2_score or 0
     s,g=rec.spelling_score or 0, rec.grammar_score or 0
     rec.maths_combined_score=a+b+c
@@ -425,6 +485,8 @@ def sats_simple_add_exam():
     school_id = current_school_id()
     if school_id is None:
         return {'ok': False, 'error': 'Select a school before editing SATs'}, 403
+    if not _can_edit_sats_settings():
+        return {'ok': False, 'error': 'Only Year 6 teachers and admins can add SATs exams.'}, 403
     academic_year = str((request.get_json(silent=True) or {}).get('academic_year') or get_selected_current_academic_year())
     tabs = _ensure_simple_tabs_and_settings(academic_year, school_id)
     next_exam = max([tab.exam_number for tab in tabs], default=0) + 1
@@ -442,19 +504,38 @@ def sats_simple_save_settings():
     school_id = current_school_id()
     if school_id is None:
         return {'ok': False, 'error': 'Select a school before editing SATs'}, 403
+    if not _can_edit_sats_settings():
+        return {'ok': False, 'error': 'Only Year 6 teachers and admins can change SATs settings.'}, 403
     academic_year = str(data.get('academic_year') or get_selected_current_academic_year())
-    exam_number = int(data.get('exam_number') or data.get('record_id') or 0)
+    try:
+        exam_number = int(data.get('exam_number') or data.get('record_id') or 0)
+    except (TypeError, ValueError):
+        exam_number = 0
     if exam_number < 1:
         return {'ok': False, 'error': 'Invalid exam'}, 400
     settings = SimpleSatsSetting.query.filter_by(school_id=school_id, academic_year=academic_year, exam_number=exam_number).first()
     if not settings:
         settings = SimpleSatsSetting(school_id=school_id, academic_year=academic_year, exam_number=exam_number)
     allowed = ['arithmetic_max', 'reasoning_1_max', 'reasoning_2_max', 'reading_max', 'spelling_max', 'grammar_max']
-    if data.get('field') in allowed:
-        setattr(settings, data.get('field'), int(data.get('value') or 0))
-    else:
-        for field in allowed:
-            setattr(settings, field, int(data.get(field) or getattr(settings, field)))
+
+    def clean_max(raw, current):
+        text = '' if raw is None else str(raw).strip()
+        if text == '':
+            return current
+        value = int(text)  # ValueError handled below
+        if not 0 <= value <= SATS_PAPER_MAX_LIMIT:
+            raise ValueError
+        return value
+
+    try:
+        if data.get('field') in allowed:
+            setattr(settings, data.get('field'), clean_max(data.get('value'), getattr(settings, data.get('field'))))
+        else:
+            for field in allowed:
+                setattr(settings, field, clean_max(data.get(field), getattr(settings, field)))
+    except ValueError:
+        db.session.rollback()
+        return {'ok': False, 'error': f'Maximum marks must be whole numbers from 0 to {SATS_PAPER_MAX_LIMIT}.'}, 400
     settings.updated_at = datetime.now(timezone.utc)
     db.session.add(settings)
     db.session.commit()

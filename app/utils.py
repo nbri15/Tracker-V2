@@ -91,14 +91,16 @@ def require_same_school(obj) -> None:
     """Abort if object belongs to another school."""
 
     school_id = getattr(obj, 'school_id', None)
+    # Records with no school (for example platform executive accounts) are never
+    # reachable through school-level pages.
+    if school_id is None:
+        abort(403)
     if getattr(current_user, 'role', None) == 'executive_admin':
         selected_school_id = current_school_id()
-        if selected_school_id is None:
-            abort(403)
-        if school_id is not None and school_id != selected_school_id:
+        if selected_school_id is None or school_id != selected_school_id:
             abort(403)
         return
-    if school_id is not None and school_id != getattr(current_user, 'school_id', None):
+    if school_id != getattr(current_user, 'school_id', None):
         abort(403)
 
 
