@@ -167,3 +167,63 @@ def test_seed_script_checks_environment_before_connecting(environ, allowed):
     else:
         with pytest.raises(SystemExit):
             seed.refuse_unless_local_environment(environ)
+
+
+def test_executive_can_create_several_schools_with_their_own_settings(world):
+    from app.models import AssessmentSetting, TrackerModeSetting
+    from app.services.admin_ops import initialise_school_data
+    app, ids = world
+    exec_id = _make_executive(app)
+    with app.app_context():
+        initialise_school_data(ids['a'])  # School A already has the defaults
+    client = app.test_client(); login(client, exec_id)
+    for name, slug in (('Synthetic C', 'synthetic-c'), ('Synthetic D', 'synthetic-d')):
+        response = client.post('/exec/schools', data={'action': 'create', 'name': name, 'slug': slug, 'academic_year': '2026/27', 'is_active': 'on'})
+        assert response.status_code == 302
+    with app.app_context():
+        for slug in ('synthetic-c', 'synthetic-d'):
+            school = School.query.filter_by(slug=slug).one()
+            assert TrackerModeSetting.query.filter_by(school_id=school.id).count() == 6
+            assert TrackerModeSetting.query.filter_by(school_id=school.id, year_group=6).one().tracker_mode == 'sats'
+            assert AssessmentSetting.query.filter_by(school_id=school.id).count() == 6 * 3 * 3
+
+
+def test_failed_school_setup_does_not_leave_half_created_school(world, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+    import app.executive.routes as executive_routes
+    app, ids = world
+    exec_id = _make_executive(app)
+
+    def broken_setup(school_id):
+        raise IntegrityError('synthetic failure', None, Exception('synthetic'))
+
+    monkeypatch.setattr(executive_routes, 'initialise_school_data', broken_setup)
+    client = app.test_client(); login(client, exec_id)
+    client.post('/exec/schools', data={'action': 'create', 'name': 'Synthetic E', 'slug': 'synthetic-e', 'academic_year': '2026/27', 'is_active': 'on'})
+    with app.app_context():
+        assert School.query.filter_by(slug='synthetic-e').first() is None
+
+
+def test_per_school_unique_migration_on_sqlite():
+    import importlib.util
+    from pathlib import Path
+    import sqlalchemy as sa
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    path = Path(__file__).resolve().parents[1] / 'migrations/versions/20261126_01_per_school_unique_settings.py'
+    spec = importlib.util.spec_from_file_location('per_school_unique_migration', path)
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    engine = sa.create_engine('sqlite://')
+    with engine.begin() as connection:
+        connection.execute(sa.text('CREATE TABLE tracker_mode_settings (id INTEGER PRIMARY KEY, school_id INTEGER, year_group INTEGER NOT NULL, tracker_mode VARCHAR(20), CONSTRAINT uq_tracker_mode_year_group UNIQUE (year_group))'))
+        connection.execute(sa.text('CREATE TABLE phonics_test_columns (id INTEGER PRIMARY KEY, school_id INTEGER, year_group INTEGER NOT NULL, name VARCHAR(120) NOT NULL, CONSTRAINT uq_phonics_test_column_name UNIQUE (year_group, name))'))
+        connection.execute(sa.text("INSERT INTO tracker_mode_settings (school_id, year_group, tracker_mode) VALUES (1, 6, 'sats')"))
+        with Operations.context(MigrationContext.configure(connection)):
+            module.upgrade()
+        connection.execute(sa.text("INSERT INTO tracker_mode_settings (school_id, year_group, tracker_mode) VALUES (2, 6, 'sats')"))
+        connection.execute(sa.text("INSERT INTO phonics_test_columns (school_id, year_group, name) VALUES (1, 1, 'Check'), (2, 1, 'Check')"))
+        with pytest.raises(sa.exc.IntegrityError):
+            with connection.begin_nested():
+                connection.execute(sa.text("INSERT INTO tracker_mode_settings (school_id, year_group, tracker_mode) VALUES (2, 6, 'normal')"))
+        assert connection.execute(sa.text('SELECT COUNT(*) FROM tracker_mode_settings')).scalar() == 2

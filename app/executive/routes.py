@@ -6,7 +6,7 @@ import re
 import zipfile
 from datetime import datetime
 
-from flask import Response, flash, redirect, render_template, request, url_for
+from flask import Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
@@ -287,7 +287,8 @@ def schools():
                     current_academic_year=academic_year,
                 )
                 db.session.add(school)
-                db.session.commit()
+                db.session.flush()
+                # One transaction: if the default settings cannot be created, the school is not created either.
                 initialise_school_data(school.id)
                 flash(f'Created school {school.name}.', 'success')
             elif action == 'update':
@@ -302,7 +303,11 @@ def schools():
                 flash(f'Updated {school.name}.', 'success')
         except (ValueError, IntegrityError) as exc:
             db.session.rollback()
-            message = str(exc) if isinstance(exc, ValueError) else 'A school with that name or code already exists.'
+            if isinstance(exc, ValueError):
+                message = str(exc)
+            else:
+                current_app.logger.exception('School create/update failed with a database constraint error')
+                message = 'the database rejected the change. Check the name and code are unique, then try again.'
             flash(f'School changes could not be saved: {message}', 'danger')
         return redirect(url_for('executive.schools'))
 
