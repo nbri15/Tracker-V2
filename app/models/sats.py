@@ -10,7 +10,7 @@ class TrackerModeSetting(db.Model):
 
     __tablename__ = 'tracker_mode_settings'
     __table_args__ = (
-        db.UniqueConstraint('year_group', name='uq_tracker_mode_year_group'),
+        db.UniqueConstraint('school_id', 'year_group', name='uq_tracker_mode_school_year_group'),
     )
 
     id = db.Column(db.Integer, primary_key=True)

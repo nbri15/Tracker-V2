@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy import func
+
 from app.extensions import db
 from app.models import AcademicYear, AssessmentSetting, Pupil, PupilClassHistory, School, SchoolClass, TrackerModeSetting, User
 from .assessments import get_current_academic_year, get_setting_defaults
@@ -103,7 +105,7 @@ def ensure_default_logins_and_classes() -> dict:
         db.session.add(default_school)
     admin = User.query.filter(
         User.school_id == default_school.id,
-        User.username.ilike(DEFAULT_ADMIN.username),
+        func.lower(User.username) == DEFAULT_ADMIN.username.lower(),
     ).first() or User(username=DEFAULT_ADMIN.username)
     admin.role = DEFAULT_ADMIN.role
     admin.legacy_is_admin = True
@@ -116,7 +118,7 @@ def ensure_default_logins_and_classes() -> dict:
     for login in DEFAULT_TEACHERS:
         teacher = User.query.filter(
             User.school_id == default_school.id,
-            User.username.ilike(login.username),
+            func.lower(User.username) == login.username.lower(),
         ).first() or User(username=login.username)
         teacher.username = login.username
         teacher.role = login.role
@@ -219,6 +221,21 @@ def get_promotion_mapping_options(school_id: int) -> list[dict]:
     return options
 
 
+def _unused_class_name(school_id: int, preferred: str, target_year: str) -> str:
+    """Class names are unique per school, including archived classes; pick one that is free."""
+    def taken(name: str) -> bool:
+        return SchoolClass.query.filter(SchoolClass.school_id == school_id, SchoolClass.name == name).first() is not None
+
+    if not taken(preferred):
+        return preferred
+    candidate = f'{preferred} ({target_year})'
+    counter = 2
+    while taken(candidate):
+        candidate = f'{preferred} ({target_year}) {counter}'
+        counter += 1
+    return candidate
+
+
 def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_mapping: dict[int, int | None] | None = None) -> dict:
     if school_id is None:
         raise ValueError('A school must be selected before promoting pupils.')
@@ -271,7 +288,7 @@ def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_m
             if not next_class:
                 next_class = SchoolClass.query.filter(SchoolClass.school_id == school_id, SchoolClass.year_group == school_class.year_group + 1, SchoolClass.is_active.is_(True)).order_by(SchoolClass.name).first()
                 if not next_class:
-                    next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True, school_id=school_class.school_id, is_demo=school_class.is_demo)
+                    next_class = SchoolClass(name=_unused_class_name(school_id, f'Year {school_class.year_group + 1}', target_year), year_group=school_class.year_group + 1, is_active=True, school_id=school_class.school_id, is_demo=school_class.is_demo)
                     db.session.add(next_class)
                     db.session.flush()
             pupil.class_id = next_class.id

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import csv
+
+from app.services import safe_csv
 import io
 import re
 import zipfile
 from datetime import datetime
 
-from flask import Response, flash, redirect, render_template, request, url_for
+from flask import Response, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
@@ -51,6 +53,7 @@ from app.models import (
 )
 from app.services import build_academic_year_options, get_or_create_academic_year
 from app.services.admin_ops import initialise_school_data
+from app.security import password_problem
 from app.utils import executive_admin_required, log_audit_event
 
 from . import executive_bp
@@ -124,7 +127,7 @@ def _fetch_table_rows(table_name: str, school_id: int | None, schools_by_id: dic
 def _table_to_csv_bytes(rows: list[dict]) -> bytes:
     output = io.StringIO()
     if rows:
-        writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
+        writer = safe_csv.DictWriter(output, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
     return output.getvalue().encode('utf-8')
@@ -236,7 +239,7 @@ def _validate_school_payload(name: str, slug: str, *, exclude_id: int | None = N
         raise ValueError('School code is required.')
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', slug):
         raise ValueError('School code may contain lowercase letters, numbers and single hyphens only.')
-    duplicate = School.query.filter(or_(School.name.ilike(name), School.slug == slug))
+    duplicate = School.query.filter(or_(func.lower(School.name) == name.lower(), School.slug == slug))
     if exclude_id is not None:
         duplicate = duplicate.filter(School.id != exclude_id)
     if duplicate.first():
@@ -255,7 +258,7 @@ def _build_zip_export(table_rows: dict[str, list[dict]], scope: str) -> tuple[by
 
 def _build_combined_csv_export(table_rows: dict[str, list[dict]], scope: str) -> tuple[bytes, str]:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['table_name', 'column_name', 'value'])
 
     for table_name, rows in table_rows.items():
@@ -287,7 +290,8 @@ def schools():
                     current_academic_year=academic_year,
                 )
                 db.session.add(school)
-                db.session.commit()
+                db.session.flush()
+                # One transaction: if the default settings cannot be created, the school is not created either.
                 initialise_school_data(school.id)
                 flash(f'Created school {school.name}.', 'success')
             elif action == 'update':
@@ -302,7 +306,11 @@ def schools():
                 flash(f'Updated {school.name}.', 'success')
         except (ValueError, IntegrityError) as exc:
             db.session.rollback()
-            message = str(exc) if isinstance(exc, ValueError) else 'A school with that name or code already exists.'
+            if isinstance(exc, ValueError):
+                message = str(exc)
+            else:
+                current_app.logger.exception('School create/update failed with a database constraint error')
+                message = 'the database rejected the change. Check the name and code are unique, then try again.'
             flash(f'School changes could not be saved: {message}', 'danger')
         return redirect(url_for('executive.schools'))
 
@@ -517,8 +525,9 @@ def reset_user_password(user_id: int):
     if not password:
         flash('A new password is required for reset.', 'danger')
         return redirect(url_for('executive.users'))
-    if len(password) < 8:
-        flash('New password must be at least 8 characters long.', 'danger')
+    problem = password_problem(password, user.username)
+    if problem:
+        flash(problem, 'danger')
         return redirect(url_for('executive.users'))
 
     user.set_password(password)
@@ -603,9 +612,13 @@ def create_school_admin(school_id: int):
     if not username or not password:
         flash('Username and password are required.', 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))
+    problem = password_problem(password, username)
+    if problem:
+        flash(problem, 'danger')
+        return redirect(url_for('executive.school_detail', school_id=school.id))
     if User.query.filter(
         User.school_id == school.id,
-        User.username.ilike(username),
+        func.lower(User.username) == username.lower(),
     ).first():
         flash('Username already exists.', 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))
@@ -640,8 +653,9 @@ def reset_school_user_password(school_id: int, user_id: int):
     if not password:
         flash('A new password is required for reset.', 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))
-    if len(password) < 8:
-        flash('New password must be at least 8 characters long.', 'danger')
+    problem = password_problem(password, user.username)
+    if problem:
+        flash(problem, 'danger')
         return redirect(url_for('executive.school_detail', school_id=school.id))
 
     user.set_password(password)

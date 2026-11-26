@@ -24,12 +24,15 @@ def build_checklist(school_id, academic_year, term, classes):
         pupils = (get_class_pupil_query(school_class, academic_year).filter(Pupil.is_active.is_(True))
                   .order_by(Pupil.last_name, Pupil.first_name).all())
         pupil_ids = [p.id for p in pupils]
+        scored_by_subject = {subject: set() for subject in CORE_SUBJECTS}
+        for subject_key, pid in SubjectResult.query.filter(
+                SubjectResult.school_id == school_id, SubjectResult.pupil_id.in_(pupil_ids or [0]),
+                SubjectResult.subject.in_(CORE_SUBJECTS), SubjectResult.academic_year == academic_year,
+                SubjectResult.term == term, SubjectResult.combined_percent.isnot(None)).with_entities(SubjectResult.subject, SubjectResult.pupil_id).all():
+            scored_by_subject[subject_key].add(pid)
         subjects = []
         for subject in CORE_SUBJECTS:
-            scored_ids = {pid for (pid,) in SubjectResult.query.filter(
-                SubjectResult.school_id == school_id, SubjectResult.pupil_id.in_(pupil_ids or [0]),
-                SubjectResult.subject == subject, SubjectResult.academic_year == academic_year,
-                SubjectResult.term == term, SubjectResult.combined_percent.isnot(None)).with_entities(SubjectResult.pupil_id).all()}
+            scored_ids = scored_by_subject[subject]
             missing = [p for p in pupils if p.id not in scored_ids]
             subjects.append({'subject': subject, 'label': format_subject_name(subject), 'total': len(pupils),
                              'scored': len(pupils) - len(missing), 'missing': missing,

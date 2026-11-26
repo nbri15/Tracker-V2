@@ -17,7 +17,7 @@ class AssessmentSetting(db.Model):
 
     __tablename__ = 'assessment_settings'
     __table_args__ = (
-        db.UniqueConstraint('year_group', 'subject', 'term', name='uq_assessment_setting_scope'),
+        db.UniqueConstraint('school_id', 'year_group', 'subject', 'term', name='uq_assessment_setting_school_scope'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -190,7 +190,7 @@ class PhonicsTestColumn(db.Model):
 
     __tablename__ = 'phonics_test_columns'
     __table_args__ = (
-        db.UniqueConstraint('year_group', 'name', name='uq_phonics_test_column_name'),
+        db.UniqueConstraint('school_id', 'year_group', 'name', name='uq_phonics_test_column_school_name'),
         db.Index('ix_phonics_test_columns_scope', 'year_group', 'display_order'),
     )
 
@@ -236,7 +236,7 @@ class TimesTableTestColumn(db.Model):
 
     __tablename__ = 'times_table_test_columns'
     __table_args__ = (
-        db.UniqueConstraint('year_group', 'name', name='uq_times_table_test_column_name'),
+        db.UniqueConstraint('school_id', 'year_group', 'name', name='uq_times_table_test_column_school_name'),
         db.Index('ix_times_table_test_columns_scope', 'year_group', 'display_order'),
     )
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+
+from . import safe_csv
 import io
 from dataclasses import dataclass, field
 from datetime import date
@@ -181,7 +183,7 @@ class RowProgress:
 
 def generate_csv(template_type: str) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     template_rows = {
         'combined': [
             COMBINED_TEMPLATE_COLUMNS,
@@ -765,7 +767,7 @@ def import_sats_tracker_results(rows: list[dict]) -> CsvImportSummary:
 
 def export_subject_results_csv(class_id: int | None = None, subject: str | None = None, academic_year: str | None = None, term: str | None = None) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'academic_year', 'term', 'subject', 'paper_1_score', 'paper_2_score', 'combined_score', 'combined_percent', 'band_label', 'source', 'notes'])
     query = school_scoped_query(SubjectResult.query.join(SubjectResult.pupil).join(Pupil.school_class), Pupil)
     if class_id:
@@ -783,7 +785,7 @@ def export_subject_results_csv(class_id: int | None = None, subject: str | None 
 
 def export_writing_results_csv(class_id: int | None = None, academic_year: str | None = None, term: str | None = None) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'academic_year', 'term', 'band', 'notes', 'source'])
     query = school_scoped_query(WritingResult.query.join(WritingResult.pupil).join(Pupil.school_class), Pupil)
     if class_id:
@@ -799,7 +801,7 @@ def export_writing_results_csv(class_id: int | None = None, academic_year: str |
 
 def export_class_overview_csv(academic_year: str, class_id: int | None = None) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['class_name', 'year_group', 'teacher', 'pupil_count', 'active_interventions', 'maths_on_track_plus', 'reading_on_track_plus', 'spag_on_track_plus', 'writing_on_track_plus'])
     query = school_scoped_query(SchoolClass.query.filter_by(is_active=True), SchoolClass)
     if class_id:
@@ -822,7 +824,7 @@ def export_class_overview_csv(academic_year: str, class_id: int | None = None) -
 
 def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | None = None, send: str = 'all', anonymised: bool = False) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'year_group', 'is_active', 'pupil_premium', 'laps', 'service_child', 'send', 'academic_year', 'gld', 'phonics', 'mtc', 'y6_sats_entries'])
     query = school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
     if class_id:
@@ -845,7 +847,7 @@ def export_pupil_overview_csv(academic_year: str | None = None, class_id: int | 
 
 def export_reception_tracker_csv(academic_year: str, tracking_point: str) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(RECEPTION_TEMPLATE_COLUMNS)
     pupils = (
         school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
@@ -870,7 +872,7 @@ def export_reception_tracker_csv(academic_year: str, tracking_point: str) -> str
 def export_sats_tracker_csv(academic_year: str, exam_tab: str) -> str:
     exam_number = int(exam_tab.split(' ')[1]) if exam_tab.lower().startswith('exam ') else 1
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(SATS_TEMPLATE_COLUMNS)
     pupils = (
         school_scoped_query(Pupil.query.join(Pupil.school_class), Pupil)
@@ -898,7 +900,7 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
         selected_tab = next((tab for tab in tabs if tab.is_active), tabs[0] if tabs else None)
     columns = get_sats_columns(6, exam_tab_id=selected_tab.id if selected_tab else None, active_only=True)
     header = ['pupil_name', 'class_name', 'exam_tab'] + [column.name for column in columns]
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(header)
     query = school_scoped_query(
         Pupil.query.join(Pupil.school_class).filter(SchoolClass.year_group == 6, Pupil.is_active.is_(True)),
@@ -915,7 +917,7 @@ def export_sats_results_csv(academic_year: str, class_id: int | None = None, exa
 
 def export_interventions_csv(academic_year: str, class_id: int | None = None, anonymised: bool = False, current_scores: dict[int, str] | None = None, *, records=None, outcomes: dict | None = None) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['pupil_name', 'class_name', 'subject', 'term', 'current_score', 'is_active', 'auto_flagged', 'reason', 'note', 'programmes',
                      'started_on', 'ended_on', 'baseline_percent', 'baseline_source', 'follow_up_percent', 'follow_up_term', 'change_points', 'met_pass_threshold', 'impact_status'])
     query = school_scoped_query(Intervention.query.join(Intervention.pupil).join(Pupil.school_class), Pupil).filter(Intervention.academic_year == academic_year)
@@ -934,7 +936,7 @@ def export_interventions_csv(academic_year: str, class_id: int | None = None, an
 
 def export_history_csv(academic_year: str) -> str:
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['pupil_name', 'academic_year', 'class_name', 'year_group', 'teacher_username', 'promoted_to_year_group'])
     rows = (
         school_scoped_query(PupilClassHistory.query.join(PupilClassHistory.pupil), PupilClassHistory)

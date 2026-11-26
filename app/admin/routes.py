@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 import csv
+
+from app.services import safe_csv
 import io
 import time
 from openpyxl import Workbook, load_workbook
@@ -17,6 +19,9 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import IntegrityError, OperationalError
 from weasyprint import HTML
+
+from app.security import PASSWORD_STAMP_SESSION_KEY, password_stamp
+from app.services.assessments import remember_selected_academic_year
 
 from app.extensions import db
 
@@ -253,6 +258,7 @@ def _build_xlsx(headers, rows, title):
     for row in rows:
         ws.append(row)
     out = io.BytesIO()
+    safe_csv.neutralise_workbook_formulas(wb)
     wb.save(out)
     out.seek(0)
     return out.getvalue()
@@ -871,7 +877,7 @@ def class_detail(class_id: int):
             for i, row in enumerate(context['pupil_rows']):
                 rows[i] += [row.get('band_label') or '', row.get('notes') or '']
         if export_mode:
-            out = io.StringIO(); w = csv.writer(out); w.writerow(headers); w.writerows(rows)
+            out = io.StringIO(); w = safe_csv.writer(out); w.writerow(headers); w.writerows(rows)
             return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename=class_{context["selected_subject"]}_export.csv'})
         title = f'{context["subject_label"]} class report'
         subtitle = 'Anonymised' if anon_mode else 'Named'
@@ -1207,7 +1213,7 @@ def users():
                     raise ValueError(problem)
                 if User.query.filter(
                     User.school_id == effective_school_id,
-                    User.username.ilike(username),
+                    func.lower(User.username) == username.lower(),
                 ).first():
                     raise ValueError('That username already exists.')
                 user = User(
@@ -1230,12 +1236,14 @@ def users():
             elif action == 'update':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
                 require_same_school(user)
+                if user.is_executive_admin:
+                    abort(403)
                 username = request.form.get(f'username_{user.id}', '').strip()
                 class_id_raw = request.form.get(f'class_id_{user.id}', '').strip()
                 if username and username != user.username:
                     if User.query.filter(
                         User.school_id == effective_school_id,
-                        User.username.ilike(username),
+                        func.lower(User.username) == username.lower(),
                         User.id != user.id,
                     ).first():
                         raise ValueError('That username is already in use.')
@@ -1255,6 +1263,8 @@ def users():
             elif action == 'delete':
                 user = User.query.get_or_404(int(request.form.get('user_id', '0')))
                 require_same_school(user)
+                if user.is_executive_admin:
+                    abort(403)
                 if user.id == current_user.id:
                     raise ValueError('You cannot delete your own account while logged in.')
                 if user.can_manage_school and school_scoped_query(User, User.query.filter(User.role.in_(['school_admin','admin']), User.is_active.is_(True))).count() <= 1:
@@ -1316,6 +1326,8 @@ def reset_user_password(user_id: int):
             user.require_password_change = require_change
             db.session.add(user)
             db.session.commit()
+            if user.id == current_user.id:
+                session[PASSWORD_STAMP_SESSION_KEY] = password_stamp(user.password_hash, user.id)
             flash(f'Password reset for {user.username}.', 'success')
             return redirect(url_for('admin.users'))
 
@@ -1632,7 +1644,8 @@ def settings():
                     year = get_or_create_academic_year(year_name)
                     school.current_academic_year = year
                     school.academic_year_reminder_dismissed_for = None
-                    session['selected_academic_year_id'] = year.id
+                    db.session.flush()
+                    remember_selected_academic_year(year)
                     db.session.commit()
                     flash(
                         f'Current academic year changed to {year.name}. No pupils or classes were promoted.',
@@ -2074,6 +2087,7 @@ def download_full_template_xlsx():
         return redirect(url_for('admin.imports'))
     wb = _build_full_template_workbook(effective_school_id)
     output = io.BytesIO()
+    safe_csv.neutralise_workbook_formulas(wb)
     wb.save(output)
     output.seek(0)
     return send_file(output, as_attachment=True, download_name='full_school_import_template.xlsx')
@@ -2407,6 +2421,7 @@ def export_full_workbook():
         return redirect(url_for('admin.imports'))
     wb = _build_full_template_workbook(effective_school_id)
     output = io.BytesIO()
+    safe_csv.neutralise_workbook_formulas(wb)
     wb.save(output)
     output.seek(0)
     return send_file(output, as_attachment=True, download_name='full_school_import_template.xlsx')
@@ -2428,6 +2443,7 @@ def download_backup():
     try:
         workbook = _build_full_template_workbook(effective_school_id)
         workbook_bytes = io.BytesIO()
+        safe_csv.neutralise_workbook_formulas(workbook)
         workbook.save(workbook_bytes)
         extra_files['school_workbook.xlsx'] = workbook_bytes.getvalue()
     except Exception:  # the CSV files are the backup; the workbook is a convenience copy
@@ -2577,7 +2593,7 @@ def export_headline_report():
         return _render_table_pdf('Headline report', header, table_rows, filters, False, 'headline_report.pdf', report['subject_label'])
 
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = safe_csv.writer(output)
     writer.writerow(['Headline report'])
     writer.writerow(['Subject', report['subject_label']])
     writer.writerow(['Academic year', academic_year])
@@ -2640,7 +2656,7 @@ def report_class_overview():
     headers = ['Pupil','Class','Gender','SEND','PP','Reading','Maths','Writing']
     fmt = request.args.get('format','html')
     if fmt == 'csv':
-        out=io.StringIO(); w=csv.writer(out); w.writerow(headers); w.writerows(rows)
+        out=io.StringIO(); w=safe_csv.writer(out); w.writerow(headers); w.writerows(rows)
         return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition':'attachment; filename=class_overview_report.csv'})
     if fmt == 'xlsx':
         data = _build_xlsx(headers, rows, 'Class overview')
@@ -2754,7 +2770,7 @@ def report_governor_summary():
     subtitle = f'No pupil names included. Groups with fewer than {MIN_GROUP} pupils are hidden (shown as "<5"), together with their partner group.'
     fmt=request.args.get('format','html')
     if fmt=='csv':
-        out=io.StringIO();w=csv.writer(out);w.writerow(headers);w.writerows(rows)
+        out=io.StringIO();w=safe_csv.writer(out);w.writerow(headers);w.writerows(rows)
         return Response(out.getvalue(), mimetype='text/csv', headers={'Content-Disposition':'attachment; filename=governor_summary_report.csv'})
     if fmt=='xlsx':
         return Response(_build_xlsx(headers,rows,'Governor summary'), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=governor_summary_report.xlsx'})

@@ -1,0 +1,12 @@
+{% if viewing_year_notice %}
+  <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status" data-testid="viewing-year-notice">
+    <span><strong>You are looking at {{ viewing_year_notice.viewing.name }}.</strong>
+      Your school's current year is {{ viewing_year_notice.working.name }}. Anything you save on these pages goes into {{ viewing_year_notice.viewing.name }}.</span>
+    <form method="post" action="{{ url_for('dashboards.set_academic_year') }}" class="ms-auto">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="academic_year_id" value="{{ viewing_year_notice.working.id }}">
+      {% if selected_school_id %}<input type="hidden" name="school_id" value="{{ selected_school_id }}">{% endif %}
+      <button class="btn btn-sm btn-dark">Go back to {{ viewing_year_notice.working.name }}</button>
+    </form>
+  </div>
+{% endif %}
