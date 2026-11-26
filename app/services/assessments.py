@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 from flask import has_request_context, request, session
 from sqlalchemy import or_
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import contains_eager, joinedload
 
 from app.extensions import db
 from app.models import (
@@ -395,12 +395,32 @@ def get_school_working_academic_year(school_id: int | None) -> AcademicYear:
     A school's explicit setting is authoritative. There is deliberately no global,
     session, newest-row, or calendar-derived fallback.
     """
-    from app.models import School
-
-    school = db.session.get(School, school_id) if school_id is not None else None
+    school = _request_school(school_id)
     if school and school.current_academic_year:
         return school.current_academic_year
     raise ValueError('This school does not have a current academic year configured.')
+
+
+def _request_school(school_id: int | None):
+    """Load a school once per request.
+
+    SQLAlchemy only keeps weak references to loaded rows, so without holding on to the
+    School it was re-read from the database for every class and subject on a page.
+    Holding the object (not a copy) means changes made in this request are still seen.
+    """
+    from flask import g, has_app_context
+    from app.models import School
+
+    if school_id is None:
+        return None
+    if not has_app_context():
+        return db.session.get(School, school_id)
+    cache = g.setdefault('_class_compass_schools', {})
+    school = cache.get(school_id)
+    if school is None or school not in db.session:
+        school = db.session.get(School, school_id)
+        cache[school_id] = school
+    return school
 
 
 def is_current_academic_year(academic_year: str | None) -> bool:
@@ -1015,36 +1035,69 @@ def compute_class_subject_summary(
     filters: dict | None = None,
     term: str | None = None,
 ) -> dict:
+    return compute_class_subject_summaries(class_id, [subject], academic_year, subgroup, filters=filters, term=term)[subject]
+
+
+def compute_class_subject_summaries(
+    class_id: int,
+    subjects,
+    academic_year: str,
+    subgroup: str = 'all',
+    *,
+    filters: dict | None = None,
+    term: str | None = None,
+) -> dict:
+    """Summaries for several subjects of one class, using one pupil lookup and one query per result table."""
+    subjects = list(subjects)
     school_class = school_scoped_query(SchoolClass, SchoolClass.query).filter_by(id=class_id).first()
     if school_class is None:
-        return _empty_subject_summary(subject)
+        return {subject: _empty_subject_summary(subject) for subject in subjects}
 
     pupil_ids = get_class_pupil_ids(school_class, academic_year, filters, subgroup)
-    filtered_pupil_count = len([pupil_id for pupil_id in pupil_ids])
+    core_subjects = [subject for subject in subjects if subject in CORE_SUBJECTS]
+    rows_by_subject: dict[str, list] = {subject: [] for subject in subjects}
+    if core_subjects:
+        for row in SubjectResult.query.filter(
+            SubjectResult.subject.in_(core_subjects),
+            SubjectResult.academic_year == academic_year,
+            SubjectResult.pupil_id.in_(pupil_ids or [0]),
+        ).all():
+            rows_by_subject[row.subject].append(row)
+    if any(subject not in CORE_SUBJECTS for subject in subjects):
+        writing_rows = WritingResult.query.filter(
+            WritingResult.academic_year == academic_year,
+            WritingResult.pupil_id.in_(pupil_ids or [0]),
+        ).all()
+        for subject in subjects:
+            if subject not in CORE_SUBJECTS:
+                rows_by_subject[subject] = writing_rows
+
+    return {
+        subject: _summary_from_class_rows(subject, rows_by_subject[subject], len(pupil_ids), term)
+        for subject in subjects
+    }
+
+
+def _summary_from_class_rows(subject: str, rows: list, filtered_pupil_count: int, term: str | None) -> dict:
+    """Same rules as before: the latest term is the latest one with a percentage (core) or band (writing)."""
     if term and term != 'all':
         latest_term = term
     else:
-        latest_term = get_most_recent_term_with_data(class_id, subject, academic_year, subgroup, filters)
+        if subject in CORE_SUBJECTS:
+            with_data = [row for row in rows if row.combined_percent is not None]
+        else:
+            with_data = [row for row in rows if row.band is not None]
+        latest_term = max(with_data, key=lambda item: TERM_SEQUENCE.get(item.term, 0)).term if with_data else None
     if not latest_term:
         summary = _empty_subject_summary(subject)
         summary['filtered_pupil_count'] = filtered_pupil_count
         return summary
 
+    latest_rows = [row for row in rows if row.term == latest_term]
     if subject in CORE_SUBJECTS:
-        latest_rows = SubjectResult.query.filter(
-            SubjectResult.subject == subject,
-            SubjectResult.academic_year == academic_year,
-            SubjectResult.term == latest_term,
-            SubjectResult.pupil_id.in_(pupil_ids or [0]),
-        ).all()
         counts = _counts_from_band_labels(latest_rows)
         percents = [row.combined_percent for row in latest_rows if row.combined_percent is not None]
     else:
-        latest_rows = WritingResult.query.filter(
-            WritingResult.academic_year == academic_year,
-            WritingResult.term == latest_term,
-            WritingResult.pupil_id.in_(pupil_ids or [0]),
-        ).all()
         counts = _counts_from_writing_bands(latest_rows)
         percents = []
 
@@ -1061,7 +1114,8 @@ def compute_class_subject_summary(
 def build_dashboard_summary(class_id: int | None, academic_year: str, subgroup: str = 'all', filters: dict | None = None) -> list[dict]:
     if not class_id:
         return [_empty_subject_summary(subject) for subject in ALL_SUBJECTS]
-    return [compute_class_subject_summary(class_id, subject, academic_year, subgroup, filters=filters) for subject in ALL_SUBJECTS]
+    summaries = compute_class_subject_summaries(class_id, ALL_SUBJECTS, academic_year, subgroup, filters=filters)
+    return [summaries[subject] for subject in ALL_SUBJECTS]
 
 
 def _summary_from_grouped_rows(
@@ -1128,10 +1182,7 @@ def build_class_overview_row(school_class: SchoolClass, academic_year: str, subg
     pupil_query = apply_pupil_filters(pupil_query, subgroup=subgroup, filters=filters)
     pupil_ids = [pupil.id for pupil in pupil_query.all()]
     pupil_count = len(pupil_ids)
-    subject_summaries = {
-        subject: compute_class_subject_summary(school_class.id, subject, academic_year, subgroup, filters=filters, term=term)
-        for subject in ALL_SUBJECTS
-    }
+    subject_summaries = compute_class_subject_summaries(school_class.id, ALL_SUBJECTS, academic_year, subgroup, filters=filters, term=term)
     active_interventions = (
         Intervention.query.join(Intervention.pupil)
         .filter(Intervention.is_active.is_(True), Intervention.academic_year == academic_year, Pupil.id.in_(pupil_ids or [0]))
@@ -1323,6 +1374,8 @@ def build_headline_report(
                 WritingResult.academic_year == academic_year,
                 SchoolClass.year_group.in_(years),
             )
+        result_model = WritingResult if subject == 'writing' else SubjectResult
+        query = query.options(contains_eager(result_model.pupil).contains_eager(Pupil.school_class))
         query = apply_pupil_filters(query, subgroup=subgroup, filters=filters)
         score_rows = query.all()
         included_result_count = len(score_rows)

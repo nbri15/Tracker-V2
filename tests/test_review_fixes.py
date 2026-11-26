@@ -396,3 +396,54 @@ def test_sats_page_shows_blank_not_none_for_empty_cells(year6):
     page = client.get(f'/sats/simple?academic_year=2026/27&class_id={ids["y6_class"]}')
     assert b'value="30"' in page.data
     assert b'value="None"' not in page.data
+
+
+@pytest.fixture
+def busy_school(world):
+    """School A with 6 synthetic classes of 8 pupils, each with maths/reading/spag/writing results."""
+    from app.models import WritingResult, SubjectResult
+    app, ids = world
+    with app.app_context():
+        school = db.session.get(School, ids['a'])
+        for year_group in range(1, 7):
+            school_class = SchoolClass(name=f'Synthetic {year_group}', year_group=year_group, school=school, is_active=True)
+            db.session.add(school_class); db.session.flush()
+            for n in range(8):
+                pupil = Pupil(first_name=f'Synth{n}', last_name=f'Load{year_group}', gender='Male', school_class=school_class, school_id=school.id, is_active=True)
+                db.session.add(pupil); db.session.flush()
+                for subject in ('maths', 'reading', 'spag'):
+                    db.session.add(SubjectResult(school_id=school.id, pupil_id=pupil.id, academic_year='2026/27', term='autumn', subject=subject,
+                                                 paper_1_score=10, paper_2_score=10, combined_score=20, combined_percent=50.0, band_label='On Track'))
+                db.session.add(WritingResult(school_id=school.id, pupil_id=pupil.id, academic_year='2026/27', term='autumn', band='expected'))
+        db.session.commit()
+    return app, ids
+
+
+def _count_queries(app, client, url):
+    from sqlalchemy import event
+    with app.app_context():
+        engine = db.engine
+    statements = []
+
+    def record(*args, **kwargs):
+        statements.append(1)
+
+    event.listen(engine, 'before_cursor_execute', record)
+    try:
+        response = client.get(url)
+    finally:
+        event.remove(engine, 'before_cursor_execute', record)
+    assert response.status_code == 200, url
+    return len(statements)
+
+
+@pytest.mark.parametrize('url,ceiling', [
+    ('/admin/reports/headline', 15),   # was one query per pupil
+    ('/admin/classes', 90),            # was roughly 45 queries per class
+    ('/dashboard/admin', 110),
+])
+def test_busy_pages_do_not_query_per_pupil(busy_school, url, ceiling):
+    app, ids = busy_school
+    client = app.test_client(); login(client, ids['admin'])
+    client.get(url)  # warm-up
+    assert _count_queries(app, client, url) <= ceiling
