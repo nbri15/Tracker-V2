@@ -43,6 +43,7 @@ from app.utils import (
     safe_redirect_target,
 )
 
+from app.services.assessments import remember_selected_academic_year
 from app.services.teacher_dashboard import attention_by_subject, intervention_progress
 
 from . import dashboards_bp
@@ -105,9 +106,23 @@ def set_academic_year():
     if year is None:
         flash('Academic year could not be found.', 'danger')
     else:
-        session['selected_academic_year_id'] = year.id
+        remember_selected_academic_year(year)
         flash(f'Academic year set to {year.name}', 'success')
-    return redirect(safe_redirect_target(request.referrer, url_for('dashboards.index')))
+    return redirect(safe_redirect_target(_same_site_referrer_path(), url_for('dashboards.index')))
+
+
+def _same_site_referrer_path() -> str | None:
+    """Turn this site's own full referrer URL into a local path, so year switching returns to the same page."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    referrer = request.referrer or ''
+    parts = urlsplit(referrer)
+    if not parts.netloc or parts.netloc != request.host:
+        return None
+    # Drop any year already in the address, otherwise it would override the year just chosen.
+    query = urlencode([(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+                       if key not in {'year', 'academic_year', 'academic_year_id'}])
+    return urlunsplit(('', '', parts.path or '/', query, ''))
 
 @dashboards_bp.route('/dashboard')
 @login_required
@@ -745,9 +760,10 @@ def _download_year_overview(ctx, anonymised=False, as_pdf=False):
         html = render_template('exports/table_pdf.html', title=title, subtitle=ctx['selected_class'].name if ctx['selected_class'] else '', headers=headers, rows=rows, filters={'Academic year': ctx['academic_year'], 'Subject': subject_label}, anonymise=anonymised, generated_at=datetime.now(timezone.utc))
         pdf = HTML(string=html, base_url=request.url_root).write_pdf()
         resp = make_response(pdf); resp.headers['Content-Type']='application/pdf'; resp.headers['Content-Disposition']=f'attachment; filename=class-year-overview-{ctx["subject"]}.pdf'; return resp
-    import csv, io
+    import io
+    from app.services import safe_csv
     headers = ['Pupil','Autumn Band','Autumn %','Autumn Paper 1','Autumn Paper 2','Spring Band','Spring %','Spring Paper 1','Spring Paper 2','Summer Band','Summer %','Summer Paper 1','Summer Paper 2','Progress %','Progress Label']
-    output=io.StringIO(); writer=csv.writer(output); writer.writerow(headers)
+    output=io.StringIO(); writer=safe_csv.writer(output); writer.writerow(headers)
     for r in ctx['rows']:
         out=[r['anon_name'] if anonymised else r['pupil'].full_name]
         for term in YEAR_OVERVIEW_TERMS:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 
@@ -96,3 +97,21 @@ class LoginThrottle:
         acct_key, _ = self._keys(ip, account)
         with self._lock:
             self._failures.pop(acct_key, None)
+
+
+PASSWORD_STAMP_SESSION_KEY = 'pw_stamp'
+
+
+def password_stamp(password_hash: str | None, user_id: int | None = None) -> str:
+    """Short fingerprint of the stored password hash, kept in the session.
+
+    When a password is changed or reset the fingerprint changes, so sessions signed
+    in with the old password (on another iPad, say) are signed out. The hash itself
+    is never put in the cookie.
+    """
+    fingerprint = hashlib.sha256((password_hash or '').encode('utf-8')).hexdigest()[:20]
+    return f'{user_id}:{fingerprint}'
+
+
+def stamp_user_id(stamp: str | None) -> str | None:
+    return stamp.split(':', 1)[0] if stamp and ':' in stamp else None

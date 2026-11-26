@@ -23,7 +23,7 @@ The current build supports:
 
 - Python
 - Flask
-- SQLite
+- PostgreSQL in production (hosted on Supabase); SQLite for local development
 - SQLAlchemy
 - Flask-Login
 - Flask-WTF
@@ -303,9 +303,11 @@ Recommended manual checks after `flask db upgrade`:
 4. Open **Promotion & history** before end-of-year testing if you want a snapshot/export first.
 
 
-## Render deployment (Web Service + Render Postgres)
+## Deployment (Render free web service + Supabase Postgres)
 
-This repository is ready for Render deployment using:
+The live site runs on Render's free web service with the database on Supabase's free plan
+(Supabase is used only as a PostgreSQL database; no Supabase keys or client libraries are used).
+It deploys using:
 
 - web entrypoint: `gunicorn wsgi:app`
 - DB connection from `DATABASE_URL`
@@ -331,7 +333,7 @@ gunicorn wsgi:app --timeout 180
 
 - `APP_ENV=production`
 - `SECRET_KEY=<strong-random-secret>`
-- `DATABASE_URL=<Render Postgres connection string>`
+- `DATABASE_URL=<Supabase Postgres connection string>` (keep it in Render's environment settings, never in the repo)
 
 Notes:
 - The app uses `DATABASE_URL` when present.
@@ -389,16 +391,26 @@ Behaviour:
 - requires password length of at least 8
 - does not run `seed.py`
 
-### Render blueprint
+### Render blueprint (out of date)
 
-A `render.yaml` blueprint is included to provision:
-- one Python web service
-- one Render Postgres database
-- environment variable wiring for `DATABASE_URL`
+`render.yaml` still describes an older setup (paid "starter" plans and a Render-managed Postgres
+database). It does **not** match the live setup (Render free + Supabase). Do not sync or apply it as a
+Blueprint without updating it first, or Render could try to create a paid database and change
+`DATABASE_URL`.
+
+### Free-plan notes
+
+- Render's free plan has no Shell, so the "run from a Render Shell" commands above need to be run from a
+  computer with `DATABASE_URL` set to the live database instead. Take a backup first
+  (`scripts/backup_postgres.sh`, see `docs/backup_restore.md`); Supabase's free plan has no point-in-time recovery.
+- Building a brand-new empty PostgreSQL database by running every migration from the start currently fails
+  (an early revision id is longer than Alembic's 32-character version column, and one early migration
+  inserts integers into a boolean column). The live database is past those steps, so deploys are unaffected,
+  and restoring a `pg_dump` backup does not need them.
 
 ### Local vs production
 
-- Local development: `APP_ENV=development`, SQLite fallback, optional `seed.py`.
+- Local development: `APP_ENV=development`, SQLite fallback, optional `seed.py` (it refuses to run against anything but a local SQLite database).
 - Production: `APP_ENV=production`, Postgres via `DATABASE_URL`, secure cookies enabled, no development account bootstrap UI.
 
 ### Keeping the free hosting awake
@@ -415,4 +427,7 @@ re-enable it there if the site is ever left untouched for that long.
 - Passwords set through the app (change password, admin reset, new teacher, `create-admin`) must be at least 12 characters, must not contain the username and must avoid common patterns. Three or four unrelated words work well. Existing passwords keep working until they are next changed.
 - After 5 failed sign-ins for one account from one address within 15 minutes, further attempts are refused (HTTP 429) for the rest of that window. One address making 30 failed attempts in 15 minutes is also blocked. Limits can be changed with `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS` and `LOGIN_MAX_ATTEMPTS_PER_IP`. The counters live in memory in one web process and reset on restart.
 - Signed-in sessions expire after 8 hours of inactivity.
+- Changing or resetting a password signs that account out on every other device.
+- Usernames are matched exactly (ignoring capitals); `%` and `_` are not wildcards.
+- CSV and Excel exports store text beginning with `=`, `+`, `-` or `@` as plain text, so it cannot run as a spreadsheet formula (CSV cells get a leading apostrophe).
 - `DEMO_MODE` shows demo logins on the sign-in page. Keep it off in production once real pupil data is in use; the app logs a warning if it is on.

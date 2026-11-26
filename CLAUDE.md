@@ -103,6 +103,14 @@ CI (`.github/workflows/test.yml`) runs the full suite on every pull request.
 ## Conventions
 
 - Plain-English flash messages; UK spelling.
-- Add an Alembic migration for every schema change; make it safe to run on existing live data.
+- Add an Alembic migration for every schema change; make it safe to run on existing live data. Unique rules on
+  school-owned tables must include `school_id`. Note: running every migration from an empty Postgres database
+  fails on two old migrations; to test a new migration on Postgres, build tables with `db.create_all()`, stamp
+  the previous revision, then upgrade.
+- Write CSV exports with `app/services/safe_csv.py` (`safe_csv.writer` / `safe_csv.DictWriter`) and call
+  `safe_csv.neutralise_workbook_formulas(wb)` before saving any openpyxl workbook.
+- Password changes must go through `set_password` and, for the signed-in user, refresh the session stamp
+  (`password_stamp` in `app/security.py`), otherwise the user is signed out on their next click.
+- Pages that loop over classes or pupils must not query per row: load results in one query and group in Python.
 - New school-data features need a test proving School A cannot see School B's data.
 - Audit important admin actions with `log_audit_event` (`app/utils.py`).

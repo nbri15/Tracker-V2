@@ -227,3 +227,172 @@ def test_per_school_unique_migration_on_sqlite():
             with connection.begin_nested():
                 connection.execute(sa.text("INSERT INTO tracker_mode_settings (school_id, year_group, tracker_mode) VALUES (2, 6, 'normal')"))
         assert connection.execute(sa.text('SELECT COUNT(*) FROM tracker_mode_settings')).scalar() == 2
+
+
+def _year_ids(app):
+    from app.models import AcademicYear
+    with app.app_context():
+        return {year.name: year.id for year in AcademicYear.query.all()}
+
+
+def test_viewing_a_past_year_shows_a_banner(world):
+    app, ids = world
+    years = _year_ids(app)
+    client = app.test_client(); login(client, ids['teacher'])
+    page = client.get(f'/teacher/maths?year={years["2025/26"]}')
+    assert page.status_code == 200
+    assert b'data-testid="viewing-year-notice"' in page.data
+    assert b'You are looking at 2025/26' in page.data
+    # The choice is remembered on the next page...
+    assert b'You are looking at 2025/26' in client.get('/teacher/maths').data
+    # ...and the banner button takes them back to the current year.
+    client.post('/set-academic-year', data={'academic_year_id': years['2026/27']}, headers={'Referer': 'http://localhost/teacher/maths'})
+    assert b'data-testid="viewing-year-notice"' not in client.get('/teacher/maths').data
+
+
+def test_current_year_has_no_banner(world):
+    app, ids = world
+    client = app.test_client(); login(client, ids['teacher'])
+    assert b'data-testid="viewing-year-notice"' not in client.get('/teacher/maths').data
+
+
+def test_rollover_resets_a_remembered_year(world):
+    from app.models import AcademicYear
+    app, ids = world
+    years = _year_ids(app)
+    client = app.test_client(); login(client, ids['teacher'])
+    client.get(f'/teacher/maths?year={years["2026/27"]}')  # teacher is working in 2026/27
+    with app.app_context():  # meanwhile the admin rolls the school over
+        new_year = AcademicYear(name='2027/28'); db.session.add(new_year); db.session.flush()
+        db.session.get(School, ids['a']).current_academic_year = new_year
+        db.session.commit()
+    page = client.get('/teacher/maths')
+    assert b'data-testid="viewing-year-notice"' not in page.data
+    with client.session_transaction() as session:
+        assert session['selected_academic_year_id'] == new_year_id(app)
+
+
+def new_year_id(app):
+    from app.models import AcademicYear
+    with app.app_context():
+        return AcademicYear.query.filter_by(name='2027/28').one().id
+
+
+def test_year_switch_returns_to_same_page(world):
+    app, ids = world
+    years = _year_ids(app)
+    client = app.test_client(); login(client, ids['teacher'])
+    response = client.post('/set-academic-year', data={'academic_year_id': years['2025/26']}, headers={'Referer': 'http://localhost/teacher/maths?term=spring'})
+    assert response.headers['Location'].endswith('/teacher/maths?term=spring')
+    response = client.post('/set-academic-year', data={'academic_year_id': years['2025/26']}, headers={'Referer': 'https://evil.example/phish'})
+    assert response.headers['Location'].endswith('/dashboard')
+
+
+def _sign_in(app, school_code, username, password):
+    client = app.test_client()
+    response = client.post('/auth/login', data={'school_code': school_code, 'username': username, 'password': password})
+    assert response.status_code == 302
+    return client
+
+
+def test_password_reset_signs_out_other_devices(world):
+    app, ids = world
+    teacher_ipad = _sign_in(app, 'school-a', 'teacher-a', 'password123')
+    assert teacher_ipad.get('/dashboard/teacher').status_code == 200
+    admin = _sign_in(app, 'school-a', 'admin-a', 'password123')
+    response = admin.post(f'/admin/users/{ids["teacher"]}/reset-password', data={'new_password': 'Purple tractor biscuit', 'confirm_password': 'Purple tractor biscuit'})
+    assert response.status_code == 302
+    response = teacher_ipad.get('/dashboard/teacher')
+    assert response.status_code == 302 and '/auth/login' in response.headers['Location']
+    # The admin who did the reset stays signed in.
+    assert admin.get('/admin/users').status_code == 200
+
+
+def test_changing_own_password_keeps_this_device_signed_in(world):
+    app, ids = world
+    device_one = _sign_in(app, 'school-a', 'teacher-a', 'password123')
+    device_two = _sign_in(app, 'school-a', 'teacher-a', 'password123')
+    response = device_one.post('/auth/change-password', data={'new_password': 'Orange kettle meadow', 'confirm_password': 'Orange kettle meadow'})
+    assert response.status_code == 302
+    assert device_one.get('/dashboard/teacher').status_code == 200
+    assert device_two.get('/dashboard/teacher').status_code == 302
+
+
+def test_executive_school_admin_creation_uses_password_rules(world):
+    app, ids = world
+    exec_id = _make_executive(app)
+    client = app.test_client(); login(client, exec_id)
+    client.post(f'/exec/schools/{ids["b"]}/create-admin', data={'username': 'weak-admin', 'password': 'short1'})
+    client.post(f'/exec/schools/{ids["b"]}/users/{ids["other"]}/reset-password', data={'new_password': 'password1234'})
+    with app.app_context():
+        assert User.query.filter_by(username='weak-admin').first() is None
+        assert db.session.get(User, ids['other']).check_password('password123')
+
+
+@pytest.mark.parametrize('value,expected', [
+    ('=HYPERLINK("http://example.invalid")', '\'=HYPERLINK("http://example.invalid")'),
+    ('+44 call', "'+44 call"),
+    ('@SUM(A1)', "'@SUM(A1)"),
+    ('-5', '-5'),
+    ('-', "'-"),
+    ('Alice', 'Alice'),
+    (12, 12),
+    (None, None),
+])
+def test_safe_csv_cell(value, expected):
+    from app.services.safe_csv import safe_cell
+    assert safe_cell(value) == expected
+
+
+def test_csv_and_xlsx_exports_neutralise_formulas():
+    import io
+    from openpyxl import Workbook, load_workbook
+    from app.services import safe_csv
+    out = io.StringIO()
+    safe_csv.writer(out).writerow(['=1+1', 'ok', -3])
+    assert out.getvalue().strip() == "'=1+1,ok,-3"
+    out = io.StringIO()
+    writer = safe_csv.DictWriter(out, fieldnames=['a'])
+    writer.writeheader(); writer.writerow({'a': '=cmd'})
+    assert out.getvalue().splitlines()[1] == "'=cmd"
+    wb = Workbook(); wb.active.append(['=1+1', 'plain'])
+    safe_csv.neutralise_workbook_formulas(wb)
+    data = io.BytesIO(); wb.save(data); data.seek(0)
+    cell = load_workbook(data).active['A1']
+    assert cell.value == '=1+1' and cell.data_type == 's'
+
+
+def test_rollover_works_when_an_archived_class_has_the_default_name(world):
+    from app.services.admin_ops import promote_pupils_to_next_year
+    app, ids = world
+    with app.app_context():
+        school = db.session.get(School, ids['a'])
+        db.session.add(SchoolClass(name='Year 6', year_group=6, school=school, is_active=False))  # archived years ago
+        db.session.commit()
+        outcome = promote_pupils_to_next_year('2026/27', ids['a'], class_mapping={ids['ca']: None})
+        db.session.commit()
+        assert outcome['moved'] == 2
+        new_class = SchoolClass.query.filter_by(school_id=ids['a'], year_group=6, is_active=True).one()
+        assert new_class.name == 'Year 6 (2027/28)'
+        assert {pupil.class_id for pupil in Pupil.query.filter(Pupil.id.in_(ids['pupils']))} == {new_class.id}
+
+
+def test_go_back_button_works_when_the_address_contains_a_year(world):
+    app, ids = world
+    years = _year_ids(app)
+    client = app.test_client(); login(client, ids['teacher'])
+    client.get(f'/teacher/maths?year={years["2025/26"]}&term=spring')
+    response = client.post('/set-academic-year', data={'academic_year_id': years['2026/27']},
+                           headers={'Referer': f'http://localhost/teacher/maths?year={years["2025/26"]}&term=spring'})
+    assert response.headers['Location'].endswith('/teacher/maths?term=spring')
+    assert b'data-testid="viewing-year-notice"' not in client.get(response.headers['Location']).data
+
+
+def test_sats_page_shows_blank_not_none_for_empty_cells(year6):
+    app, ids = year6
+    client = app.test_client(); login(client, ids['y6_teacher'])
+    client.get('/sats/simple?academic_year=2026/27')
+    assert _sats_save(client, ids['y6_pupil'], 'arithmetic_score', '30').status_code == 200
+    page = client.get(f'/sats/simple?academic_year=2026/27&class_id={ids["y6_class"]}')
+    assert b'value="30"' in page.data
+    assert b'value="None"' not in page.data

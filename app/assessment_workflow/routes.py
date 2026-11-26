@@ -2,6 +2,8 @@
 from __future__ import annotations
 import base64
 import csv
+
+from app.services import safe_csv
 import io
 import json
 from datetime import datetime, timedelta, timezone
@@ -303,7 +305,7 @@ def subject_template(subject):
     payload = {'school_id': require_school(), 'class_id': school_class.id, 'academic_year': year}
     _, pupils = class_pupils(payload)
     out = io.StringIO()
-    writer = csv.writer(out)
+    writer = safe_csv.writer(out)
     from app.services.assessments import paper_enabled
     setting = get_subject_setting(school_class.year_group, subject, request.args.get('term', 'autumn'), year, school_id=require_school())
     score_columns = [f'paper_{paper}_score' for paper in (1, 2) if paper_enabled(setting, paper)]

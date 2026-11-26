@@ -12,7 +12,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config_by_name
 from .extensions import csrf, db, login_manager, migrate
 from .services import display_band_short, format_subject_name, get_term_label, get_tracker_mode_label, get_writing_band_label, short_band_label
-from .security import LoginThrottle, password_problem
+from .security import PASSWORD_STAMP_SESSION_KEY, LoginThrottle, password_problem, password_stamp, stamp_user_id
 from .services.gender import normalize_gender
 from .utils import current_school_id, is_demo_user
 
@@ -150,6 +150,26 @@ def register_request_guards(app: Flask) -> None:
 
 
     @app.before_request
+    def sign_out_after_password_change():
+        if not current_user.is_authenticated:
+            return None
+        from flask import flash, session
+        from flask_login import logout_user
+
+        current_stamp = password_stamp(current_user.password_hash, current_user.id)
+        saved_stamp = session.get(PASSWORD_STAMP_SESSION_KEY)
+        if saved_stamp is None or stamp_user_id(saved_stamp) != str(current_user.id):
+            # Sessions from before this check existed (or a stamp for a different account): start tracking now.
+            session[PASSWORD_STAMP_SESSION_KEY] = current_stamp
+            return None
+        if saved_stamp != current_stamp:
+            logout_user()
+            session.pop(PASSWORD_STAMP_SESSION_KEY, None)
+            flash('Your password was changed, so you have been signed out. Please sign in again.', 'warning')
+            return redirect(url_for('auth.login'))
+        return None
+
+    @app.before_request
     def force_password_change():
         if not current_user.is_authenticated or not getattr(current_user, 'require_password_change', False):
             return None
@@ -177,6 +197,18 @@ def register_template_helpers(app: Flask) -> None:
             ('demo_teacher', 'demo123'),
         ),
     )
+
+    @app.context_processor
+    def inject_viewing_year_notice():
+        if not current_user.is_authenticated:
+            return {'viewing_year_notice': None}
+        try:
+            from .services.assessments import viewing_year_notice
+
+            return {'viewing_year_notice': viewing_year_notice()}
+        except Exception:  # a banner must never break a page
+            app.logger.warning('Could not work out the viewing-year banner.', exc_info=True)
+            return {'viewing_year_notice': None}
 
     @app.context_processor
     def inject_school_context():
@@ -254,6 +286,11 @@ def bootstrap_admin_from_env(app: Flask) -> None:
 
         existing_admin = User.query.filter(User.role.in_(['admin', 'executive_admin'])).first()
         if existing_admin:
+            return
+
+        problem = password_problem(password, username)
+        if problem:
+            app.logger.error('BOOTSTRAP_ADMIN_PASSWORD was not used: %s', problem)
             return
 
         user = User(username=username, role='executive_admin', legacy_is_admin=True, is_active=True)

@@ -221,6 +221,21 @@ def get_promotion_mapping_options(school_id: int) -> list[dict]:
     return options
 
 
+def _unused_class_name(school_id: int, preferred: str, target_year: str) -> str:
+    """Class names are unique per school, including archived classes; pick one that is free."""
+    def taken(name: str) -> bool:
+        return SchoolClass.query.filter(SchoolClass.school_id == school_id, SchoolClass.name == name).first() is not None
+
+    if not taken(preferred):
+        return preferred
+    candidate = f'{preferred} ({target_year})'
+    counter = 2
+    while taken(candidate):
+        candidate = f'{preferred} ({target_year}) {counter}'
+        counter += 1
+    return candidate
+
+
 def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_mapping: dict[int, int | None] | None = None) -> dict:
     if school_id is None:
         raise ValueError('A school must be selected before promoting pupils.')
@@ -273,7 +288,7 @@ def promote_pupils_to_next_year(source_year: str, school_id: int | None, class_m
             if not next_class:
                 next_class = SchoolClass.query.filter(SchoolClass.school_id == school_id, SchoolClass.year_group == school_class.year_group + 1, SchoolClass.is_active.is_(True)).order_by(SchoolClass.name).first()
                 if not next_class:
-                    next_class = SchoolClass(name=f'Year {school_class.year_group + 1}', year_group=school_class.year_group + 1, is_active=True, school_id=school_class.school_id, is_demo=school_class.is_demo)
+                    next_class = SchoolClass(name=_unused_class_name(school_id, f'Year {school_class.year_group + 1}', target_year), year_group=school_class.year_group + 1, is_active=True, school_id=school_class.school_id, is_demo=school_class.is_demo)
                     db.session.add(next_class)
                     db.session.flush()
             pupil.class_id = next_class.id

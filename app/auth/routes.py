@@ -7,12 +7,13 @@ from sqlalchemy import func
 
 from app.extensions import db
 from app.models import School, User
+from app.services.assessments import forget_selected_academic_year
 from app.services import (
     get_current_academic_year,
     get_school_working_academic_year,
     should_show_academic_year_reminder,
 )
-from app.security import LoginThrottle, password_problem
+from app.security import PASSWORD_STAMP_SESSION_KEY, LoginThrottle, password_problem, password_stamp
 from app.utils import is_demo_mode_enabled, safe_redirect_target
 
 from . import auth_bp
@@ -82,9 +83,10 @@ def login():
         school_active_or_exec = bool(user and (user.is_executive_admin or user.school is None or (user.school.is_active and not user.school.is_archived)))
         if credentials_valid and school_active_or_exec:
             throttle.record_success(client_ip, throttle_account)
-            session.pop('selected_academic_year_id', None)
+            forget_selected_academic_year()
             login_user(user)
             session.permanent = True  # applies the idle timeout (PERMANENT_SESSION_LIFETIME)
+            session[PASSWORD_STAMP_SESSION_KEY] = password_stamp(user.password_hash, user.id)
             if user.require_password_change:
                 flash('Please set a new password before continuing.', 'warning')
                 return redirect(url_for('auth.change_password'))
@@ -135,7 +137,7 @@ def demo_login():
         return redirect(url_for('auth.login'))
     login_user(user)
     session.permanent = True
-    session.pop('selected_academic_year_id', None)
+    forget_selected_academic_year()
     flash(f'Signed in as {username}.', 'success')
     return redirect(url_for('dashboards.index'))
 
@@ -146,7 +148,7 @@ def logout():
     """Log out the current user."""
 
     logout_user()
-    session.pop('selected_academic_year_id', None)
+    forget_selected_academic_year()
     flash('You have been signed out.', 'info')
     return redirect(url_for('auth.login'))
 
@@ -166,6 +168,8 @@ def change_password():
         current_user.require_password_change = False
         db.session.add(current_user)
         db.session.commit()
+        # Keep this device signed in; any other device using the old password is signed out.
+        session[PASSWORD_STAMP_SESSION_KEY] = password_stamp(current_user.password_hash, current_user.id)
         flash('Password updated successfully.', 'success')
         return redirect(url_for('dashboards.index'))
     return render_template('auth/change_password.html', form=form)

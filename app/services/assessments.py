@@ -305,6 +305,11 @@ def get_selected_academic_year(raw_year_id: str | None = None, raw_academic_year
 
     if selected is None and has_request_context():
         session_year_id = session.get('selected_academic_year_id')
+        if session_year_id and _session_year_is_stale():
+            # The school's working year has changed since this choice was made (for example
+            # after rollover), so go back to the school's current year.
+            forget_selected_academic_year()
+            session_year_id = None
         if session_year_id:
             try:
                 selected = AcademicYear.query.get(int(session_year_id))
@@ -323,8 +328,51 @@ def get_selected_academic_year(raw_year_id: str | None = None, raw_academic_year
         selected = AcademicYear(name=get_current_academic_year(), is_current=True)
 
     if has_request_context() and (explicit_selection or not session.get('selected_academic_year_id')) and getattr(selected, 'id', None):
-        session['selected_academic_year_id'] = selected.id
+        remember_selected_academic_year(selected)
     return selected
+
+
+def _school_working_year_id_or_none() -> int | None:
+    school_id = current_school_id()
+    if school_id is None:
+        return None
+    try:
+        return get_school_working_academic_year(school_id).id
+    except ValueError:
+        return None
+
+
+def remember_selected_academic_year(year: AcademicYear) -> None:
+    """Store the viewer's chosen year, noting which school and working year it was chosen against."""
+    session['selected_academic_year_id'] = year.id
+    session['selected_academic_year_school_id'] = current_school_id()
+    session['selected_academic_year_working_id'] = _school_working_year_id_or_none()
+
+
+def forget_selected_academic_year() -> None:
+    for key in ('selected_academic_year_id', 'selected_academic_year_school_id', 'selected_academic_year_working_id'):
+        session.pop(key, None)
+
+
+def _session_year_is_stale() -> bool:
+    if session.get('selected_academic_year_school_id') != current_school_id():
+        return True
+    return session.get('selected_academic_year_working_id') != _school_working_year_id_or_none()
+
+
+def viewing_year_notice() -> dict | None:
+    """Return details for a banner when the viewer is looking at a year other than the school's current one."""
+    if not has_request_context():
+        return None
+    year_id = session.get('selected_academic_year_id')
+    working_id = _school_working_year_id_or_none()
+    if not year_id or working_id is None or year_id == working_id or _session_year_is_stale():
+        return None
+    viewing = db.session.get(AcademicYear, year_id)
+    working = db.session.get(AcademicYear, working_id)
+    if viewing is None or working is None:
+        return None
+    return {'viewing': viewing, 'working': working}
 
 
 
